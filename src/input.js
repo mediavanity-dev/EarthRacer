@@ -1,0 +1,166 @@
+// Controls. Every source writes into one state: { throttle, brake, steer, handbrake, analog }.
+//   Keyboard: W/S or arrows, A/D steer, Space handbrake, C camera, H horn, R back to road, Esc menu.
+//   Gamepad (Xbox and other "standard" pads, wired or Bluetooth): RT gas, LT brake/reverse,
+//     left stick steer, A handbrake, Y camera, X horn, B back to road, Menu button = menu. Rumbles.
+//   Phone, three styles (chosen in Settings):
+//     tilt    - hold the phone like a steering wheel; pedals under your thumbs
+//     slider  - drag your left thumb along a slider to steer
+//     buttons - ◀ ▶ buttons on the left, pedals on the right
+
+const KEYS = { up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'], hand: ['Space'] };
+
+export class Input {
+  constructor(root, { onAction } = {}) {
+    this.root = root;
+    this.onAction = onAction || (() => {});
+    this.keys = new Set();
+    this.touch = { gas: 0, brake: 0, steer: 0, hand: false, left: false, right: false };
+    this.state = { throttle: 0, brake: 0, steer: 0, handbrake: false, analog: false };
+    this.source = 'keyboard';
+    this.mode = 'slider';
+    this.tilt = { on: false, center: 0, sign: 1, angle: 0, raw: null, range: 32 };
+    this.pad = null;
+    this.padPrev = [];
+    this.enabled = true;
+
+    addEventListener('keydown', (e) => {
+      if (e.target instanceof HTMLInputElement) return;
+      this.keys.add(e.code);
+      this.source = 'keyboard';
+      if (!e.repeat) {
+        const a = { KeyC: 'camera', KeyH: 'horn', KeyR: 'reset', Escape: 'menu', KeyM: 'mute', KeyJ: 'jobs', KeyG: 'guess' }[e.code];
+        if (a) this.onAction(a);
+      }
+      if (KEYS.hand.includes(e.code) || e.code.startsWith('Arrow')) e.preventDefault();
+    });
+    addEventListener('keyup', (e) => this.keys.delete(e.code));
+    addEventListener('blur', () => this.keys.clear());
+    addEventListener('gamepadconnected', (e) => { this.pad = e.gamepad.index; this.source = 'gamepad'; this.onAction('gamepad', e.gamepad.id); });
+    addEventListener('gamepaddisconnected', () => { this.pad = null; });
+    this.onMotion = (e) => {
+      const g = e.accelerationIncludingGravity;
+      if (!g || g.x == null) return;
+      // angle of gravity in the screen plane; calibration removes the offset and sign
+      this.tilt.raw = Math.atan2(g.x, g.y) * 180 / Math.PI;
+    };
+  }
+
+  setMode(mode) { this.mode = mode; this.buildTouch(); }
+
+  /** Must be called from a tap (iOS asks permission for motion sensors). */
+  async enableTilt() {
+    try {
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        const r = await DeviceMotionEvent.requestPermission();
+        if (r !== 'granted') return false;
+      }
+    } catch { return false; }
+    if (!this.tilt.on) addEventListener('devicemotion', this.onMotion);
+    this.tilt.on = true;
+    return true;
+  }
+  tiltCenter() { if (this.tilt.raw != null) this.tilt.center = this.tilt.raw; }
+  /** Second calibration step: the player has turned the "wheel" to the right. */
+  tiltRight() {
+    if (this.tilt.raw == null) return false;
+    const d = wrap(this.tilt.raw - this.tilt.center);
+    if (Math.abs(d) < 5) return false;
+    this.tilt.sign = Math.sign(d);
+    return true;
+  }
+
+  rumble(strong, weak = strong, ms = 180) {
+    const gp = this.pad != null ? navigator.getGamepads?.()[this.pad] : null;
+    try { gp?.vibrationActuator?.playEffect?.('dual-rumble', { duration: ms, strongMagnitude: Math.min(1, strong), weakMagnitude: Math.min(1, weak) }); } catch { /* not supported */ }
+    if (this.source === 'touch' && strong > 0.3) navigator.vibrate?.(Math.min(120, ms));
+  }
+
+  poll() {
+    const s = this.state;
+    const k = (list) => list.some((c) => this.keys.has(c));
+    let throttle = k(KEYS.up) ? 1 : 0, brake = k(KEYS.down) ? 1 : 0;
+    let steer = (k(KEYS.right) ? 1 : 0) - (k(KEYS.left) ? 1 : 0), hand = k(KEYS.hand), analog = false;
+
+    // gamepad
+    const gp = this.pad != null ? navigator.getGamepads?.()[this.pad] : (navigator.getGamepads?.() || []).find((g) => g);
+    if (gp) {
+      if (this.pad == null) this.pad = gp.index;
+      const b = (i) => gp.buttons[i] ? gp.buttons[i].value || (gp.buttons[i].pressed ? 1 : 0) : 0;
+      const sx = gp.axes[0] || 0;
+      const dz = 0.12, sx2 = Math.abs(sx) < dz ? 0 : Math.sign(sx) * ((Math.abs(sx) - dz) / (1 - dz)) ** 1.6;
+      const rt = b(7), lt = b(6);
+      if (rt > 0.05 || lt > 0.05 || Math.abs(sx2) > 0 || gp.buttons.some((x) => x.pressed)) this.source = 'gamepad';
+      if (this.source === 'gamepad') {
+        throttle = Math.max(throttle, rt); brake = Math.max(brake, lt);
+        if (Math.abs(sx2) > Math.abs(steer)) { steer = sx2; analog = true; }
+        hand = hand || b(0) > 0.5;
+      }
+      const map = { 3: 'camera', 2: 'horn', 1: 'reset', 9: 'menu', 8: 'jobs' };
+      gp.buttons.forEach((btn, i) => { if (btn.pressed && !this.padPrev[i] && map[i]) this.onAction(map[i]); this.padPrev[i] = btn.pressed; });
+    }
+
+    // touch
+    const t = this.touch;
+    if (this.source === 'touch') {
+      throttle = Math.max(throttle, t.gas); brake = Math.max(brake, t.brake); hand = hand || t.hand;
+      if (this.mode === 'tilt' && this.tilt.on && this.tilt.raw != null) {
+        let a = wrap(this.tilt.raw - this.tilt.center) * this.tilt.sign;
+        a = Math.abs(a) < 2 ? 0 : a - Math.sign(a) * 2;
+        steer = Math.max(-1, Math.min(1, a / this.tilt.range)); analog = true;
+      } else if (this.mode === 'slider') { steer = t.steer; analog = true; }
+      else steer = (t.right ? 1 : 0) - (t.left ? 1 : 0);
+    }
+    if (!this.enabled) { throttle = 0; brake = 0; steer = 0; hand = false; }
+    s.throttle = throttle; s.brake = brake; s.steer = steer; s.handbrake = hand; s.analog = analog;
+    return s;
+  }
+
+  // ---------- on-screen controls ----------
+  buildTouch() {
+    const root = this.root;
+    root.innerHTML = '';
+    root.className = `touch mode-${this.mode}`;
+    const el = (cls, html = '') => { const d = document.createElement('div'); d.className = cls; d.innerHTML = html; root.appendChild(d); return d; };
+    const hold = (node, on, off) => {
+      const start = (e) => { e.preventDefault(); this.source = 'touch'; node.classList.add('down'); on(e); };
+      const end = (e) => { e.preventDefault(); node.classList.remove('down'); off(e); };
+      node.addEventListener('pointerdown', (e) => { node.setPointerCapture(e.pointerId); start(e); });
+      node.addEventListener('pointerup', end);
+      node.addEventListener('pointercancel', end);
+    };
+    const gas = el('pedal gas', '<span>GAS</span>');
+    const brake = el('pedal brake', '<span>BRAKE</span>');
+    hold(gas, () => { this.touch.gas = 1; }, () => { this.touch.gas = 0; });
+    hold(brake, () => { this.touch.brake = 1; }, () => { this.touch.brake = 0; });
+    const hb = el('tbtn hand', 'Handbrake');
+    hold(hb, () => { this.touch.hand = true; }, () => { this.touch.hand = false; });
+    if (this.mode === 'slider') {
+      const pad = el('slider', '<div class="track"></div><div class="knob"></div>');
+      const knob = pad.querySelector('.knob');
+      const set = (e) => {
+        const r = pad.getBoundingClientRect();
+        const v = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1));
+        this.touch.steer = Math.sign(v) * Math.min(1, Math.abs(v) * 1.15);
+        knob.style.left = `${((v + 1) / 2) * 100}%`;
+      };
+      hold(pad, set, () => { this.touch.steer = 0; knob.style.left = '50%'; });
+      pad.addEventListener('pointermove', (e) => { if (pad.classList.contains('down')) set(e); });
+    } else if (this.mode === 'buttons') {
+      const l = el('tbtn steer left', '◀'), r = el('tbtn steer right', '▶');
+      hold(l, () => { this.touch.left = true; }, () => { this.touch.left = false; });
+      hold(r, () => { this.touch.right = true; }, () => { this.touch.right = false; });
+    } else if (this.mode === 'tilt') {
+      const c = el('tbtn recenter', 'Re-centre');
+      c.addEventListener('pointerdown', (e) => { e.preventDefault(); this.tiltCenter(); });
+      this.wheelEl = el('wheel-ind', '<div class="wheel-dial"></div>');
+    }
+  }
+
+  /** Visual feedback for the tilt wheel. */
+  drawWheel() {
+    if (this.mode !== 'tilt' || !this.wheelEl) return;
+    this.wheelEl.firstChild.style.transform = `rotate(${this.state.steer * 90}deg)`;
+  }
+}
+
+function wrap(a) { while (a > 180) a -= 360; while (a < -180) a += 360; return a; }

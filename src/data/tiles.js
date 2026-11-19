@@ -1,0 +1,278 @@
+// EarthRacer map tiles (adapted from OpenWorld's vtiles.js).
+// Base fabric adapter: OpenFreeMap vector tiles (OpenMapTiles schema, built from OSM).
+// Free, keyless, served from a CDN: fast first paint anywhere on Earth.
+// Output is in tile-pixel space (0..extent, y down) for one zoom-14 tile.
+//
+// Feature ids in these tiles encode the OSM object: id = osmId * 10 + (1 node | 2 way | 3 relation),
+// so places keep the same stable refs ("osm:node/123") as the Overpass detail layer.
+
+import { VectorTile, classifyRings } from '@mapbox/vector-tile';
+import { PbfReader } from 'pbf';
+import { getJson, request } from './net.js';
+import { cacheGet, cachePut } from './cache.js';
+
+const TILEJSON = 'https://tiles.openfreemap.org/planet';
+let tileUrl = null;
+
+// The tile address (it names the current weekly map build) is kept for 12 hours, so a start
+// doesn't wait for a round trip; an old one is still used if the server can't be reached.
+async function template() {
+  if (tileUrl) return tileUrl;
+  const fresh = await cacheGet('vt-tilejson', 12 * 3600 * 1000);
+  if (fresh) return (tileUrl = fresh);
+  try {
+    tileUrl = (await getJson(TILEJSON, { retries: 2 })).tiles[0];
+    cachePut('vt-tilejson', tileUrl);
+  } catch (err) {
+    const stale = await cacheGet('vt-tilejson', Infinity);
+    if (!stale) throw err;
+    tileUrl = stale;
+  }
+  return tileUrl;
+}
+
+// Map areas are kept on the device for a week (the streets you walk every day load from the
+// phone, not the network). Keyed by the full tile address, so a new map build fetches afresh.
+export const TILE_TTL = 7 * 24 * 3600 * 1000;
+
+export function osmRef(id) {
+  if (!id) return null;
+  const t = id % 10, n = Math.floor(id / 10);
+  const type = t === 1 ? 'node' : t === 2 ? 'way' : t === 3 ? 'relation' : null;
+  return type ? `osm:${type}/${n}` : null;
+}
+
+// --- place categories (OpenMapTiles poi class -> game kind used for colours/rules) ---
+const KIND = {
+  attraction: 'tourism', museum: 'tourism', art_gallery: 'tourism', zoo: 'tourism', aquarium: 'tourism',
+  castle: 'historic', monument: 'historic', memorial: 'historic', archaeological_site: 'historic', ruins: 'historic',
+  cafe: 'amenity', restaurant: 'amenity', fast_food: 'amenity', bar: 'amenity', beer: 'amenity', ice_cream: 'amenity',
+  library: 'amenity', college: 'amenity', school: 'amenity', theatre: 'amenity', cinema: 'amenity', town_hall: 'amenity',
+  post: 'amenity', place_of_worship: 'amenity', lodging: 'amenity', music: 'amenity', hospital: 'amenity',
+  shop: 'shop', grocery: 'shop', clothing_store: 'shop', alcohol_shop: 'shop', bakery: 'shop', books: 'shop',
+  park: 'leisure', garden: 'leisure', playground: 'leisure', stadium: 'leisure', swimming: 'leisure', golf: 'leisure', dog_park: 'leisure', pitch: 'leisure',
+  railway: 'transport', ferry_terminal: 'transport', fuel: 'fuel', harbor: 'transport',
+};
+const SKIP_SUB = new Set(['platform', 'halt', 'subway_entrance', 'tram_stop', 'bus_stop', 'clinic', 'doctors', 'dentist', 'pharmacy']);
+
+// Ways people may walk on: everything but motorways and rail, unless closed to walkers
+// (foot=no/private, or access=no without a foot=yes/designated/permissive exception).
+const WALK_CLS = new Set(['path', 'track', 'minor', 'service', 'tertiary', 'secondary', 'primary', 'trunk', 'pedestrian', 'busway']);
+export function walkable(p) {
+  if (!WALK_CLS.has(p.class) || p.service === 'driveway') return false;
+  if (p.foot === 'no' || p.foot === 'private') return false;
+  if ((p.access === 'no' || p.access === 'private') && !['yes', 'designated', 'permissive'].includes(p.foot)) return false;
+  return true;
+}
+
+const ROAD_W = { motorway: 14, trunk: 12, primary: 11, secondary: 10, tertiary: 8, minor: 6, service: 4, track: 3, path: 1.8, raceway: 6, busway: 6 };
+
+function areaClass(layer, p) {
+  if (layer === 'water') return 'water';
+  if (layer === 'park') return p.class === 'park' || p.class === 'nature_reserve' ? 'park' : null;
+  if (layer === 'landcover') {
+    switch (p.class) {
+      case 'wood': return 'wood';
+      case 'grass': return p.subclass === 'scrub' || p.subclass === 'heath' ? 'scrub' : p.subclass === 'park' || p.subclass === 'garden' ? 'park' : 'grass';
+      case 'farmland': return 'farmland';
+      case 'sand': return 'sand';
+      case 'rock': return 'rock';
+      case 'ice': return 'ice';
+      case 'wetland': return 'wetland';
+      default: return null;
+    }
+  }
+  if (layer === 'landuse') {
+    switch (p.class) {
+      case 'residential': case 'suburb': case 'neighbourhood': return 'residential';
+      case 'commercial': case 'retail': return 'commercial';
+      case 'industrial': case 'railway': case 'garages': return 'industrial';
+      case 'cemetery': return 'cemetery';
+      case 'pitch': case 'stadium': case 'playground': return 'pitch';
+      case 'school': case 'university': case 'college': case 'hospital': return 'campus';
+      default: return null;
+    }
+  }
+  return null;
+}
+
+const pts = (ring) => ring.map((p) => [p.x, p.y]);
+
+// Sutherland–Hodgman clip of a ring to [0,E]² so neighbouring tiles join exactly.
+function clipRing(ring, E) {
+  let out = ring;
+  const edges = [
+    (p) => p[0] >= 0, (a, b) => { const t = (0 - a[0]) / (b[0] - a[0]); return [0, a[1] + t * (b[1] - a[1])]; },
+    (p) => p[0] <= E, (a, b) => { const t = (E - a[0]) / (b[0] - a[0]); return [E, a[1] + t * (b[1] - a[1])]; },
+    (p) => p[1] >= 0, (a, b) => { const t = (0 - a[1]) / (b[1] - a[1]); return [a[0] + t * (b[0] - a[0]), 0]; },
+    (p) => p[1] <= E, (a, b) => { const t = (E - a[1]) / (b[1] - a[1]); return [a[0] + t * (b[0] - a[0]), E]; },
+  ];
+  for (let k = 0; k < 8; k += 2) {
+    const inside = edges[k], cut = edges[k + 1];
+    const src = out; out = [];
+    if (!src.length) break;
+    for (let i = 0; i < src.length; i++) {
+      const a = src[(i + src.length - 1) % src.length], b = src[i];
+      const ain = inside(a), bin = inside(b);
+      if (bin) { if (!ain) out.push(cut(a, b)); out.push(b); }
+      else if (ain) out.push(cut(a, b));
+    }
+  }
+  return out;
+}
+
+function stripClose(r) {
+  if (r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1]) return r.slice(0, -1);
+  return r;
+}
+
+export async function loadBaseTile(z, x, y) {
+  const url = (await template()).replace('{z}', z).replace('{x}', x).replace('{y}', y);
+  const key = `vt:${url}`;
+  let buf = await cacheGet(key, TILE_TTL);
+  if (buf === 'empty') return emptyFabric();
+  if (!buf) {
+    // 204/404 = nothing mapped here (open sea): an empty area, not an error
+    const res = await request(url, { retries: 2, okStatus: (s) => (s >= 200 && s < 300) || s === 404 });
+    if (res.status === 204 || res.status === 404) { cachePut(key, 'empty'); return emptyFabric(); }
+    buf = await res.arrayBuffer();
+    if (buf.byteLength < 3e6) cachePut(key, buf);
+  }
+  const vt = new VectorTile(new PbfReader(new Uint8Array(buf)));
+  return normalizeTile(vt);
+}
+
+function emptyFabric() { return { extent: 4096, buildings: [], areas: [], lines: [], roads: [], pois: [], streets: [], walk: [], waterNames: [], waterways: [], areaName: null }; }
+
+export function normalizeTile(vt) {
+  const out = emptyFabric();
+  const E = (vt.layers.building || vt.layers.water || vt.layers.landcover)?.extent || 4096;
+  out.extent = E;
+
+  for (const name of ['landuse', 'park', 'landcover', 'water']) {
+    const layer = vt.layers[name];
+    if (!layer) continue;
+    for (let i = 0; i < layer.length; i++) {
+      const f = layer.feature(i);
+      if (f.type !== 3) continue;
+      const cls = areaClass(name, f.properties);
+      if (!cls) continue;
+      const label = name === 'park' || name === 'water' ? f.properties.name || null : null; // named parks and lakes (area labels)
+      for (const poly of classifyRings(f.loadGeometry())) out.areas.push({ cls, rings: poly.map(pts), ...(label ? { name: label } : {}) });
+    }
+  }
+  // labels of ponds, lakes and rivers (points), so a race can say which water it means
+  const wn = vt.layers.water_name;
+  if (wn) {
+    for (let i = 0; i < wn.length; i++) {
+      const f = wn.feature(i), p = f.properties;
+      const g = f.loadGeometry()[0]?.[0];
+      if (p.name && g) out.waterNames.push({ name: p.name, px: g.x, py: g.y });
+    }
+  }
+
+  const bl = vt.layers.building;
+  if (bl) {
+    for (let i = 0; i < bl.length; i++) {
+      const f = bl.feature(i);
+      if (f.type !== 3) continue;
+      const p = f.properties;
+      const height = Math.min(600, Math.max(3, +p.render_height || 8));
+      const minHeight = Math.max(0, +p.render_min_height || 0);
+      for (const poly of classifyRings(f.loadGeometry())) {
+        const rings = poly.map((r) => stripClose(clipRing(stripClose(pts(r)), E))).filter((r) => r.length >= 3);
+        if (rings.length) out.buildings.push({ rings, height, minHeight, colour: p.colour || null });
+      }
+    }
+  }
+
+  const tl = vt.layers.transportation;
+  if (tl) {
+    for (let i = 0; i < tl.length; i++) {
+      const f = tl.feature(i);
+      const p = f.properties;
+      if (f.type !== 2 || p.brunnel === 'tunnel') continue;
+      const isRail = p.class === 'rail' || p.class === 'transit';
+      const width = isRail ? 4 : ROAD_W[p.class];
+      if (!width) continue;
+      const cls = isRail ? 'rail' : p.class === 'path' || p.class === 'track' ? 'path' : 'road';
+      for (const line of f.loadGeometry()) {
+        if (line.length < 2) continue;
+        out.lines.push({ cls, width, pts: pts(line) });
+        // driveable ways, with what a vehicle needs to know about them
+        if (!isRail && p.class !== 'raceway' && p.class !== 'busway' && p.subclass !== 'platform' && p.subclass !== 'steps') {
+          out.roads.push({
+            cls: p.class, width: p.class === 'path' ? (p.subclass === 'cycleway' ? 2.5 : 1.8) : width,
+            unpaved: p.surface === 'unpaved' || p.class === 'track', bridge: p.brunnel === 'bridge',
+            oneway: p.oneway === 1, ramp: p.ramp === 1, sub: p.subclass || null, pts: pts(line),
+          });
+        }
+      }
+    }
+  }
+  // street names (for zoomed-in labels): name + line geometry
+  const tn = vt.layers.transportation_name;
+  if (tn) {
+    for (let i = 0; i < tn.length; i++) {
+      const f = tn.feature(i), p = f.properties;
+      if (f.type !== 2 || !p.name || p.class === 'rail' || p.class === 'transit') continue;
+      for (const line of f.loadGeometry()) if (line.length > 1) out.streets.push({ name: p.name, cls: p.class, pts: pts(line) });
+    }
+  }
+  const wl = vt.layers.waterway;
+  if (wl) {
+    for (let i = 0; i < wl.length; i++) {
+      const f = wl.feature(i);
+      if (f.type !== 2 || f.properties.brunnel === 'tunnel') continue;
+      const w = f.properties.class === 'river' ? 14 : f.properties.class === 'canal' ? 9 : 3;
+      for (const line of f.loadGeometry()) {
+        out.lines.push({ cls: 'river', width: w, pts: pts(line) });
+        // named streams and rivers, in their direction of flow (OSM draws waterways downstream)
+        if (f.properties.name && line.length > 1) out.waterways.push({ name: f.properties.name, cls: f.properties.class || 'stream', pts: pts(line) });
+      }
+    }
+  }
+
+  const pl = vt.layers.poi;
+  if (pl) {
+    for (let i = 0; i < pl.length; i++) {
+      const f = pl.feature(i);
+      const p = f.properties;
+      const kind = KIND[p.class];
+      if (!kind || (!p.name && kind !== 'fuel') || SKIP_SUB.has(p.subclass)) continue;
+      if (p.class === 'railway' && p.subclass !== 'station') continue;
+      const g = f.loadGeometry()[0]?.[0];
+      if (!g || g.x < 0 || g.y < 0 || g.x >= E || g.y >= E) continue;
+      const ref = osmRef(f.id);
+      if (!ref) continue;
+      const en = p['name:en'] || p.name_en || null;
+      out.pois.push({ ref, px: g.x, py: g.y, name: p.name || 'Fuel station', ...(en && en !== p.name ? { nameEn: en } : {}), kind: `${kind}:${p.subclass || p.class}`, cls: p.class, rank: p.rank || 99 });
+    }
+  }
+  // the most local recognisable place name in this tile (for survey/journal labels)
+  const pl2 = vt.layers.place;
+  if (pl2) {
+    const ORDER = { neighbourhood: 0, quarter: 1, suburb: 2, hamlet: 3, village: 4, town: 5, city: 6 };
+    let best = null;
+    for (let i = 0; i < pl2.length; i++) {
+      const f = pl2.feature(i), p = f.properties;
+      const g = f.loadGeometry()[0]?.[0];
+      if (!p.name || ORDER[p.class] === undefined || !g || g.x < 0 || g.y < 0 || g.x >= E || g.y >= E) continue;
+      const score = ORDER[p.class] * 100 + (p.rank || 50);
+      if (!best || score < best.score) best = { score, name: p.name };
+    }
+    out.areaName = best?.name || null;
+  }
+  const mp = vt.layers.mountain_peak;
+  if (mp) {
+    for (let i = 0; i < mp.length; i++) {
+      const f = mp.feature(i);
+      const p = f.properties;
+      const g = f.loadGeometry()[0]?.[0];
+      const ref = osmRef(f.id);
+      if (!g || !p.name || !ref || g.x < 0 || g.y < 0 || g.x >= E || g.y >= E) continue;
+      out.pois.push({ ref, px: g.x, py: g.y, name: p.ele ? `${p.name} (${p.ele} m)` : p.name, kind: `natural:${p.class || 'peak'}`, rank: p.rank || 99 });
+    }
+  }
+  return out;
+}
