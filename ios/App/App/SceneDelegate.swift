@@ -23,7 +23,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 }
 
-// The game's web view: full screen (no status bar, home indicator fades),
+// The game's web view (the status bar is hidden by Info.plist):
 // no zoom or scrolling, and the
 // game's dark background so nothing flashes white while it loads.
 class GameViewController: CAPBridgeViewController {
@@ -41,6 +41,4 @@ class GameViewController: CAPBridgeViewController {
         webView?.scrollView.contentInsetAdjustmentBehavior = .never
     }
 
-    override var prefersStatusBarHidden: Bool { true }
-    override var prefersHomeIndicatorAutoHidden: Bool { true }
 }
