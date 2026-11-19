@@ -1,0 +1,9 @@
+{
+  "appId": "com.mediavanity.earthracer",
+  "appName": "EarthRacer",
+  "webDir": "www",
+  "backgroundColor": "#0f1720",
+  "ios": {
+    "contentInset": "never"
+  }
+}

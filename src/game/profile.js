@@ -45,7 +45,10 @@ export function save(now = false) {
 export function flush() {
   if (!dirty || wiped) return;
   dirty = false;
-  try { localStorage.setItem(KEY, JSON.stringify(profile)); } catch { /* storage full or blocked */ }
+  profile.savedAt = Date.now();
+  const json = JSON.stringify(profile);
+  try { localStorage.setItem(KEY, json); } catch { /* storage full or blocked */ }
+  window.__nativeSave?.(json); // the iPhone app also keeps it in native storage
 }
 setInterval(flush, 2000);
 addEventListener('pagehide', flush);
@@ -54,7 +57,8 @@ addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
 export function resetProfile() {
   wiped = true;
   try { localStorage.removeItem(KEY); } catch { /* ignore */ }
-  location.reload();
+  window.__nativeSave?.('');
+  setTimeout(() => location.reload(), 400); // let native storage clear first
 }
 
 // ---------- random placement allowance: 4 per calendar week (Monday to Sunday, your time) ----------

@@ -212,7 +212,7 @@ function calibrateTilt() {
 
 function userGesture() {
   sound.start();
-  if (isTouch && document.documentElement.requestFullscreen && !document.fullscreenElement) {
+  if (isTouch && !document.documentElement.classList.contains('native') && document.documentElement.requestFullscreen && !document.fullscreenElement) {
     document.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => {});
   }
 }
