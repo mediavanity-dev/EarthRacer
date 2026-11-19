@@ -107,7 +107,7 @@ export function raceFor(chunk, world) {
     // reject routes that loop back over themselves too tightly
     const [sx, sz] = cps[0], [ex, ez] = cps[cps.length - 1];
     if (Math.hypot(ex - sx, ez - sz) < 250) continue;
-    const toGeo = ([x, z]) => world.toGeo(x + chunk.ox, z + chunk.oz);
+    const toGeo = ([x, z]) => world.toGeo(chunk.ox + x * chunk.sx, z + chunk.oz);
     return { key: `${day}|${chunk.key}`, cps: cps.map(toGeo), length: Math.round(travelled), area: chunk.areaName };
   }
   return null;

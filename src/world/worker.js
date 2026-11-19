@@ -11,6 +11,7 @@ import { loadBaseTile } from '../data/tiles.js';
 import { ensureTerrain, heightOr } from '../data/terrain.js';
 import { hsl, treeInstance, packTrees } from './trees.js';
 import { ROAD_CLASSES } from './roadClasses.js';
+import { regionStyle, TALL_WALLS } from './region.js';
 import { CHUNK_Z, chunkBounds, tileXToLon, tileYToLat, offsetMeters, rng, hashStr, haversine } from '../geo.js';
 
 const AREA_COLORS = {
@@ -39,7 +40,9 @@ function hexRgb(hex) {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
   if (!m) return null;
   const n = parseInt(m[1], 16);
-  return [(n >> 16) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+  // sRGB hex -> linear (vertex colours are linear in the renderer; otherwise everything looks washed out)
+  const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  return [lin(n >> 16), lin((n >> 8) & 255), lin(n & 255)];
 }
 const shade = (c, f) => [Math.min(1, c[0] * f), Math.min(1, c[1] * f), Math.min(1, c[2] * f)];
 
@@ -143,9 +146,11 @@ async function build({ x, y, opts }) {
   mg.globalCompositeOperation = 'lighter';
   mg.fillStyle = '#0f0';
   for (const a of fabric.areas) if (URBAN.has(a.cls)) { trace(mg, a.rings, ms); mg.fill('evenodd'); }
+  mg.fillStyle = '#00f';
+  for (const a of fabric.areas) if (a.cls === 'industrial') { trace(mg, a.rings, ms); mg.fill('evenodd'); }
   const md = mg.getImageData(0, 0, MASK, MASK).data;
   const mask = new Uint8Array(MASK * MASK);
-  for (let k = 0; k < mask.length; k++) mask[k] = (md[k * 4] > 127 ? 1 : 0) | (md[k * 4 + 1] > 127 ? 2 : 0);
+  for (let k = 0; k < mask.length; k++) mask[k] = (md[k * 4] > 127 ? 1 : 0) | (md[k * 4 + 1] > 127 ? 2 : 0) | (md[k * 4 + 2] > 127 ? 4 : 0);
   const maskAt = (px, py) => { const c = Math.floor(px * ms), r = Math.floor(py * ms); return c >= 0 && r >= 0 && c < MASK && r < MASK ? mask[r * MASK + c] : 0; };
   // the elevation data includes the sea floor: water is drawn (and sailed) at the surface
   for (let r = 0; r <= GRID; r++) for (let c = 0; c <= GRID; c++) {
@@ -158,15 +163,21 @@ async function build({ x, y, opts }) {
     }
   }
 
-  // ---------- buildings (walls + earcut roofs) + footprints for collisions ----------
-  const pos = [], nrm = [], col = [];
-  const tri = (ax, ay, az, bx, by, bz, cx, cy, cz, cl, cb = cl, cc = cl) => {
+  // ---------- buildings: regional colours, pitched roofs on houses, window styles ----------
+  // Per-vertex "aB" = [window style, ground height] for the building shader:
+  //   style 0 none (roofs, gables), 1 house, 2 apartments/shops, 3 glass tower, 4 warehouse;
+  //   + 10 x tint (0 dark glass, 1 green shutters, 2 brown shutters, 3 grey-blue Paris windows)
+  const style = regionStyle(opts.region || 'generic');
+  const pal = (list, v) => hexRgb(list[Math.floor(v * list.length) % list.length]) || [0.85, 0.83, 0.8];
+  const pos = [], nrm = [], col = [], win = [];
+  const tri = (ax, ay, az, bx, by, bz, cx, cy, cz, cl, cb = cl, cc = cl, ws = 0, wb = 0) => {
     const ux = bx - ax, uy = by - ay, uz = bz - az, vx = cx - ax, vy = cy - ay, vz = cz - az;
     let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
     const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
     pos.push(ax, ay, az, bx, by, bz, cx, cy, cz);
     nrm.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
     col.push(...cl, ...cb, ...cc);
+    win.push(ws, wb, ws, wb, ws, wb);
   };
   const footprints = [];
   const fpPts = [], fpIdx = [];
@@ -175,32 +186,72 @@ async function build({ x, y, opts }) {
     let ground = Infinity, cx = 0, cy = 0;
     for (const [px, py] of outer) { ground = Math.min(ground, H(px, py)); cx += px; cy += py; }
     cx /= outer.length; cy /= outer.length;
+    const rr = rng(seed ^ hashStr(`${Math.round(cx)},${Math.round(cy)}`));
+    const r = rr();
+    const areaM = ringArea(outer) * mPerPx * mPerPx;
+    const tall = bd.height > 30;
+    const industrial = !tall && areaM > 1500 && bd.height < 16 && (maskAt(cx, cy) & 4) !== 0;
+    const house = !tall && !industrial && bd.height <= 12 && areaM < 450;
+    const base = hexRgb(bd.colour) || (tall ? pal(TALL_WALLS, rr()) : industrial ? pal(['#c9c6be', '#b8bcbf', '#d4cfc4', '#a9b0b3'], rr()) : pal(style.walls, rr()));
+    const wallC = shade(base, 0.92 + r * 0.12), lowC = shade(wallC, 0.86);
+    const ws = (tall ? 3 : industrial ? 4 : house ? 1 : 2) + (tall || industrial ? 0 : style.tint * 10);
+    const pitched = house && outer.length >= 4 && outer.length <= 10 && bd.rings.length === 1 && !(bd.minHeight > 0) && rr() < style.pitched;
+    const roofC = pitched ? shade(pal(style.roofs, rr()), 0.95 + r * 0.1) : tall ? shade(base, 0.8) : shade([0.62, 0.62, 0.6], 0.9 + r * 0.2);
     const top = ground + bd.height;
     const bottom = bd.minHeight > 0 ? ground + bd.minHeight : ground - 1.5;
-    const r = rng(seed ^ hashStr(`${Math.round(cx)},${Math.round(cy)}`))();
-    const base = hexRgb(bd.colour) || (bd.height > 25 ? hsl(0.58, 0.12, 0.74) : bd.height > 11 ? hsl(0.09, 0.14, 0.78) : hsl(0.07 + r * 0.05, 0.3, 0.8));
-    const wallC = shade(base, 0.9 + r * 0.14), lowC = shade(wallC, 0.86), roofC = shade(base, 1.04 + r * 0.06);
+    // local corner points
+    const P = outer.map(([px, py]) => [X(px), Z(py)]);
+    let rh = 0;
+    if (pitched) {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (const [x, z] of P) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+      rh = Math.max(1.2, Math.min(4, Math.min(x1 - x0, z1 - z0) * 0.32));
+    }
+    const wallTop = pitched ? Math.max(ground + 2.6, top - rh) : top;
+    const roofTop = wallTop + rh;
     for (const ring of bd.rings) {
       for (let k = 0; k < ring.length; k++) {
         const [p1x, p1y] = ring[k], [p2x, p2y] = ring[(k + 1) % ring.length];
         const x1 = X(p1x), z1 = Z(p1y), x2 = X(p2x), z2 = Z(p2y);
-        tri(x1, bottom, z1, x2, bottom, z2, x2, top, z2, lowC, lowC, wallC);
-        tri(x1, bottom, z1, x2, top, z2, x1, top, z1, lowC, wallC, wallC);
+        tri(x1, bottom, z1, x2, bottom, z2, x2, wallTop, z2, lowC, lowC, wallC, ws, ground);
+        tri(x1, bottom, z1, x2, wallTop, z2, x1, wallTop, z1, lowC, wallC, wallC, ws, ground);
       }
     }
-    const flat = [], holes = [];
-    for (const ring of bd.rings) { if (flat.length) holes.push(flat.length / 2); for (const [px, py] of ring) flat.push(X(px), Z(py)); }
-    const idx = earcut(flat, holes);
-    for (let k = 0; k < idx.length; k += 3) {
-      const a = idx[k] * 2, bb = idx[k + 1] * 2, c = idx[k + 2] * 2;
-      tri(flat[a], top, flat[a + 1], flat[bb], top, flat[bb + 1], flat[c], top, flat[c + 1], roofC);
+    if (!pitched) {
+      const flat = [], holes = [];
+      for (const ring of bd.rings) { if (flat.length) holes.push(flat.length / 2); for (const [px, py] of ring) flat.push(X(px), Z(py)); }
+      const idx = earcut(flat, holes);
+      for (let k = 0; k < idx.length; k += 3) {
+        const a = idx[k] * 2, bb = idx[k + 1] * 2, c = idx[k + 2] * 2;
+        tri(flat[a], top, flat[a + 1], flat[bb], top, flat[bb + 1], flat[c], top, flat[c + 1], roofC);
+      }
+    } else if (P.length === 4) {
+      // gable roof: ridge runs along the longer sides
+      const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+      const o = d(P[0], P[1]) >= d(P[1], P[2]) ? 0 : 1;
+      const A = P[o], B = P[(o + 1) % 4], C = P[(o + 2) % 4], D = P[(o + 3) % 4];
+      const m1 = [(B[0] + C[0]) / 2, (B[1] + C[1]) / 2], m2 = [(D[0] + A[0]) / 2, (D[1] + A[1]) / 2];
+      const roofD = shade(roofC, 0.82);
+      tri(A[0], wallTop, A[1], B[0], wallTop, B[1], m1[0], roofTop, m1[1], roofC);
+      tri(A[0], wallTop, A[1], m1[0], roofTop, m1[1], m2[0], roofTop, m2[1], roofC);
+      tri(C[0], wallTop, C[1], D[0], wallTop, D[1], m2[0], roofTop, m2[1], roofD);
+      tri(C[0], wallTop, C[1], m2[0], roofTop, m2[1], m1[0], roofTop, m1[1], roofD);
+      tri(B[0], wallTop, B[1], C[0], wallTop, C[1], m1[0], roofTop, m1[1], wallC);
+      tri(D[0], wallTop, D[1], A[0], wallTop, A[1], m2[0], roofTop, m2[1], wallC);
+    } else {
+      // hipped (pyramid) roof
+      let ax = 0, az = 0; for (const [x, z] of P) { ax += x; az += z; } ax /= P.length; az /= P.length;
+      for (let k = 0; k < P.length; k++) {
+        const a = P[k], b = P[(k + 1) % P.length];
+        tri(a[0], wallTop, a[1], b[0], wallTop, b[1], ax, roofTop, az, shade(roofC, k % 2 ? 0.85 : 1));
+      }
     }
-    footprints.push({ ring: outer, bb: bbox(outer), top });
+    footprints.push({ ring: outer, bb: bbox(outer), top: roofTop });
     // only solid-from-the-ground buildings block vehicles (not bridges over roads, canopies)
     if (!(bd.minHeight > 2)) { fpIdx.push(fpPts.length / 2); for (const [px, py] of outer) fpPts.push(X(px), Z(py)); }
   }
   fpIdx.push(fpPts.length / 2);
-  const buildings = pos.length ? { pos: new Float32Array(pos), nrm: new Float32Array(nrm), col: new Float32Array(col) } : null;
+  const buildings = pos.length ? { pos: new Float32Array(pos), nrm: new Float32Array(nrm), col: new Float32Array(col), win: new Float32Array(win) } : null;
 
   // ---------- fine road occupancy (props never stand on a road) ----------
   const FN = 1024, fcell = E / FN, fine = new Uint8Array(FN * FN);
@@ -229,6 +280,7 @@ async function build({ x, y, opts }) {
     for (let k = 0; k < 6; k++) { rCol.push(...cl); rNrm.push(...n); }
   };
   const ASPHALT = { motorway: [0.4, 0.4, 0.42], trunk: [0.41, 0.41, 0.43], primary: [0.43, 0.43, 0.45], secondary: [0.45, 0.45, 0.46], tertiary: [0.47, 0.47, 0.48], minor: [0.5, 0.5, 0.51], service: [0.54, 0.53, 0.52], pedestrian: [0.62, 0.58, 0.52] };
+  const CENTRE = hexRgb(regionStyle(opts.region || 'generic').line) || [0.93, 0.93, 0.9];
   const DIRT = [0.55, 0.47, 0.36], PATHC = [0.72, 0.64, 0.5], WHITE = [0.93, 0.93, 0.9], RAIL = [0.7, 0.71, 0.73];
   const LIFT = { motorway: 0.34, trunk: 0.33, primary: 0.32, secondary: 0.31, tertiary: 0.3, minor: 0.28, service: 0.26, pedestrian: 0.25, track: 0.24, path: 0.22 };
   const roads = []; // game data: { c, w, f, name?, p: Float32Array [x,y,z,...] }
@@ -314,7 +366,7 @@ async function build({ x, y, opts }) {
         quad(off(A.p, A.s, offset - w / 2, ML), off(B.p, B.s, offset - w / 2, ML), off(B.p, B.s, offset + w / 2, ML), off(A.p, A.s, offset + w / 2, ML), clr);
       }
     };
-    if (!rd.oneway && rd.width >= 6 && rd.cls !== 'service' && rd.cls !== 'pedestrian') dashed(0, 3, rd.cls === 'minor' ? 6 : 5, 0.16, WHITE);
+    if (!rd.oneway && rd.width >= 6 && rd.cls !== 'service' && rd.cls !== 'pedestrian') dashed(0, 3, rd.cls === 'minor' ? 6 : 5, 0.16, CENTRE);
     if (MAJOR.has(rd.cls) && rd.width >= 8) { dashed(hw - 0.45, 12, 0.01, 0.14, WHITE); dashed(-hw + 0.45, 12, 0.01, 0.14, WHITE); }
     if (rd.oneway && rd.width >= 10) dashed(0, 4, 8, 0.14, WHITE); // lane divider on dual carriageways
 
@@ -415,7 +467,7 @@ async function build({ x, y, opts }) {
   for (const st of fabric.streets || []) {
     const out = [];
     for (const [px, py] of st.pts) out.push(X(px), Z(py));
-    if (out.length >= 4) streets.push({ name: st.name, cls: st.cls, p: new Float32Array(out) });
+    if (out.length >= 4) streets.push({ name: st.name, ref: st.ref, network: st.network, cls: st.cls, p: new Float32Array(out) });
   }
 
   const payload = {
@@ -428,7 +480,7 @@ async function build({ x, y, opts }) {
     roads, streets, pois,
   };
   const transfer = [grid.buffer, xs.buffer, zs.buffer, mask.buffer, tPos.buffer, tUv.buffer, texture, payload.fp.pts.buffer, payload.fp.idx.buffer, payload.lamps.buffer, payload.posts.buffer];
-  if (buildings) transfer.push(buildings.pos.buffer, buildings.nrm.buffer, buildings.col.buffer);
+  if (buildings) transfer.push(buildings.pos.buffer, buildings.nrm.buffer, buildings.col.buffer, buildings.win.buffer);
   if (roadMesh) transfer.push(roadMesh.pos.buffer, roadMesh.col.buffer, roadMesh.nrm.buffer);
   for (const t of [payload.trees, payload.cones]) if (t) transfer.push(t.mat.buffer, t.col.buffer, t.trunk.buffer);
   for (const r of roads) transfer.push(r.p.buffer);

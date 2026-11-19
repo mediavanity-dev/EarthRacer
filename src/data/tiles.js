@@ -215,8 +215,8 @@ export function normalizeTile(vt) {
   if (tn) {
     for (let i = 0; i < tn.length; i++) {
       const f = tn.feature(i), p = f.properties;
-      if (f.type !== 2 || !p.name || p.class === 'rail' || p.class === 'transit') continue;
-      for (const line of f.loadGeometry()) if (line.length > 1) out.streets.push({ name: p.name, cls: p.class, pts: pts(line) });
+      if (f.type !== 2 || (!p.name && !p.ref) || p.class === 'rail' || p.class === 'transit') continue;
+      for (const line of f.loadGeometry()) if (line.length > 1) out.streets.push({ name: p.name || null, ref: p.ref || null, network: p.network || null, cls: p.class, pts: pts(line) });
     }
   }
   const wl = vt.layers.waterway;

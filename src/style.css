@@ -158,3 +158,20 @@ table.keys td { padding: 4px 6px; border-bottom: 1px solid #ffffff12; }
   #task { top: calc(56px + var(--safe-t)); max-width: 92vw; }
   #toasts { top: calc(120px + var(--safe-t)); }
 }
+
+/* ---------- street banner and route shields, in the local sign style ---------- */
+#banner { position: absolute; left: 50%; top: calc(64px + var(--safe-t)); transform: translateX(-50%) translateY(-6px); opacity: 0; transition: opacity 0.35s, transform 0.35s; display: flex; gap: 10px; align-items: center; pointer-events: none; white-space: nowrap; }
+#banner.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#banner .nm { --bg: #1f4fa0; --fg: #fff; --bd: #fff; background: var(--bg); color: var(--fg); border: 3px solid var(--bd); outline: 2px solid var(--bg); border-radius: 8px; padding: 6px 18px; font-size: 24px; font-weight: 700; box-shadow: 0 6px 18px #0007; letter-spacing: 0.2px; }
+.shield { display: inline-block; background: #fff; color: #111; border: 2px solid #111; border-radius: 6px; padding: 1px 7px; font-size: 0.85em; font-weight: 800; vertical-align: middle; }
+#banner .shield { font-size: 20px; padding: 4px 10px; box-shadow: 0 6px 18px #0007; }
+body[data-sign="us"] #banner .nm, body[data-sign="za"] #banner .nm { --bg: #1f6b3a; --fg: #fff; --bd: #fff; font-family: "Arial Narrow", Arial, sans-serif; }
+body[data-sign="uk"] #banner .nm, body[data-sign="de"] #banner .nm { --bg: #fff; --fg: #111; --bd: #111; }
+body[data-sign="fr"] #banner .nm { --bg: #1d3c78; --fg: #fff; --bd: #1f7a3f; }
+body[data-sign="med"] #banner .nm { --bg: #f4efe2; --fg: #1b1b1b; --bd: #6b5a42; font-family: Georgia, serif; }
+body[data-sign="au"] #banner .nm { --bg: #fff; --fg: #16357a; --bd: #16357a; }
+body[data-sign="us"] .shield { border-radius: 4px 4px 12px 12px; }
+body[data-sign="uk"] .shield, body[data-sign="au"] .shield { background: #1f6b3a; color: #f2c230; border-color: #fff; }
+body[data-sign="fr"] .shield, body[data-sign="de"] .shield, body[data-sign="central"] .shield { background: #c8102e; color: #fff; border-color: #fff; }
+@media (max-height: 500px) { #banner { top: calc(46px + var(--safe-t)); } #banner .nm { font-size: 19px; padding: 4px 14px; } }
+#task:not([hidden]) + #banner { top: calc(112px + var(--safe-t)); }

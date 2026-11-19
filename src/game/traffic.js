@@ -49,7 +49,7 @@ export class Traffic {
       const n = rd.p.length / 3;
       if (n < 2) continue;
       const i = Math.floor(Math.random() * (n - 1));
-      const x = rd.p[i * 3] + ch.ox, z = rd.p[i * 3 + 2] + ch.oz;
+      const x = ch.ox + rd.p[i * 3] * ch.sx, z = rd.p[i * 3 + 2] + ch.oz;
       const d = Math.hypot(x - player.x, z - player.z);
       if (d < SPAWN_MIN || d > SPAWN_MAX) continue;
       if (this.cars.some((c) => Math.hypot(c.x - x, c.z - z) < 25)) continue;
@@ -77,7 +77,7 @@ export class Traffic {
     const lane = twoWay ? Math.min(rd.w / 4, 1.9) : rd.w >= 9 ? rd.w / 4 : 0;
     const off = this.side === 'left' ? -lane : lane;
     // right of travel = (-uz, ux)
-    const x = s.ax + dx * c.t + -uz * off + c.chunk.ox, z = s.az + dz * c.t + ux * off + c.chunk.oz;
+    const x = c.chunk.ox + (s.ax + dx * c.t + -uz * off) * c.chunk.sx, z = s.az + dz * c.t + ux * off + c.chunk.oz;
     c.x = x; c.z = z; c.y = s.ay + (s.by - s.ay) * c.t - 0.02;
     const h = Math.atan2(ux, -uz);
     let dh = h - c.h; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
@@ -137,10 +137,10 @@ export class Traffic {
     if (j) for (const o of j) if (o.r !== c.ri) { consider(c.chunk, o.r, o.i, 1); consider(c.chunk, o.r, o.i, -1); }
     if (!options.length && (v === 0 || v === n - 1)) {
       // the road was cut at the tile edge: find it in the neighbouring tile
-      const wx = vx + c.chunk.ox + (hx / hl) * 3, wz = vz + c.chunk.oz + (hz / hl) * 3;
+      const wx = c.chunk.ox + vx * c.chunk.sx + (hx / hl) * 3, wz = vz + c.chunk.oz + (hz / hl) * 3;
       const ch = world.chunkAt(wx, wz);
       if (ch && ch !== c.chunk) {
-        const r = ch.roadAt(wx - ch.ox, wz - ch.oz, 6, (q) => q.c <= 5);
+        const r = ch.roadAt((wx - ch.ox) / ch.sx, wz - ch.oz, 6, (q) => q.c <= 5);
         if (r) {
           const dir = r.dirX * hx + r.dirZ * hz >= 0 ? 1 : -1;
           const i = dir > 0 ? r.seg - 1 : r.seg;

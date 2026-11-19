@@ -55,17 +55,33 @@ export const trunkMat = new THREE.MeshLambertMaterial({ color: '#7a5c42' });
 export const buildingMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
 buildingMat.onBeforeCompile = (shader) => {
   Object.assign(shader.uniforms, env);
-  shader.vertexShader = 'varying vec3 vWP; varying vec3 vON;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz; vON = normal;');
-  shader.fragmentShader = 'uniform float uNight; uniform float uSnow; varying vec3 vWP; varying vec3 vON;\nfloat hsh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' + shader.fragmentShader
+  shader.vertexShader = 'attribute vec2 aB; varying vec3 vWP; varying vec3 vON; varying vec2 vB;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz; vON = normal; vB = aB;');
+  shader.fragmentShader = 'uniform float uNight; uniform float uSnow; varying vec3 vWP; varying vec3 vON; varying vec2 vB;\nfloat hsh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' + shader.fragmentShader
     .replace('#include <color_fragment>', `#include <color_fragment>
-      float wallF = 1.0 - step(0.5, abs(vON.y));
+      // window styles: 1 house, 2 apartments/shops, 3 glass tower, 4 warehouse; tint = shutters etc.
+      float st = mod(vB.x, 10.0), tint = floor(vB.x / 10.0 + 0.01);
+      float wallF = (1.0 - step(0.5, abs(vON.y))) * step(0.5, st);
+      float rel = vWP.y - vB.y;
       float hz = dot(vWP.xz, normalize(vec2(-vON.z, vON.x) + 1e-5));
-      vec2 cell = vec2(floor(hz / 2.8), floor(vWP.y / 3.2));
-      vec2 f = vec2(fract(hz / 2.8), fract(vWP.y / 3.2));
-      float win = wallF * step(0.22, f.x) * step(f.x, 0.78) * step(0.3, f.y) * step(f.y, 0.82);
-      diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.42, 0.47, 0.55), win * 0.85);
-      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.95, 0.98), uSnow * (1.0 - wallF) * 0.8);
-      float lit = win * step(0.62, hsh(cell + floor(vWP.xz / 40.0))) * uNight;`)
+      float sp = st < 1.5 ? 3.6 : st < 2.5 ? 2.8 : st < 3.5 ? 1.7 : 6.0;
+      float fh = st < 1.5 ? 2.9 : st < 3.5 ? 3.3 : 5.0;
+      vec2 cell = vec2(floor(hz / sp), floor(rel / fh));
+      vec2 f = vec2(fract(hz / sp), fract(rel / fh));
+      float x0 = 0.24, x1 = 0.76, y0 = 0.3, y1 = 0.8;
+      if (st > 2.5 && st < 3.5) { x0 = 0.05; x1 = 0.95; y0 = 0.08; y1 = 0.94; }
+      if (st > 1.5 && st < 2.5 && rel < 4.2) { x0 = 0.06; x1 = 0.94; y0 = 0.12; y1 = 0.85; } // shopfronts
+      if (st > 3.5) { x0 = 0.04; x1 = 0.96; y0 = 0.62; y1 = 0.8; }
+      float win = wallF * step(x0, f.x) * step(f.x, x1) * step(y0, f.y) * step(f.y, y1) * step(0.4, rel);
+      vec3 glass = st > 2.5 && st < 3.5 ? vec3(0.38, 0.5, 0.62) : rel < 4.2 && st > 1.5 && st < 2.5 ? vec3(0.32, 0.36, 0.4) : vec3(0.42, 0.47, 0.55);
+      if (tint > 2.5) glass = vec3(0.5, 0.55, 0.62);
+      diffuseColor.rgb = mix(diffuseColor.rgb, st > 2.5 && st < 3.5 ? glass : diffuseColor.rgb * glass, win * 0.88);
+      // shutters either side of the window (Mediterranean / Middle East)
+      float shut = wallF * (1.0 - win) * step(0.5, tint) * step(tint, 2.5) * step(0.4, rel - 4.2)
+        * (step(0.1, f.x) * step(f.x, 0.24) + step(0.76, f.x) * step(f.x, 0.9)) * step(y0, f.y) * step(f.y, y1);
+      vec3 shutC = tint < 1.5 ? vec3(0.3, 0.45, 0.32) : vec3(0.48, 0.34, 0.22);
+      diffuseColor.rgb = mix(diffuseColor.rgb, shutC, shut * 0.9);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.95, 0.98), uSnow * step(0.5, abs(vON.y)) * 0.8);
+      float lit = win * step(rel < 4.2 && st > 1.5 && st < 2.5 ? 0.3 : 0.62, hsh(cell + floor(vWP.xz / 40.0))) * uNight;`)
     .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += vec3(1.0, 0.82, 0.5) * lit * 0.85;');
 };
 buildingMat.customProgramCacheKey = () => 'er-building';

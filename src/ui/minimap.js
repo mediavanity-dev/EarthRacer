@@ -47,7 +47,7 @@ export function drawMinimap(canvas, world, player, markers = [], { hideFuel = fa
     const dx = ch.ox - player.x, dz = ch.oz - player.z;
     if (Math.abs(dx) > ch.half + RADIUS_M * 1.5 || Math.abs(dz) > ch.half + RADIUS_M * 1.5) continue;
     const im = tileImage(ch);
-    g.drawImage(im.canvas, dx + im.x0, dz + im.x0, im.span, im.span);
+    g.drawImage(im.canvas, dx + im.x0 * ch.sx, dz + im.x0, im.span * ch.sx, im.span);
   }
   // markers in world coords
   for (const m of markers) {
@@ -68,7 +68,7 @@ export function drawMinimap(canvas, world, player, markers = [], { hideFuel = fa
     for (const ch of world.readyChunks()) {
       for (const p of ch.pois) {
         if (!/^fuel/.test(p.kind)) continue;
-        const mx = p.x + ch.ox - player.x, mz = p.z + ch.oz - player.z;
+        const mx = ch.ox + p.x * ch.sx - player.x, mz = p.z + ch.oz - player.z;
         if (Math.hypot(mx, mz) > RADIUS_M) continue;
         g.save(); g.translate(mx, mz); g.rotate(player.heading);
         g.font = `${14 / s}px system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('⛽', 0, 0);

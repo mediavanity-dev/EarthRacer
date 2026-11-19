@@ -6,6 +6,7 @@
 import { LocalFrame, chunkIndex, chunkKey, haversine, offsetGeo } from '../geo.js';
 import { makeChunk } from './chunk.js';
 import { seasonAt } from './season.js';
+import { regionOf } from './region.js';
 
 const REBASE_M = 1500;
 const MAX_BUILDS = 2;
@@ -92,7 +93,7 @@ export class World {
     entry.state = 'loading';
     this.building++;
     try {
-      const payload = await this.call({ type: 'build', x: entry.i, y: entry.j, opts: { ...this.quality, season: seasonAt(this.frame.lat0) } });
+      const payload = await this.call({ type: 'build', x: entry.i, y: entry.j, opts: { ...this.quality, season: seasonAt(this.frame.lat0), region: this.region || regionOf(null, this.frame.lat0, this.frame.lon0) } });
       if (this.chunks.get(key) !== entry) { payload.texture?.close?.(); return; }
       const chunk = makeChunk(payload, { anisotropy: this.anisotropy });
       entry.chunk = chunk;
@@ -110,10 +111,15 @@ export class World {
     }
   }
 
+  // Each tile is built in its own tangent plane; east-west it's stretched by a tiny factor (~1.0005)
+  // so its edges land exactly where the shared frame puts them. Without this, tiles away from the
+  // origin leave gaps of up to a metre at their seams (cracks in the ground, invisible walls).
   place(chunk) {
     const o = this.frame.toLocal(chunk.latc, chunk.lonc);
+    const sx = this.frame.cos0 / Math.cos((chunk.latc * Math.PI) / 180);
     chunk.group.position.set(o.x, 0, o.z);
-    chunk.ox = o.x; chunk.oz = o.z;
+    chunk.group.scale.set(sx, 1, 1);
+    chunk.ox = o.x; chunk.oz = o.z; chunk.sx = sx;
   }
 
   unload(key) {
@@ -134,31 +140,36 @@ export class World {
   /** The loaded tile under a scene point, or null. */
   chunkAt(x, z) {
     const h = this.hint;
-    if (h && h.contains(x - h.ox, z - h.oz)) return h;
+    if (h && h.contains((x - h.ox) / h.sx, z - h.oz)) return h;
     for (const c of this.chunks.values()) {
       const ch = c.chunk;
-      if (ch && ch.contains(x - ch.ox, z - ch.oz)) { this.hint = ch; return ch; }
+      if (ch && ch.contains((x - ch.ox) / ch.sx, z - ch.oz)) { this.hint = ch; return ch; }
+    }
+    for (const c of this.chunks.values()) { // a hair outside every tile (rounding at a seam)
+      const ch = c.chunk;
+      if (ch && ch.contains((x - ch.ox) / ch.sx, z - ch.oz, 0.5)) return ch;
     }
     return null;
   }
   isReady(x, z) { return !!this.chunkAt(x, z); }
-  groundAt(x, z) { const c = this.chunkAt(x, z); return c ? c.heightAt(x - c.ox, z - c.oz) : null; }
-  isWater(x, z) { const c = this.chunkAt(x, z); return c ? c.isWater(x - c.ox, z - c.oz) : false; }
-  isUrban(x, z) { const c = this.chunkAt(x, z); return c ? c.isUrban(x - c.ox, z - c.oz) : false; }
-  streetAt(x, z) { const c = this.chunkAt(x, z); return c ? c.streetAt(x - c.ox, z - c.oz) : null; }
+  groundAt(x, z) { const c = this.chunkAt(x, z); return c ? c.heightAt((x - c.ox) / c.sx, z - c.oz) : null; }
+  isWater(x, z) { const c = this.chunkAt(x, z); return c ? c.isWater((x - c.ox) / c.sx, z - c.oz) : false; }
+  isUrban(x, z) { const c = this.chunkAt(x, z); return c ? c.isUrban((x - c.ox) / c.sx, z - c.oz) : false; }
+  streetAt(x, z) { const c = this.chunkAt(x, z); return c ? c.streetAt((x - c.ox) / c.sx, z - c.oz) : null; }
+  streetInfoAt(x, z) { const c = this.chunkAt(x, z); return c ? c.streetInfoAt((x - c.ox) / c.sx, z - c.oz) : null; }
   /** Nearest road; positions in the result are converted to scene coordinates. */
   roadAt(x, z, maxD = 30, filter = null) {
     const c = this.chunkAt(x, z);
     if (!c) return null;
-    const r = c.roadAt(x - c.ox, z - c.oz, maxD, filter);
-    if (r) { r.chunk = c; r.px += c.ox; r.pz += c.oz; }
+    const r = c.roadAt((x - c.ox) / c.sx, z - c.oz, maxD, filter);
+    if (r) { r.chunk = c; r.px = c.ox + r.px * c.sx; r.pz += c.oz; }
     return r;
   }
   collide(x, z, rad) {
     const c = this.chunkAt(x, z);
     if (!c) return null;
-    const h = c.collide(x - c.ox, z - c.oz, rad);
-    if (h) { h.x += c.ox; h.z += c.oz; }
+    const h = c.collide((x - c.ox) / c.sx, z - c.oz, rad);
+    if (h) { h.x = c.ox + h.x * c.sx; h.z += c.oz; }
     return h;
   }
   toLocal(lat, lon) { return this.frame.toLocal(lat, lon); }

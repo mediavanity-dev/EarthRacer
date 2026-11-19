@@ -15,6 +15,8 @@ import { haversine, offsetGeo } from './geo.js';
 import { Input } from './input.js';
 import { Sound } from './audio.js';
 import { drawMinimap } from './ui/minimap.js';
+import { regionOf, regionStyle } from './world/region.js';
+import { Signs } from './world/signs.js';
 
 const $ = (s) => document.querySelector(s);
 const params = new URLSearchParams(location.search);
@@ -42,6 +44,7 @@ const world = new World(scene, {
   quality: isTouch ? { tex: 1024, maxTrees: 2200, maxProps: 900 } : { tex: 2048, maxTrees: 4000, maxProps: 1600 },
 });
 const sky = new Sky(scene);
+const signs = new Signs(scene);
 const traffic = new Traffic(scene);
 traffic.density = profile.settings.traffic ?? 1;
 const sound = new Sound();
@@ -255,6 +258,9 @@ async function begin(lat, lon, heading, kind, { snap = false, teleport = false }
     traffic.clear();
   }
   game.lat = lat; game.lon = lon;
+  // the country decides the local look (buildings, signs, markings): ask first, briefly
+  const w0 = await Promise.race([whereIs(lat, lon).catch(() => null), new Promise((r) => setTimeout(() => r(null), 3500))]);
+  setCountry(w0, lat, lon);
   world.update(lat, lon);
   const t0 = performance.now();
   await new Promise((resolve) => {
@@ -287,6 +293,28 @@ async function begin(lat, lon, heading, kind, { snap = false, teleport = false }
 }
 
 // Nearest proper street (not a service lane or path) within maxR, else the nearest service road.
+// Country -> traffic side, units and the local look (buildings, signs, markings, banners).
+function setCountry(w, lat, lon) {
+  if (w?.cc) {
+    game.country = w.cc; game.side = drivingSide(w.cc); game.mph = usesMph(w.cc); game.place = w.place;
+    traffic.side = game.side;
+  }
+  world.region = regionOf(w?.cc || game.country, lat, lon);
+  const sign = regionStyle(world.region).sign;
+  signs.setStyle(sign);
+  document.body.dataset.sign = sign;
+}
+
+// The street name, big and briefly, in the local sign style, each time you turn into a new street.
+let bannerT = null;
+function showBanner(name, ref) {
+  const b = $('#banner');
+  b.innerHTML = (ref ? `<span class="shield">${esc(ref)}</span>` : '') + (name ? `<span class="nm">${esc(name)}</span>` : '');
+  b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
+  clearTimeout(bannerT);
+  bannerT = setTimeout(() => b.classList.remove('show'), 3200);
+}
+
 function findRoadNear(x, z, maxR) {
   for (const maxC of [5, 6]) {
     for (let r = 20; r <= maxR; r *= 1.6) {
@@ -505,8 +533,15 @@ function tickPassive(dt, moved) {
   const hidden = !!profile.random.active;
   const ch = world.chunkAt(v.x, v.z);
   // street atlas
-  const name = v.spec.terrain === 'water' ? null : world.streetAt(v.x, v.z);
-  if (name !== game.street) { game.street = name; $('#street').textContent = name || ''; }
+  const info = v.spec.terrain === 'water' ? null : world.streetInfoAt(v.x, v.z);
+  const name = info?.name || null;
+  const label = name || info?.ref || null;
+  if (label !== game.streetLabel) {
+    game.streetLabel = label;
+    $('#street').innerHTML = (info?.ref ? `<span class="shield">${esc(info.ref)}</span> ` : '') + esc(name || '');
+    if (label) showBanner(name, info?.ref);
+  }
+  game.street = name;
   const run = game.streetRun;
   if (name && name === run.name) run.m += moved; else { run.name = name; run.m = 0; }
   if (name && run.m > 60 && ch) {
@@ -531,7 +566,7 @@ function tickPassive(dt, moved) {
   let nearFuel = null;
   if (ch) {
     for (const p of ch.pois) {
-      const d = Math.hypot(p.x + ch.ox - v.x, p.z + ch.oz - v.z);
+      const d = Math.hypot(ch.ox + p.x * ch.sx - v.x, p.z + ch.oz - v.z);
       if (isFuel(p) && d < (v.kind === 'boat' ? 150 : 30)) nearFuel = p;
       if (d < 45 && isLandmark(p) && !game.collectedNear.has(p.ref) && !profile.atlas.postcards.some((c) => c.ref === p.ref)) {
         game.collectedNear.add(p.ref);
@@ -558,9 +593,7 @@ function tickPassive(dt, moved) {
     whereIs(game.lat, game.lon).then((w) => {
       if (!w?.cc) return;
       const changed = game.country && game.country !== w.cc;
-      game.country = w.cc; game.side = drivingSide(w.cc); game.mph = usesMph(w.cc);
-      game.place = w.place;
-      traffic.side = game.side;
+      setCountry(w, game.lat, game.lon);
       if (!hidden) {
         if (!profile.atlas.countries.includes(w.cc)) { profile.atlas.countries.push(w.cc); save(); }
         if (changed) { sound.chime(); toast(`${flag(w.cc)} Welcome to <b>${esc(w.country)}</b> · traffic drives on the ${game.side}${game.mph ? ' · speeds in mph' : ''}`, { ms: 6000 }); }
@@ -961,6 +994,7 @@ function frame(now) {
     if (old) rebase(old);
   }
   if (traffic.density) traffic.update(dt, v, world);
+  signs.update(dt, world, v);
   tickStyle(dt, inp);
   tickActivity(dt);
   tickPassive(dt, moved);
@@ -1057,7 +1091,7 @@ function tickStyle(dt, inp) {
 const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences).';
 
 // ---------- boot ----------
-if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile };
+if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input };
 pruneRaces();
 resize();
 requestAnimationFrame(frame);

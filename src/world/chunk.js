@@ -44,6 +44,7 @@ export function makeChunk(p, { anisotropy = 4 } = {}) {
     g.setAttribute('position', new THREE.BufferAttribute(p.buildings.pos, 3));
     g.setAttribute('normal', new THREE.BufferAttribute(p.buildings.nrm, 3));
     g.setAttribute('color', new THREE.BufferAttribute(p.buildings.col, 3));
+    g.setAttribute('aB', new THREE.BufferAttribute(p.buildings.win, 2));
     add(new THREE.Mesh(g, buildingMat));
   }
   const m4 = new THREE.Matrix4();
@@ -123,6 +124,8 @@ export function makeChunk(p, { anisotropy = 4 } = {}) {
     key: p.key, x: p.x, y: p.y, bounds: p.bounds, latc: p.latc, lonc: p.lonc, areaName: p.areaName,
     group, roads: p.roads, streets: p.streets, pois: p.pois, lamps, half,
     junctionAt(x, z) { return nodes.get(vkey(x, z)) || null; },
+    /** All junctions of drivable roads: [[{ r, i }, ...], ...] */
+    junctions() { return [...nodes.values()]; },
     /**
      * Roads to continue onto from (x, z): shared vertices first, plus (for the many road ends that
      * don't share an exact point after tile simplification) any drivable road within ~6 m.
@@ -152,7 +155,7 @@ export function makeChunk(p, { anisotropy = 4 } = {}) {
       const g = p.grid, h00 = g[r * W + c], h01 = g[r * W + c + 1], h10 = g[(r + 1) * W + c], h11 = g[(r + 1) * W + c + 1];
       return fx + fy <= 1 ? h00 + (h01 - h00) * fx + (h10 - h00) * fy : h11 + (h10 - h11) * (1 - fx) + (h01 - h11) * (1 - fy);
     },
-    contains(x, z) { return x >= p.xs[0] && x <= p.xs[N] && z >= p.zs[0] && z <= p.zs[N]; },
+    contains(x, z, m = 0) { return x >= p.xs[0] - m && x <= p.xs[N] + m && z >= p.zs[0] - m && z <= p.zs[N] + m; },
     isWater(x, z) {
       const c = Math.floor(((x - p.xs[0]) / (p.xs[N] - p.xs[0])) * p.maskN), r = Math.floor(((z - p.zs[0]) / (p.zs[N] - p.zs[0])) * p.maskN);
       return c >= 0 && r >= 0 && c < p.maskN && r < p.maskN && (p.mask[r * p.maskN + c] & 1) === 1;
@@ -208,22 +211,102 @@ export function makeChunk(p, { anisotropy = 4 } = {}) {
       }
       return hit;
     },
+    /**
+     * The street-facing wall of the building at/near (x, z), for a shop sign: the wall nearest the
+     * road point (rx, rz). -> { x, z, nx, nz } (outward normal) or null.
+     */
+    facade(x, z, rx, rz) {
+      const l = bldCells.get(cellOf(x, z));
+      if (!l) return null;
+      let bestB = -1, bestD = 14;
+      for (const b of l) {
+        const s = fp.idx[b], e = fp.idx[b + 1];
+        let inside = false, dmin = Infinity;
+        for (let i = s, j = e - 1; i < e; j = i++) {
+          const xi = fp.pts[i * 2], zi = fp.pts[i * 2 + 1], xj = fp.pts[j * 2], zj = fp.pts[j * 2 + 1];
+          if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+          const dx = xj - xi, dz = zj - zi, L2 = dx * dx + dz * dz || 1;
+          const t = Math.min(1, Math.max(0, ((x - xi) * dx + (z - zi) * dz) / L2));
+          dmin = Math.min(dmin, Math.hypot(x - xi - dx * t, z - zi - dz * t));
+        }
+        const d = inside ? 0 : dmin;
+        if (d < bestD) { bestD = d; bestB = b; }
+      }
+      if (bestB < 0) return null;
+      const s = fp.idx[bestB], e = fp.idx[bestB + 1];
+      let best = null;
+      for (let i = s, j = e - 1; i < e; j = i++) {
+        const xi = fp.pts[i * 2], zi = fp.pts[i * 2 + 1], xj = fp.pts[j * 2], zj = fp.pts[j * 2 + 1];
+        const dx = xj - xi, dz = zj - zi, L = Math.hypot(dx, dz);
+        if (L < 3) continue; // too narrow for a sign
+        const t = Math.min(0.85, Math.max(0.15, ((rx - xi) * dx + (rz - zi) * dz) / (L * L)));
+        const px = xi + dx * t, pz = zi + dz * t, d = Math.hypot(rx - px, rz - pz);
+        if (!best || d < best.d) {
+          let nx = -dz / L, nz = dx / L;
+          if ((rx - px) * nx + (rz - pz) * nz < 0) { nx = -nx; nz = -nz; }
+          best = { d, x: px, z: pz, nx, nz, w: L };
+        }
+      }
+      return best;
+    },
     /** Name of the street at (x, z), if any within ~12 m. */
-    streetAt(x, z) {
+    streetAt(x, z) { return this.streetInfoAt(x, z)?.name || null; },
+    /** { name, ref, network } of the street at (x, z): the named one if any, else a numbered road. */
+    streetInfoAt(x, z) {
       const l = nameCells.get(cellOf(x, z));
       if (!l) return null;
-      let best = null, bd = 14;
+      let best = null, bd = 14, ref = null, net = null;
       for (const id of l) {
         const si = Math.floor(id / 65536), k = id % 65536, a = p.streets[si].p;
         const ax = a[k * 2 - 2], az = a[k * 2 - 1], bx = a[k * 2], bz = a[k * 2 + 1];
         const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1;
         const t = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / L2));
         const d = Math.hypot(x - ax - dx * t, z - az - dz * t);
-        if (d < bd) { bd = d; best = p.streets[si].name; }
+        const st = p.streets[si];
+        if (d < bd && st.name) { bd = d; best = st.name; }
+        if (d < 14 && st.ref && !ref) { ref = st.ref; net = st.network; }
       }
-      return best;
+      return best || ref ? { name: best, ref, network: net } : null;
     },
-    streetNames() { return [...new Set(p.streets.map((s) => s.name))]; },
+    /**
+     * Where differently named streets cross or meet (T-junctions), found geometrically once per
+     * tile: [{ x, z, names: [[name, [dx, dz]], [name, [dx, dz]]] }]
+     */
+    nameJunctions() {
+      if (this._nj) return this._nj;
+      const out = [], seen = new Set();
+      const seg = (si, k) => { const a = p.streets[si].p; return [a[k * 2 - 2], a[k * 2 - 1], a[k * 2], a[k * 2 + 1]]; };
+      const add = (x, z, na, da, nb, db) => {
+        const key = `${Math.round(x / 15)},${Math.round(z / 15)}|${[na, nb].sort().join('|')}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push({ x, z, names: [[na, da], [nb, db]] });
+      };
+      for (const l of nameCells.values()) {
+        for (let u = 0; u < l.length; u++) {
+          const sa = Math.floor(l[u] / 65536), ka = l[u] % 65536, A = p.streets[sa];
+          if (!A.name) continue;
+          const [ax, az, bx, bz] = seg(sa, ka);
+          for (let w = u + 1; w < l.length; w++) {
+            const sb = Math.floor(l[w] / 65536), kb = l[w] % 65536, B = p.streets[sb];
+            if (!B.name || B.name === A.name) continue;
+            const [cx, cz, ex, ez] = seg(sb, kb);
+            const r1x = bx - ax, r1z = bz - az, r2x = ex - cx, r2z = ez - cz;
+            const den = r1x * r2z - r1z * r2x;
+            const la = Math.hypot(r1x, r1z) || 1, lb = Math.hypot(r2x, r2z) || 1;
+            const da = [r1x / la, r1z / la], db = [r2x / lb, r2z / lb];
+            if (Math.abs(den) > 1e-6) {
+              const t = ((cx - ax) * r2z - (cz - az) * r2x) / den, s2 = ((cx - ax) * r1z - (cz - az) * r1x) / den;
+              // crossing, or one street ending within ~8 m of the other (a T-junction)
+              const ta = 8 / la, tb = 8 / lb;
+              if (t >= -ta && t <= 1 + ta && s2 >= -tb && s2 <= 1 + tb) add(ax + r1x * t, az + r1z * t, A.name, da, B.name, db);
+            }
+          }
+        }
+      }
+      return (this._nj = out);
+    },
+    streetNames() { return [...new Set(p.streets.map((s) => s.name).filter(Boolean))]; },
     dispose() {
       for (const g of disposables) g.dispose();
       group.traverse((o) => { if (o.isInstancedMesh) o.dispose(); });
