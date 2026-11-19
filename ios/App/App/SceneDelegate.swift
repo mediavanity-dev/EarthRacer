@@ -23,8 +23,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 }
 
-// The game's web view: full screen (no status bar, home indicator fades), screen-edge swipes
-// deferred so thumbs on the pedals don't trigger system gestures, no zoom or scrolling, and the
+// The game's web view: full screen (no status bar, home indicator fades),
+// no zoom or scrolling, and the
 // game's dark background so nothing flashes white while it loads.
 class GameViewController: CAPBridgeViewController {
     private static let pageBackground = UIColor(red: 15 / 255, green: 23 / 255, blue: 32 / 255, alpha: 1) // #0F1720
@@ -43,5 +43,4 @@ class GameViewController: CAPBridgeViewController {
 
     override var prefersStatusBarHidden: Bool { true }
     override var prefersHomeIndicatorAutoHidden: Bool { true }
-    override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge { .all }
 }
