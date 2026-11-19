@@ -122,7 +122,7 @@ export function makeChunk(p, { anisotropy = 4 } = {}) {
 
   const chunk = {
     key: p.key, x: p.x, y: p.y, bounds: p.bounds, latc: p.latc, lonc: p.lonc, areaName: p.areaName,
-    group, roads: p.roads, streets: p.streets, pois: p.pois, lamps, half,
+    group, roads: p.roads, streets: p.streets, pois: p.pois, stops: p.stops || [], lamps, half,
     junctionAt(x, z) { return nodes.get(vkey(x, z)) || null; },
     /** All junctions of drivable roads: [[{ r, i }, ...], ...] */
     junctions() { return [...nodes.values()]; },
@@ -159,6 +159,11 @@ export function makeChunk(p, { anisotropy = 4 } = {}) {
     isWater(x, z) {
       const c = Math.floor(((x - p.xs[0]) / (p.xs[N] - p.xs[0])) * p.maskN), r = Math.floor(((z - p.zs[0]) / (p.zs[N] - p.zs[0])) * p.maskN);
       return c >= 0 && r >= 0 && c < p.maskN && r < p.maskN && (p.mask[r * p.maskN + c] & 1) === 1;
+    },
+    /** Open land (park, grass, field, pitch…) with no water or building: somewhere to take off from. */
+    isOpen(x, z) {
+      const c = Math.floor(((x - p.xs[0]) / (p.xs[N] - p.xs[0])) * p.maskN), r = Math.floor(((z - p.zs[0]) / (p.zs[N] - p.zs[0])) * p.maskN);
+      return c >= 0 && r >= 0 && c < p.maskN && r < p.maskN && (p.mask[r * p.maskN + c] & 9) === 8;
     },
     isUrban(x, z) {
       const c = Math.floor(((x - p.xs[0]) / (p.xs[N] - p.xs[0])) * p.maskN), r = Math.floor(((z - p.zs[0]) / (p.zs[N] - p.zs[0])) * p.maskN);

@@ -154,6 +154,7 @@ export class World {
   isReady(x, z) { return !!this.chunkAt(x, z); }
   groundAt(x, z) { const c = this.chunkAt(x, z); return c ? c.heightAt((x - c.ox) / c.sx, z - c.oz) : null; }
   isWater(x, z) { const c = this.chunkAt(x, z); return c ? c.isWater((x - c.ox) / c.sx, z - c.oz) : false; }
+  isOpen(x, z) { const c = this.chunkAt(x, z); return c ? c.isOpen((x - c.ox) / c.sx, z - c.oz) : false; }
   isUrban(x, z) { const c = this.chunkAt(x, z); return c ? c.isUrban((x - c.ox) / c.sx, z - c.oz) : false; }
   streetAt(x, z) { const c = this.chunkAt(x, z); return c ? c.streetAt((x - c.ox) / c.sx, z - c.oz) : null; }
   streetInfoAt(x, z) { const c = this.chunkAt(x, z); return c ? c.streetInfoAt((x - c.ox) / c.sx, z - c.oz) : null; }

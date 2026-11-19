@@ -21,6 +21,7 @@ const AREA_COLORS = {
 };
 const AREA_ORDER = ['residential', 'commercial', 'industrial', 'campus', 'farmland', 'grass', 'park', 'pitch', 'cemetery', 'scrub', 'wood', 'wetland', 'sand', 'rock', 'ice', 'water'];
 const URBAN = new Set(['residential', 'commercial', 'industrial', 'campus']);
+const OPEN = new Set(['park', 'grass', 'pitch', 'farmland', 'scrub', 'sand']);
 const GRID = 64;
 const MASK = 256; // water/urban mask resolution (~6 m cells)
 
@@ -149,8 +150,15 @@ async function build({ x, y, opts }) {
   mg.fillStyle = '#00f';
   for (const a of fabric.areas) if (a.cls === 'industrial') { trace(mg, a.rings, ms); mg.fill('evenodd'); }
   const md = mg.getImageData(0, 0, MASK, MASK).data;
+  // open land you could take off from (parks, grass, fields, pitches, scrub, sand), minus buildings
+  const oc = new OffscreenCanvas(MASK, MASK), og = oc.getContext('2d', { willReadFrequently: true });
+  og.fillStyle = '#000'; og.fillRect(0, 0, MASK, MASK); og.fillStyle = '#fff';
+  for (const a of fabric.areas) if (OPEN.has(a.cls)) { trace(og, a.rings, ms); og.fill('evenodd'); }
+  og.fillStyle = '#000';
+  for (const bd of fabric.buildings) { trace(og, bd.rings, ms); og.fill('evenodd'); }
+  const od = og.getImageData(0, 0, MASK, MASK).data;
   const mask = new Uint8Array(MASK * MASK);
-  for (let k = 0; k < mask.length; k++) mask[k] = (md[k * 4] > 127 ? 1 : 0) | (md[k * 4 + 1] > 127 ? 2 : 0) | (md[k * 4 + 2] > 127 ? 4 : 0);
+  for (let k = 0; k < mask.length; k++) mask[k] = (md[k * 4] > 127 ? 1 : 0) | (md[k * 4 + 1] > 127 ? 2 : 0) | (md[k * 4 + 2] > 127 ? 4 : 0) | (od[k * 4] > 127 ? 8 : 0);
   const maskAt = (px, py) => { const c = Math.floor(px * ms), r = Math.floor(py * ms); return c >= 0 && r >= 0 && c < MASK && r < MASK ? mask[r * MASK + c] : 0; };
   // the elevation data includes the sea floor: water is drawn (and sailed) at the surface
   for (let r = 0; r <= GRID; r++) for (let c = 0; c <= GRID; c++) {
@@ -470,6 +478,9 @@ async function build({ x, y, opts }) {
     if (out.length >= 4) streets.push({ name: st.name, ref: st.ref, network: st.network, cls: st.cls, p: new Float32Array(out) });
   }
 
+  // ---------- public transport you can board (bus, train, ferry, plane) ----------
+  const stops = (fabric.stops || []).slice(0, 400).map((s) => ({ kind: s.kind, name: s.name, x: X(s.px), z: Z(s.py), lat: latOf(s.py), lon: lonOf(s.px) }));
+
   const payload = {
     key: `${CHUNK_Z}/${x}/${y}`, x, y, bounds: b, latc, lonc, areaName: fabric.areaName,
     gridN: GRID, grid, xs, zs, maskN: MASK, mask, mPerMask: tileM / MASK,
@@ -477,7 +488,7 @@ async function build({ x, y, opts }) {
     buildings, roadMesh, fp: { pts: new Float32Array(fpPts), idx: new Uint32Array(fpIdx) },
     lamps: new Float32Array(props.lamp), posts: new Float32Array(props.post),
     trees: packTrees(blobs), cones: packTrees(cones),
-    roads, streets, pois,
+    roads, streets, pois, stops,
   };
   const transfer = [grid.buffer, xs.buffer, zs.buffer, mask.buffer, tPos.buffer, tUv.buffer, texture, payload.fp.pts.buffer, payload.fp.idx.buffer, payload.lamps.buffer, payload.posts.buffer];
   if (buildings) transfer.push(buildings.pos.buffer, buildings.nrm.buffer, buildings.col.buffer, buildings.win.buffer);

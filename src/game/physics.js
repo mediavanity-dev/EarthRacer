@@ -50,6 +50,7 @@ export class VehicleState {
     const ev = [];
     const s = this.spec, w = ctx.world;
     if (!this.init) { this.settle(w); this.init = true; }
+    if (s.terrain === 'air') return this.stepAir(dt, input, ctx, ev);
     let [fx, fz] = this.fwd();
     let rx = -fz, rz = fx; // right of forward
     let vf = this.vx * fx + this.vz * fz, vr = this.vx * rx + this.vz * rz;
@@ -170,7 +171,7 @@ export class VehicleState {
       this.grounded = true;
     } else {
       this.vy -= (this.grounded ? G * 2.2 : G) * dt; // suspension keeps the wheels down over small humps
-      this.y += this.vy * dt;
+      this.y = Math.max(this.y + this.vy * dt, ground);
       if (this.y <= ground) {
         if (!this.grounded && this.air > 0.5 && this.airH > 0.6) ev.push({ type: 'land', air: this.air, hard: this.vy < -6 });
         if (!this.grounded && this.vy < -9) this.hurt(-this.vy - 6, ev, 'landing');
@@ -211,6 +212,80 @@ export class VehicleState {
     return ev;
   }
 
+  /**
+   * Powered paraglider. On the ground: a take-off run (needs ~30 km/h and throttle). In the air:
+   * airspeed 32-47 km/h with throttle, climb or sink with throttle/brake, slow banked turns, and the
+   * real wind carries you. No power (or no fuel) means a glide down at about 8:1.
+   */
+  stepAir(dt, input, ctx, ev) {
+    const s = this.spec, w = ctx.world;
+    const ground = w.groundAt(this.x, this.z) ?? this.y;
+    const t = input.throttle, b = input.brake;
+    const fuelOk = this.fuel > 0;
+    const thrust = fuelOk ? t : 0;
+    this.steer += (input.steer - this.steer) * Math.min(1, dt * (input.analog ? 6 : 3));
+    const [fx, fz] = this.fwd();
+    const wind = ctx.wind || [0, 0];
+    const px = this.x, pz = this.z;
+    if (!this.flying) {
+      // take-off run / rolling out after landing
+      if (thrust > 0.1) this.vf = Math.min(10, this.vf + s.accel * thrust * dt);
+      else this.vf = Math.max(0, this.vf - 2.5 * dt);
+      if (b > 0) this.vf = Math.max(0, this.vf - 4 * b * dt);
+      this.heading += this.steer * 0.5 * Math.min(1, this.vf / 3) * dt;
+      [this.vx, this.vz] = [fx * this.vf, fz * this.vf];
+      this.y = ground; this.vy = 0;
+      if (this.vf >= 8.3 && thrust > 0.5) { this.flying = true; this.vy = 1.5; this.y = ground + 0.4; ev.push({ type: 'takeoff' }); }
+    } else {
+      const air = 9 + thrust * 4 - b * 1.5;
+      this.vf += (air - this.vf) * Math.min(1, dt * 0.8);
+      let climb = fuelOk ? (thrust - 0.4) * 4.2 - b * 2 : -this.vf / 8;
+      const agl = this.y - ground;
+      if (agl > 150) climb = Math.min(climb, -0.3); // ceiling
+      this.vy += (climb - this.vy) * Math.min(1, dt * 1.2);
+      this.heading += this.steer * 0.42 * dt;
+      // ground track = airspeed along the heading + the real wind (east, north -> x, z)
+      this.vx = fx * this.vf + wind[0] * 0.9;
+      this.vz = fz * this.vf - wind[1] * 0.9;
+      this.y = Math.max(this.y + this.vy * dt, ground);
+      if (this.y <= ground + 0.05 && this.vy <= 0) {
+        const hard = this.vy < -2.6;
+        this.y = ground; this.flying = false;
+        ev.push({ type: 'landing', hard, water: w.isWater(this.x, this.z) });
+        if (hard) this.hurt((-this.vy - 2) * 6, ev, 'landing');
+        this.vy = 0; this.vf *= 0.6;
+      }
+    }
+    // never fly off the loaded map
+    const sp = Math.hypot(this.vx, this.vz);
+    if (sp > 0.1) {
+      const ux = this.vx / sp, uz = this.vz / sp;
+      if (!w.isReady(this.x + ux * 60, this.z + uz * 60)) { this.vx = 0; this.vz = 0; ev.push({ type: 'blocked', why: 'map' }); }
+    }
+    this.x += this.vx * dt; this.z += this.vz * dt;
+    // low over buildings (or rolling on the ground): don't pass through walls
+    if (!this.flying || this.y - ground < 25) {
+      const h = w.collide(this.x, this.z, 1.0);
+      if (h && (!this.flying || this.y - ground < 12)) {
+        this.x = h.x; this.z = h.z;
+        if (this.flying) { this.hurt(6, ev, 'crash'); this.vy = Math.min(this.vy, -1); }
+      }
+    }
+    const dist = Math.hypot(this.x - px, this.z - pz);
+    this.odo = (this.odo || 0) + dist;
+    if (this.fuel > 0 && (this.flying || t > 0)) this.fuel = Math.max(0, this.fuel - (dist / 1000) * s.use * (0.5 + t));
+    this.grounded = !this.flying;
+    this.surface = this.flying ? 'air' : 'offroad';
+    this.slip = 0;
+    this.pitch += ((this.flying ? -this.vy * 0.04 : 0) - this.pitch) * Math.min(1, dt * 3);
+    this.roll += ((this.flying ? -this.steer * 0.35 : 0) - this.roll) * Math.min(1, dt * 2);
+    this.rpm += ((fuelOk ? 0.15 + t * 0.85 : 0) - this.rpm) * Math.min(1, dt * 6);
+    this.spin += (fuelOk ? 20 + t * 60 : 0) * dt;
+    this.limit = 13; this.limitWhy = !fuelOk ? 'out of fuel: gliding' : null;
+    this.lastGround = ground;
+    return ev;
+  }
+
   hurt(amount, ev, cause = 'crash') {
     const add = amount * (this.kind === 'truck' ? 0.6 : this.kind === 'bike' ? 1.6 : 1.1);
     this.damage = Math.min(100, this.damage + add);
@@ -218,7 +293,7 @@ export class VehicleState {
   }
   onBridge(w, x, z) { const r = w.roadAt(x, z, 2); return !!(r && r.d < 1 && (r.road.f & 2)); }
   rawGround(w, x, z) {
-    if (this.spec.terrain === 'water') return this.y;
+    if (this.spec.terrain === 'water' || this.spec.terrain === 'air') return this.y;
     const r = this.road ? w.roadAt(x, z, 2) : null;
     if (r && r.d < 0.5 && Math.abs(r.y - this.y) < 1.6) return r.y;
     return w.groundAt(x, z) ?? this.y;

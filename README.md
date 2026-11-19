@@ -8,7 +8,9 @@ real weather, real day and night.
 ## The rules
 
 - **You carry on from where you last stopped.** No teleporting. Your spot is saved on your device.
-- **Random placement**, 4 a week (resets Monday): get dropped somewhere on Earth with the labels
+- **Trips:** at a real bus stop, train station, ferry terminal or airport, take a trip somewhere and
+  wait in real time (the app can be closed). Get off early to be dropped where you'd have got to.
+- **Random placement**, as often as you like: get dropped somewhere on Earth with the labels
   hidden, read the street names and signs, and guess where you are. Wherever you land becomes your
   new spot.
 - **Real-world speeds**, all held to 90 km/h for now so the map can load ahead in time (see
@@ -26,7 +28,8 @@ real weather, real day and night.
 | ⛽ Fuel | Tanks run down at realistic rates; stop at real fuel stations (⛽ on the minimap) to refill. |
 
 Vehicles: 🚲 bicycle and 🚗 car to start; 🚚 delivery truck after 3 deliveries; 🚤 speedboat
-after you reach the water's edge.
+after you reach the water's edge; 🪂 paramotor (powered paraglider, ~40 km/h, takes off from parks
+and open fields) after finishing 3 daily races. Cameras: chase, far, bumper and top-down.
 
 ## Controls
 

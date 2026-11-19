@@ -48,6 +48,7 @@ export class Sound {
     if (kind === 'car') { f = 38 + v.rpm * 120; eg = 0.11 + v.rpm * 0.07; cut = 500 + v.rpm * 1600; }
     else if (kind === 'truck') { f = 26 + v.rpm * 60; eg = 0.14 + v.rpm * 0.06; cut = 350 + v.rpm * 700; }
     else if (kind === 'boat') { f = 55 + v.rpm * 110; eg = 0.08 + v.rpm * 0.08; cut = 700 + v.rpm * 1400; }
+    else if (kind === 'para') { f = 70 + v.rpm * 150; eg = v.rpm > 0.05 ? 0.06 + v.rpm * 0.07 : 0; cut = 900 + v.rpm * 1800; }
     if (v.damage >= 100 || (v.spec.fuel && v.fuel <= 0)) eg *= 0.3;
     this.o1.frequency.setTargetAtTime(f || 30, t, sm);
     this.o2.frequency.setTargetAtTime((f || 30) * 1.007, t, sm);

@@ -4,6 +4,12 @@ Ideas we agreed on but parked until the core driving game feels right.
 
 ## Journeys (travel while you're away)
 
+**Done for public transport (Nov 2026):** board a bus, train, ferry or plane at a real stop and
+travel in real time (fixed average speeds per mode times a typical detour; no routing service and
+no Google Maps, whose API needs a paid key in the app and forbids storing results). You can get off
+early at the point you'd have reached. What's below is still parked: driving your *own* vehicle
+somewhere while the app is closed.
+
 - Pick a destination; your vehicle travels there **in real time at real speed** while the app is
   closed. Come back tomorrow and you're 600 km down the road.
 - Your position is just a function of the route and the clock (start time, route, vehicle speed),

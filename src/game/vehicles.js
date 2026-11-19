@@ -25,6 +25,12 @@ export const VEHICLES = {
     about: 'Governed to 90 km/h like real trucks. Deliveries pay double.',
     unlock: { what: 'Complete 3 deliveries', key: 'deliveries', n: 3 },
   },
+  para: {
+    name: 'Paramotor', icon: '🪂', top: 13, accel: 1.4, brake: 2, grip: 6, wheelbase: 2, steer: 0.5, radius: 1.2,
+    fuel: 12, use: 0.11, terrain: 'air', offroadTop: 13, sound: 'para', camDist: 11, camH: 4.5, mass: 0.3,
+    about: 'A powered paraglider: about 40 km/h, up to 150 m above the ground. Take off from a park or open field; the real wind pushes you about.',
+    unlock: { what: 'Finish 3 daily races', key: 'races', n: 3 },
+  },
   boat: {
     name: 'Speedboat', icon: '🚤', top: 20, accel: 2.2, brake: 2.5, grip: 2.2, wheelbase: 4, steer: 0.5, radius: 2,
     fuel: 150, use: 0.5, terrain: 'water', offroadTop: 0, sound: 'boat', camDist: 10, camH: 4, mass: 1.5,
@@ -32,7 +38,7 @@ export const VEHICLES = {
     unlock: { what: 'Reach the water\'s edge (river, lake or sea)', key: 'shore', n: 1 },
   },
 };
-export const VEHICLE_ORDER = ['bike', 'car', 'truck', 'boat'];
+export const VEHICLE_ORDER = ['bike', 'car', 'truck', 'boat', 'para'];
 
 const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
 const box = (w, h, l, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, l), mat); m.position.set(x, y, z); return m; };
@@ -110,6 +116,30 @@ export function buildModel(kind, color = '#d23a2e') {
     body.add(box(1.7, 0.08, 1.5, paint, 0, 1.68, 0.3));
     body.add(box(0.5, 0.7, 0.5, dark, 0, 0.8, 2.75)); // outboard motor
     body.add(box(0.3, 0.12, 0.06, headM, 0, 0.98, -3.2));
+  }
+  if (kind === 'para') {
+    // the wing: an arc of cells above the pilot, lines down to a harness, a caged propeller behind
+    const wingM = lam(color, { side: THREE.DoubleSide }), wingB = lam('#f4f1ea', { side: THREE.DoubleSide });
+    const cells = 9, span = 10, arc = 0.9;
+    for (let k = 0; k < cells; k++) {
+      const a = ((k + 0.5) / cells - 0.5) * arc * 2; // angle across the arc
+      const cell = box(span / cells * 1.05, 0.25, 2.4, k % 2 ? wingB : wingM, Math.sin(a) * 6, 6.6 + Math.cos(a) * 1.2 - 1.2, 0);
+      cell.rotation.z = -a;
+      body.add(cell);
+    }
+    const lineM = new THREE.LineBasicMaterial({ color: '#cfd4d8' });
+    const pts = [];
+    for (const sx of [-4.2, -2, 2, 4.2]) pts.push(new THREE.Vector3(0, 1.4, 0), new THREE.Vector3(sx, sx * sx > 9 ? 5.2 : 6, 0));
+    body.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), lineM));
+    const suit = lam('#2f6fb0'), skin = lam('#d7a985');
+    body.add(box(0.5, 0.7, 0.45, suit, 0, 1.15, 0));
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), skin); head.position.set(0, 1.68, -0.02); body.add(head);
+    body.add(box(0.36, 0.14, 0.36, lam('#e3e3e3'), 0, 1.8, 0));
+    body.add(box(0.16, 0.6, 0.18, lam('#2c2f36'), -0.12, 0.55, -0.15), box(0.16, 0.6, 0.18, lam('#2c2f36'), 0.12, 0.55, -0.15));
+    const cage = new THREE.Mesh(new THREE.TorusGeometry(0.75, 0.04, 6, 24), lam('#9aa0a6'));
+    cage.position.set(0, 1.15, 0.55); body.add(cage);
+    const prop = box(1.3, 0.12, 0.04, dark, 0, 1.15, 0.5); body.add(prop);
+    wheels.push({ mesh: prop, front: false, r: 0.05, prop: true });
   }
   const tailLights = [];
   body.traverse((o) => { if (o.material === tailM) tailLights.push(o); });

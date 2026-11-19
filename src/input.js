@@ -18,7 +18,7 @@ export class Input {
     this.state = { throttle: 0, brake: 0, steer: 0, handbrake: false, analog: false };
     this.source = 'keyboard';
     this.mode = 'slider';
-    this.tilt = { on: false, center: 0, sign: 1, angle: 0, raw: null, range: 32 };
+    this.tilt = { on: false, center: 0, sign: 1, angle: 0, raw: null, range: 32, at: 0, weak: false, cal: {} };
     this.pad = null;
     this.padPrev = [];
     this.enabled = true;
@@ -28,7 +28,7 @@ export class Input {
       this.keys.add(e.code);
       this.source = 'keyboard';
       if (!e.repeat) {
-        const a = { KeyC: 'camera', KeyH: 'horn', KeyR: 'reset', Escape: 'menu', KeyM: 'mute', KeyJ: 'jobs', KeyG: 'guess' }[e.code];
+        const a = { KeyC: 'camera', KeyH: 'horn', KeyR: 'reset', Escape: 'menu', KeyM: 'mute', KeyJ: 'jobs', KeyG: 'guess', KeyT: 'trip' }[e.code];
         if (a) this.onAction(a);
       }
       if (KEYS.hand.includes(e.code) || e.code.startsWith('Arrow')) e.preventDefault();
@@ -40,9 +40,20 @@ export class Input {
     this.onMotion = (e) => {
       const g = e.accelerationIncludingGravity;
       if (!g || g.x == null) return;
-      // angle of gravity in the screen plane; calibration removes the offset and sign
-      this.tilt.raw = Math.atan2(g.x, g.y) * 180 / Math.PI;
+      this.tilt.at = performance.now();
+      // angle of gravity in the screen plane; calibration removes the offset and sign.
+      // When the phone is held nearly flat that angle is just noise: keep the last good value.
+      this.tilt.weak = Math.hypot(g.x, g.y) < 3;
+      if (!this.tilt.weak) this.tilt.raw = Math.atan2(g.x, g.y) * 180 / Math.PI;
     };
+    // turning the phone round changes the sensor's axes: use (or ask for) that orientation's calibration
+    const orient = () => {
+      if (this.mode !== 'tilt' || !this.tilt.on) return;
+      const c = this.tilt.cal[this.orientation()];
+      if (c) { this.tilt.center = c.center; this.tilt.sign = c.sign; } else this.onAction('tilt-recal');
+    };
+    screen.orientation?.addEventListener?.('change', orient);
+    addEventListener('orientationchange', orient);
   }
 
   setMode(mode) { this.mode = mode; this.buildTouch(); }
@@ -55,10 +66,15 @@ export class Input {
         if (r !== 'granted') return false;
       }
     } catch { return false; }
-    if (!this.tilt.on) addEventListener('devicemotion', this.onMotion);
+    removeEventListener('devicemotion', this.onMotion);
+    addEventListener('devicemotion', this.onMotion);
     this.tilt.on = true;
     return true;
   }
+  orientation() { return String(screen.orientation?.angle ?? window.orientation ?? 0); }
+  /** Has the motion sensor reported in the last second? */
+  tiltAlive() { return this.tilt.on && this.tilt.raw != null && performance.now() - this.tilt.at < 1000; }
+  calibrated() { return !!this.tilt.cal[this.orientation()]; }
   tiltCenter() { if (this.tilt.raw != null) this.tilt.center = this.tilt.raw; }
   /** Second calibration step: the player has turned the "wheel" to the right. */
   tiltRight() {
@@ -66,6 +82,7 @@ export class Input {
     const d = wrap(this.tilt.raw - this.tilt.center);
     if (Math.abs(d) < 5) return false;
     this.tilt.sign = Math.sign(d);
+    this.tilt.cal[this.orientation()] = { center: this.tilt.center, sign: this.tilt.sign };
     return true;
   }
 
@@ -103,7 +120,7 @@ export class Input {
     const t = this.touch;
     if (this.source === 'touch') {
       throttle = Math.max(throttle, t.gas); brake = Math.max(brake, t.brake); hand = hand || t.hand;
-      if (this.mode === 'tilt' && this.tilt.on && this.tilt.raw != null) {
+      if (this.mode === 'tilt' && this.tiltAlive()) {
         let a = wrap(this.tilt.raw - this.tilt.center) * this.tilt.sign;
         a = Math.abs(a) < 2 ? 0 : a - Math.sign(a) * 2;
         steer = Math.max(-1, Math.min(1, a / this.tilt.range)); analog = true;
@@ -151,14 +168,29 @@ export class Input {
       hold(r, () => { this.touch.right = true; }, () => { this.touch.right = false; });
     } else if (this.mode === 'tilt') {
       const c = el('tbtn recenter', 'Re-centre');
-      c.addEventListener('pointerdown', (e) => { e.preventDefault(); this.tiltCenter(); });
+      c.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (!this.tiltAlive()) { this.enableTilt(); return; }
+        this.tiltCenter();
+        const k = this.orientation();
+        if (this.tilt.cal[k]) this.tilt.cal[k].center = this.tilt.center;
+      });
       this.wheelEl = el('wheel-ind', '<div class="wheel-dial"></div>');
+      this.wakeEl = el('tbtn tilt-wake', '📱 Tap to turn on tilt steering');
+      this.wakeEl.hidden = true;
+      this.wakeEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); this.source = 'touch';
+        this.enableTilt().then((ok) => { if (ok && !this.calibrated()) this.onAction('tilt-recal'); else if (!ok) this.onAction('tilt-denied'); });
+      });
     }
   }
 
   /** Visual feedback for the tilt wheel. */
   drawWheel() {
     if (this.mode !== 'tilt' || !this.wheelEl) return;
+    // a sensor that's off or has gone quiet (iOS can stop it) gets a tap-to-resume button
+    const quiet = !this.tiltAlive();
+    if (this.wakeEl && this.wakeEl.hidden !== !quiet) this.wakeEl.hidden = !quiet;
     this.wheelEl.firstChild.style.transform = `rotate(${this.state.steer * 90}deg)`;
   }
 }

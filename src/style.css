@@ -46,6 +46,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #topbtns { position: absolute; right: calc(172px + var(--safe-r)); top: calc(10px + var(--safe-t)); display: flex; gap: 8px; }
 #topbtns button, .tbtn { background: var(--panel); border: 1px solid #ffffff22; border-radius: 12px; min-width: 44px; height: 44px; padding: 0 12px; font-size: 18px; }
 #b-guess { background: #6b3fa0; font-size: 15px; font-weight: 700; }
+#b-trip { background: #1f6b3a; font-size: 15px; font-weight: 700; }
 
 /* ---------- touch controls ---------- */
 #controls { position: absolute; inset: 0; pointer-events: none; }
@@ -175,3 +176,9 @@ body[data-sign="uk"] .shield, body[data-sign="au"] .shield { background: #1f6b3a
 body[data-sign="fr"] .shield, body[data-sign="de"] .shield, body[data-sign="central"] .shield { background: #c8102e; color: #fff; border-color: #fff; }
 @media (max-height: 500px) { #banner { top: calc(46px + var(--safe-t)); } #banner .nm { font-size: 19px; padding: 4px 14px; } }
 #task:not([hidden]) + #banner { top: calc(112px + var(--safe-t)); }
+
+.touch .tbtn.tilt-wake { left: 50%; transform: translateX(-50%); bottom: calc(110px + var(--safe-b)); padding: 0 18px; height: 52px; font-size: 16px; font-weight: 700; background: var(--blue); border-color: var(--blue); z-index: 2; }
+
+.trip-bar { height: 12px; background: #ffffff1a; border-radius: 6px; overflow: hidden; margin: 14px 0 6px; }
+.trip-bar i { display: block; height: 100%; background: var(--accent); border-radius: 6px; transition: width 0.5s; }
+.trip-big { font-size: 34px; font-weight: 900; font-variant-numeric: tabular-nums; margin: 4px 0; }

@@ -142,7 +142,7 @@ export async function loadBaseTile(z, x, y) {
   return normalizeTile(vt);
 }
 
-function emptyFabric() { return { extent: 4096, buildings: [], areas: [], lines: [], roads: [], pois: [], streets: [], walk: [], waterNames: [], waterways: [], areaName: null }; }
+function emptyFabric() { return { extent: 4096, buildings: [], areas: [], lines: [], roads: [], pois: [], stops: [], streets: [], walk: [], waterNames: [], waterways: [], areaName: null }; }
 
 export function normalizeTile(vt) {
   const out = emptyFabric();
@@ -238,6 +238,14 @@ export function normalizeTile(vt) {
     for (let i = 0; i < pl.length; i++) {
       const f = pl.feature(i);
       const p = f.properties;
+      // public transport you can board: bus stops, train stations, ferry terminals
+      const stop = p.class === 'bus' || p.subclass === 'bus_stop' || p.subclass === 'bus_station' ? 'bus'
+        : p.class === 'railway' && (p.subclass === 'station' || p.subclass === 'halt') ? 'train'
+          : p.class === 'ferry_terminal' || p.subclass === 'ferry_terminal' ? 'ferry' : null;
+      if (stop) {
+        const g = f.loadGeometry()[0]?.[0];
+        if (g && g.x >= 0 && g.y >= 0 && g.x < E && g.y < E) out.stops.push({ kind: stop, name: p.name || null, px: g.x, py: g.y });
+      }
       const kind = KIND[p.class];
       if (!kind || (!p.name && kind !== 'fuel') || SKIP_SUB.has(p.subclass)) continue;
       if (p.class === 'railway' && p.subclass !== 'station') continue;
@@ -247,6 +255,17 @@ export function normalizeTile(vt) {
       if (!ref) continue;
       const en = p['name:en'] || p.name_en || null;
       out.pois.push({ ref, px: g.x, py: g.y, name: p.name || 'Fuel station', ...(en && en !== p.name ? { nameEn: en } : {}), kind: `${kind}:${p.subclass || p.class}`, cls: p.class, rank: p.rank || 99 });
+    }
+  }
+  // airports (for flights)
+  const al = vt.layers.aerodrome_label;
+  if (al) {
+    for (let i = 0; i < al.length; i++) {
+      const f = al.feature(i), p = f.properties;
+      if (p.class === 'military' || p.class === 'private') continue;
+      const g = f.loadGeometry()[0]?.[0];
+      if (!g || !p.name || g.x < 0 || g.y < 0 || g.x >= E || g.y >= E) continue;
+      out.stops.push({ kind: 'plane', name: p.iata ? `${p.name} (${p.iata})` : p.name, px: g.x, py: g.y });
     }
   }
   // the most local recognisable place name in this tile (for survey/journal labels)
