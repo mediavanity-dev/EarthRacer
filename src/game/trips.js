@@ -25,7 +25,7 @@ export const MODES = {
     speed: () => 30,
   },
   plane: {
-    name: 'Flight', icon: '✈️', stop: 'airport', detour: 1.05, wait: 100, min: 120, max: 16000, canStopEarly: false,
+    name: 'Flight', icon: '✈️', stop: 'airport', detour: 1.05, wait: 10, after: 10, min: 120, max: 16000, canStopEarly: false,
     speed: (km) => (km < 600 ? 550 : 800),
   },
 };
@@ -40,7 +40,7 @@ export function estimate(mode, from, to) {
   const km = straight * m.detour;
   if (straight < m.min) return { error: `That's too close for a ${m.name.toLowerCase()} trip: drive there instead.` };
   if (straight > m.max) return { error: `That's too far for a ${m.name.toLowerCase()} (up to ${m.max.toLocaleString()} km).` };
-  const minutes = Math.round(m.wait + (km / m.speed(km)) * 60);
+  const minutes = Math.round(m.wait + (m.after || 0) + (km / m.speed(km)) * 60);
   return { km, straight, minutes };
 }
 
@@ -56,8 +56,8 @@ export function progress(trip, now = Date.now()) {
 /** Where you'd be now, on the straight line between the two places (boarding time counts as not moving). */
 export function positionAt(trip, now = Date.now()) {
   const m = MODES[trip.mode];
-  const waitMs = m.wait * MIN;
-  const f = Math.max(0, Math.min(1, (now - trip.start - waitMs) / Math.max(1, trip.duration - waitMs)));
+  const waitMs = m.wait * MIN, afterMs = (m.after || 0) * MIN; // boarding before, getting off after
+  const f = Math.max(0, Math.min(1, (now - trip.start - waitMs) / Math.max(1, trip.duration - waitMs - afterMs)));
   let dLon = trip.to.lon - trip.from.lon;
   if (dLon > 180) dLon -= 360; else if (dLon < -180) dLon += 360; // across the date line
   let lon = trip.from.lon + dLon * f;

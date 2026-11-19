@@ -167,23 +167,43 @@ export class VehicleState {
     // ---------- vertical ----------
     const ground = this.groundAt(w);
     if (s.terrain === 'water') {
-      this.y += (ground - this.y) * Math.min(1, dt * 3);
-      this.grounded = true;
+      // boats float, but a kicker ramp on the water throws them into the air
+      const kick = this.onRamp;
+      if (this.boatAir) {
+        this.vy -= G * dt; this.y += this.vy * dt; this.air += dt;
+        this.airH = Math.max(this.airH || 0, this.y - ground);
+        if (this.y <= ground) {
+          if (this.air > 0.5 && this.airH > 0.6) ev.push({ type: 'land', air: this.air, hard: this.vy < -12, dist: this.takeoff ? Math.hypot(this.x - this.takeoff.x, this.z - this.takeoff.z) : 0 });
+          this.boatAir = false; this.y = ground; this.vy = 0; this.air = 0; this.airH = 0;
+        }
+      } else if (kick) {
+        this.y = ground; this.vy = Math.max(0, this.vx * kick.fx + this.vz * kick.fz) * kick.slope; this.wasKick = true;
+      } else if (this.wasKick && this.vy > 1) {
+        this.boatAir = true; this.wasKick = false; this.takeoff = { x: this.x, z: this.z };
+      } else {
+        this.y += (ground - this.y) * Math.min(1, dt * 3); this.wasKick = false;
+      }
+      this.grounded = !this.boatAir;
     } else {
       this.vy -= (this.grounded ? G * 2.2 : G) * dt; // suspension keeps the wheels down over small humps
       this.y = Math.max(this.y + this.vy * dt, ground);
       if (this.y <= ground) {
-        if (!this.grounded && this.air > 0.5 && this.airH > 0.6) ev.push({ type: 'land', air: this.air, hard: this.vy < -6 });
-        if (!this.grounded && this.vy < -9) this.hurt(-this.vy - 6, ev, 'landing');
+        if (!this.grounded && this.air > 0.5 && this.airH > 0.6) ev.push({ type: 'land', air: this.air, hard: this.vy < -12, dist: this.takeoff ? Math.hypot(this.x - this.takeoff.x, this.z - this.takeoff.z) : 0 });
+        if (!this.grounded && this.vy < -13) this.hurt(-this.vy - 11, ev, 'landing'); // stunt landings are fine; falls aren't
         // follow the slope, but a kerb or road edge is a step, not a ramp
         // (smoothed, so small bumps where roads meet never throw the vehicle in the air)
         const dh = ground - this.lastGround, sp = Math.hypot(this.vx, this.vz);
         const raw = Math.abs(dh) > sp * dt * 0.4 + 0.04 ? 0 : dh / dt;
         this.gvy = (this.gvy || 0) * 0.9 + (Number.isFinite(raw) ? raw : 0) * 0.1;
         this.gvy = Math.max(-sp * 0.18, Math.min(sp * 0.18, this.gvy));
+        // on a jump ramp: climb exactly at the ramp's slope, so its lip launches you
+        if (this.onRamp) this.gvy = Math.max(0, this.vx * this.onRamp.fx + this.vz * this.onRamp.fz) * this.onRamp.slope;
         this.y = ground; this.vy = this.gvy;
         this.grounded = true; this.air = 0; this.airH = 0;
-      } else if (this.y > ground + 0.35) { this.grounded = false; this.air += dt; this.airH = Math.max(this.airH || 0, this.y - ground); }
+      } else if (this.y > ground + 0.35) {
+        if (this.grounded) this.takeoff = { x: this.x, z: this.z };
+        this.grounded = false; this.air += dt; this.airH = Math.max(this.airH || 0, this.y - ground);
+      }
       else if (!this.grounded) this.air += dt;
     }
     this.lastGround = ground;
@@ -299,13 +319,18 @@ export class VehicleState {
     return w.groundAt(x, z) ?? this.y;
   }
   groundAt(w) {
+    let g;
     if (this.spec.terrain === 'water') {
-      const g = w.groundAt(this.x, this.z);
-      return g == null ? this.y : g + 0.1;
+      const wg = w.groundAt(this.x, this.z);
+      g = wg == null ? this.y : wg + 0.1;
+    } else {
+      g = w.groundAt(this.x, this.z) ?? this.y;
+      if (this.road && this.road.y < this.y + 1.6 && this.road.y > g - 1) g = this.road.y;
     }
-    const g = w.groundAt(this.x, this.z) ?? this.y;
-    if (this.road && this.road.y < this.y + 1.6 && this.road.y > g - 1) return this.road.y;
-    return g;
+    // stunt ramps (only from the low end: you can't drive up the back of one)
+    const r = w.rampAt ? w.rampAt(this.x, this.z) : null;
+    this.onRamp = r && r.y > g - 0.3 && r.y < this.y + 0.9 ? r : null;
+    return this.onRamp ? Math.max(g, r.y) : g;
   }
   /** Put the vehicle on the ground (after placing it). */
   settle(w) {

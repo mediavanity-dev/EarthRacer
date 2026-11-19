@@ -20,6 +20,7 @@ import { Sound } from './audio.js';
 import { drawMinimap } from './ui/minimap.js';
 import { regionOf, regionStyle } from './world/region.js';
 import { Signs } from './world/signs.js';
+import { animateStars, starAvailable, collected as starsCollected } from './world/stunts.js';
 
 const $ = (s) => document.querySelector(s);
 const params = new URLSearchParams(location.search);
@@ -771,7 +772,7 @@ function renderTab(tab, body) {
     const streets = Object.values(at.streets).reduce((a, l) => a + l.length, 0);
     body.innerHTML = `<div class="stats">
       ${stat(fmtDist(s.km * 1000).replace(/\.0 /, ' '), 'driven')}${stat(streets, 'streets driven')}${stat(at.bridges, 'bridges crossed')}${stat(at.countries.length, 'countries')}
-      ${stat(s.deliveries, 'deliveries')}${stat(s.races, 'races finished')}${stat(s.nearMiss, 'near misses')}${stat(s.overtakes, 'overtakes')}${stat(Math.round(s.air * 10) / 10 + ' s', 'airtime')}${stat(s.style, 'style points')}${stat(profile.coins, 'coins')}${stat(at.postcards.length, 'postcards')}${stat(s.trips || 0, 'trips taken')}${stat(fmtDist((s.transitKm || 0) * 1000), 'by bus, train, ferry, plane')}
+      ${stat(s.deliveries, 'deliveries')}${stat(s.races, 'races finished')}${stat(s.nearMiss, 'near misses')}${stat(s.overtakes, 'overtakes')}${stat(Math.round(s.air * 10) / 10 + ' s', 'airtime')}${stat(s.style, 'style points')}${stat(profile.coins, 'coins')}${stat(at.postcards.length, 'postcards')}${stat(s.jumps || 0, 'jumps')}${stat(s.stars || 0, 'stunt stars')}${stat(s.hoops || 0, 'hoops')}${stat(s.trips || 0, 'trips taken')}${stat(fmtDist((s.transitKm || 0) * 1000), 'by bus, train, ferry, plane')}
     </div>
     <h3>Countries</h3><div style="font-size:26px">${at.countries.map(flag).join(' ') || '<span class="note">None yet</span>'}</div>
     <h3>Street atlas</h3><div class="list">${Object.entries(at.streets).slice(-12).reverse().map(([area, l]) => `<div class="item"><div class="ic">🛣️</div><div class="tx"><b>${esc(/^\d+\//.test(area) ? 'Unnamed area' : area)}</b><small>${l.length} streets: ${esc(l.slice(-6).join(', '))}${l.length > 6 ? '…' : ''}</small></div></div>`).join('') || '<p class="note">Drive along named streets to fill your atlas.</p>'}</div>
@@ -964,12 +965,14 @@ function tripScreen() {
     const wb = o.querySelector('#twatch');
     if (wb) {
       const boarding = p.f <= 0;
-      wb.disabled = t.mode === 'plane' && boarding;
-      o.querySelector('#twatchs').textContent = t.mode === 'plane' && boarding ? 'Available after take-off' : watch[1];
+      const landed = t.mode === 'plane' && p.f >= 1;
+      wb.disabled = t.mode === 'plane' && (boarding || landed);
+      o.querySelector('#twatchs').textContent = t.mode === 'plane' && boarding ? 'Available after take-off' : landed ? 'Landed' : watch[1];
     }
     // where you are now, at most once a minute
     const over = o.querySelector('#tover');
     if (p.f <= 0) over.textContent = t.mode === 'plane' ? 'Boarding…' : 'Waiting to leave…';
+    else if (p.f >= 1 && f < 1) over.textContent = t.mode === 'plane' ? 'Landed: getting off the plane…' : 'Arriving…';
     else if (p.f < 1 && now - overAt > 60000) {
       overAt = now;
       whereIs(p.lat, p.lon).then((w) => {
@@ -1065,13 +1068,13 @@ function watchFrame(dt) {
   const { p, b } = bearingNow(t);
   const m = MODES[t.mode];
   if (game.state === 'watch-plane') {
-    const wait = m.wait * 60000;
-    const alt = PlaneView.altitude(Math.max(0, now - t.start - wait), t.duration - wait);
+    const wait = m.wait * 60000, after = (m.after || 0) * 60000;
+    const alt = PlaneView.altitude(Math.max(0, now - t.start - wait), t.duration - wait - after);
     planeView.update(dt, p.lat, p.lon, alt, b);
     renderer.render(planeView.scene, planeView.camera);
     if (now - watchInfoAt > 1000) {
       watchInfoAt = now;
-      const kmh = t.km / ((t.duration - wait) / 3600000);
+      const kmh = t.km / ((t.duration - wait - after) / 3600000);
       $('#winfo').textContent = `${m.icon} To ${t.to.name} · ${game.mph ? `${Math.round(alt * 3.281).toLocaleString()} ft` : `${Math.round(alt).toLocaleString()} m`} · ${Math.round(game.mph ? kmh / 1.609 : kmh)} ${game.mph ? 'mph' : 'km/h'} · ${fmtDuration(t.start + t.duration - now)} to go`;
     }
     return;
@@ -1325,6 +1328,7 @@ function frame(now) {
   }
   if (traffic.density) traffic.update(dt, v, world);
   signs.update(dt, world, v);
+  tickStunts(dt);
   tickStyle(dt, inp);
   tickActivity(dt);
   tickPassive(dt, moved);
@@ -1362,8 +1366,60 @@ function rebase(old) {
   const l = { x: camLook.x, z: camLook.z }; fix(l); camLook.x = l.x; camLook.z = l.z;
 }
 
+// Stars to grab mid-jump, hoops to fly through, buoy gates to steer through.
+const crossSide = new Map();
+let stuntT = 0;
+function tickStunts(dt) {
+  stuntT += dt;
+  const chunks = world.readyChunks();
+  animateStars(chunks, stuntT);
+  const v = game.v, vy = v.y + 1;
+  for (const ch of chunks) {
+    const st = ch.stunts;
+    if (!st || Math.abs(ch.ox - v.x) > ch.half + 100 || Math.abs(ch.oz - v.z) > ch.half + 100) continue;
+    const W = (o) => ({ x: ch.ox + o.x * ch.sx, z: ch.oz + o.z });
+    for (const o of st.stars) {
+      const p = W(o);
+      if (Math.abs(p.x - v.x) > 6 || Math.abs(p.z - v.z) > 6 || !starAvailable(o.key)) continue;
+      if (Math.hypot(p.x - v.x, o.y - vy, p.z - v.z) < 3.4) {
+        starsCollected.set(o.key, Date.now());
+        profile.stats.stars = (profile.stats.stars || 0) + 1;
+        stylePop('Stunt star', 150);
+      }
+    }
+    // a hoop or gate is passed when you cross its plane close enough to its centre
+    const cross = (o, half, needY, label, pts, stat) => {
+      const p = W(o);
+      const dx = v.x - p.x, dz = v.z - p.z;
+      if (dx * dx + dz * dz > 900) { crossSide.delete(o.key); return; }
+      const fx = Math.sin(o.a), fz = -Math.cos(o.a);
+      const u = dx * fx + dz * fz, w = dx * -fz + dz * fx;
+      const side = Math.sign(u) || 1, prev = crossSide.get(o.key);
+      crossSide.set(o.key, side);
+      if (prev && prev !== side && Math.abs(w) < half && (!needY || Math.abs(vy - o.y) < half)) {
+        profile.stats[stat] = (profile.stats[stat] || 0) + 1;
+        stylePop(label, pts);
+      }
+    };
+    for (const o of st.hoops) cross(o, 4.1, true, 'Through the hoop', 200, 'hoops');
+    if (v.kind === 'boat') for (const o of st.gates) cross(o, o.half - 0.8, false, 'Buoy gate', 80, 'gates');
+  }
+}
+
 function markers() {
   const out = [];
+  // stunt features nearby: ramps (yellow), kickers (blue), hoops (orange)
+  const v0 = game.v;
+  for (const ch of world.readyChunks()) {
+    const st = ch.stunts;
+    if (!st || Math.abs(ch.ox - v0.x) > ch.half + 500 || Math.abs(ch.oz - v0.z) > ch.half + 500) continue;
+    for (const [list, color] of [[st.ramps, '#f4c430'], [st.kicks, '#4ea3ff'], [st.hoops, '#ff7a1a']]) {
+      for (const o of list) {
+        const x = ch.ox + o.x * ch.sx, z = ch.oz + o.z;
+        if (Math.hypot(x - v0.x, z - v0.z) < 420) out.push({ x, z, color, size: 4 });
+      }
+    }
+  }
   const a = game.activity;
   if (a?.type === 'job') {
     const t = a.stage === 'pickup' ? a.job.from : a.job.to;
@@ -1387,7 +1443,12 @@ function handleEvent(e) {
     if (v.damage >= 100 && !game.wreckWarned) { game.wreckWarned = true; toast('💥 Wrecked. Open ☰ Garage to repair it.', { ms: 5000 }); }
   } else if (e.type === 'land') {
     sound.burst(0.25, 250, 0.2); game.shake = 0.25;
-    if (!e.hard) { profile.stats.air += e.air; stylePop(`Airtime ${e.air.toFixed(1)}s`, Math.round(e.air * 220)); }
+    if (!e.hard) {
+      profile.stats.air += e.air;
+      const d = e.dist || 0;
+      if (d > 6) profile.stats.jumps = (profile.stats.jumps || 0) + 1;
+      stylePop(d > 6 ? `Jump ${Math.round(d)} m` : `Airtime ${e.air.toFixed(1)}s`, Math.round(e.air * 150 + d * 8));
+    }
   } else if (e.type === 'takeoff') {
     sound.whoosh();
     if (!profile.stats.flights) toast('🪂 Airborne! The real wind here pushes you about.', { ms: 4000 });

@@ -204,14 +204,21 @@ export class Signs {
   place(post, c, world) {
     const { s } = c;
     const [d1, d2] = [s.names[0][1], s.names[1][1]];
-    // stand on the corner between the two streets
-    let bx = d1[0] + d2[0], bz = d1[1] + d2[1];
-    let bl = Math.hypot(bx, bz);
-    if (bl < 0.3) { bx = -d1[1]; bz = d1[0]; bl = 1; }
-    bx /= bl; bz /= bl;
-    const r = world.roadAt(c.x, c.z, 12);
-    const off = ((r ? r.road.w : 8) / 2 + 2.2) * 1.3;
-    const x = c.x + bx * off, z = c.z + bz * off;
+    // Stand on a real corner: step off each street by half its width plus a pavement, and use the
+    // first of the four corners that's clear of every road and building. No clear corner, no sign.
+    const halfW = (d) => { const r = world.roadAt(c.x + d[0] * 10, c.z + d[1] * 10, 8); return (r ? r.road.w : 8) / 2; };
+    const h1 = halfW(d1) + 1.8, h2 = halfW(d2) + 1.8;
+    const n1 = [-d1[1], d1[0]], n2 = [-d2[1], d2[0]];
+    let spot = null;
+    for (const [s1, s2] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const x = c.x + n1[0] * s1 * h1 + n2[0] * s2 * h2, z = c.z + n1[1] * s1 * h1 + n2[1] * s2 * h2;
+      const r = world.roadAt(x, z, 6);
+      if (r && r.d < 0.8) continue;           // still on (or at the edge of) a road
+      if (world.collide(x, z, 0.4)) continue; // inside a building
+      spot = { x, z }; break;
+    }
+    if (!spot) { post.group.visible = false; post.key = c.key; return; }
+    const { x, z } = spot;
     post.group.position.set(x, world.groundAt(x, z) ?? 0, z);
     post.group.visible = true;
     post.key = c.key;

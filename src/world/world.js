@@ -7,6 +7,7 @@ import { LocalFrame, chunkIndex, chunkKey, haversine, offsetGeo } from '../geo.j
 import { makeChunk } from './chunk.js';
 import { seasonAt } from './season.js';
 import { regionOf } from './region.js';
+import { addStunts, rampAt } from './stunts.js';
 
 const REBASE_M = 1500;
 const MAX_BUILDS = 2;
@@ -96,6 +97,7 @@ export class World {
       const payload = await this.call({ type: 'build', x: entry.i, y: entry.j, opts: { ...this.quality, season: seasonAt(this.frame.lat0), region: this.region || regionOf(null, this.frame.lat0, this.frame.lon0) } });
       if (this.chunks.get(key) !== entry) { payload.texture?.close?.(); return; }
       const chunk = makeChunk(payload, { anisotropy: this.anisotropy });
+      try { addStunts(chunk); } catch (e) { console.warn('stunts', e); }
       entry.chunk = chunk;
       entry.state = 'ready';
       this.place(chunk);
@@ -154,6 +156,8 @@ export class World {
   isReady(x, z) { return !!this.chunkAt(x, z); }
   groundAt(x, z) { const c = this.chunkAt(x, z); return c ? c.heightAt((x - c.ox) / c.sx, z - c.oz) : null; }
   isWater(x, z) { const c = this.chunkAt(x, z); return c ? c.isWater((x - c.ox) / c.sx, z - c.oz) : false; }
+  /** A jump ramp or water kicker under a scene point: { y, slope, fx, fz } or null. */
+  rampAt(x, z) { const c = this.chunkAt(x, z); return c?.stunts ? rampAt(c.stunts, (x - c.ox) / c.sx, z - c.oz) : null; }
   isOpen(x, z) { const c = this.chunkAt(x, z); return c ? c.isOpen((x - c.ox) / c.sx, z - c.oz) : false; }
   isUrban(x, z) { const c = this.chunkAt(x, z); return c ? c.isUrban((x - c.ox) / c.sx, z - c.oz) : false; }
   streetAt(x, z) { const c = this.chunkAt(x, z); return c ? c.streetAt((x - c.ox) / c.sx, z - c.oz) : null; }
