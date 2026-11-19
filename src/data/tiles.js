@@ -147,7 +147,7 @@ export async function loadBaseTile(z, x, y) {
   return vt ? normalizeTile(vt) : emptyFabric();
 }
 
-function emptyFabric() { return { extent: 4096, buildings: [], areas: [], lines: [], roads: [], pois: [], stops: [], streets: [], walk: [], waterNames: [], waterways: [], areaName: null }; }
+function emptyFabric() { return { extent: 4096, buildings: [], areas: [], lines: [], roads: [], pois: [], stops: [], places: [], streets: [], walk: [], waterNames: [], waterways: [], areaName: null }; }
 
 export function normalizeTile(vt) {
   const out = emptyFabric();
@@ -281,6 +281,7 @@ export function normalizeTile(vt) {
     for (let i = 0; i < pl2.length; i++) {
       const f = pl2.feature(i), p = f.properties;
       const g = f.loadGeometry()[0]?.[0];
+      if (p.name && g && ['city', 'town', 'village', 'suburb'].includes(p.class) && g.x >= 0 && g.y >= 0 && g.x < E && g.y < E) out.places.push({ name: p['name:en'] || p.name, cls: p.class, px: g.x, py: g.y });
       if (!p.name || ORDER[p.class] === undefined || !g || g.x < 0 || g.y < 0 || g.x >= E || g.y >= E) continue;
       const score = ORDER[p.class] * 100 + (p.rank || 50);
       if (!best || score < best.score) best = { score, name: p.name };

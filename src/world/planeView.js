@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import * as SunCalc from 'suncalc';
 import { LocalFrame, lonToTileX, latToTileY, tileXToLon, tileYToLat } from '../geo.js';
 import { loadVectorTile } from '../data/tiles.js';
-import { paintTile } from '../ui/mapPaint.js';
+import { paintTile, paintGroundLabels } from '../ui/mapPaint.js';
 import { fetchWeather } from '../data/weather.js';
 
 const Z = 9, N = 5, PX = 400; // 5x5 tiles at zoom 9, 400 px each
@@ -82,13 +82,17 @@ export class PlaneView {
     const c = document.createElement('canvas'); c.width = c.height = N * PX;
     const g = c.getContext('2d');
     g.fillStyle = '#7f8f5c'; g.fillRect(0, 0, c.width, c.height);
-    const jobs = [];
+    const jobs = [], tiles = [];
     for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
       const tx = (((x0 + i) % n) + n) % n, ty = y0 + j;
       if (ty < 0 || ty >= n) continue;
-      jobs.push(loadVectorTile(Z, tx, ty).catch(() => undefined).then((vt) => { if (vt !== undefined) paintTile(g, vt, i * PX, j * PX, PX, 'ground'); }));
+      jobs.push(loadVectorTile(Z, tx, ty).catch(() => undefined).then((vt) => { if (vt !== undefined) { paintTile(g, vt, i * PX, j * PX, PX, 'ground'); tiles.push([vt, i, j]); } }));
     }
     await Promise.all(jobs);
+    // faint labels burned into the ground (centre tiles first, so labels near you win)
+    const boxes = [];
+    tiles.sort((a, b) => Math.hypot(a[1] - 2, a[2] - 2) - Math.hypot(b[1] - 2, b[2] - 2));
+    for (const [vt, i, j] of tiles) paintGroundLabels(g, vt, i * PX, j * PX, PX, boxes, 16, 1.45);
     // place the mosaic in a frame centred on it
     const n0 = tileYToLat(y0, Z), s0 = tileYToLat(y0 + N, Z), w0 = tileXToLon(x0, Z), e0 = tileXToLon(x0 + N, Z);
     const mlat = (n0 + s0) / 2, mlon = (w0 + e0) / 2;
@@ -139,6 +143,8 @@ export class PlaneView {
     this.sun.position.set(p.x - Math.sin(sp.azimuth) * 50000, 60000 * Math.max(0.1, Math.sin(sp.altitude)), p.z + Math.cos(sp.azimuth) * 50000);
     this.sun.target.position.set(p.x, 0, p.z);
     this.wing.material.color.set(day > 0.3 ? '#d9dde2' : '#454b55');
+    const cl = 0.18 + 0.82 * day; // clouds are grey shapes at night, not glowing
+    for (const s of this.clouds) s.material.color.setRGB(cl, cl, cl * 1.05);
     // the cloud cover under you, every 10 minutes
     if (Date.now() - this.weatherAt > 10 * 60000) {
       this.weatherAt = Date.now();

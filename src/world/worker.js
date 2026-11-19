@@ -478,6 +478,15 @@ async function build({ x, y, opts }) {
     if (out.length >= 4) streets.push({ name: st.name, ref: st.ref, network: st.network, cls: st.cls, p: new Float32Array(out) });
   }
 
+  // ---------- names of water and places, for faint labels in trip views ----------
+  const labels = [];
+  for (const w of fabric.waterNames || []) labels.push({ kind: 'water', name: w.name, x: X(w.px), z: Z(w.py) });
+  for (const a of fabric.areas) if (a.cls === 'water' && a.name && ringArea(a.rings[0]) * mPerPx * mPerPx > 40000) {
+    const r0 = a.rings[0]; let sx = 0, sy = 0; for (const [px, py] of r0) { sx += px; sy += py; }
+    labels.push({ kind: 'water', name: a.name, x: X(sx / r0.length), z: Z(sy / r0.length) });
+  }
+  for (const pl of fabric.places || []) labels.push({ kind: pl.cls, name: pl.name, x: X(pl.px), z: Z(pl.py) });
+
   // ---------- public transport you can board (bus, train, ferry, plane) ----------
   const stops = (fabric.stops || []).slice(0, 400).map((s) => ({ kind: s.kind, name: s.name, x: X(s.px), z: Z(s.py), lat: latOf(s.py), lon: lonOf(s.px) }));
 
@@ -488,7 +497,7 @@ async function build({ x, y, opts }) {
     buildings, roadMesh, fp: { pts: new Float32Array(fpPts), idx: new Uint32Array(fpIdx) },
     lamps: new Float32Array(props.lamp), posts: new Float32Array(props.post),
     trees: packTrees(blobs), cones: packTrees(cones),
-    roads, streets, pois, stops,
+    roads, streets, pois, stops, labels,
   };
   const transfer = [grid.buffer, xs.buffer, zs.buffer, mask.buffer, tPos.buffer, tUv.buffer, texture, payload.fp.pts.buffer, payload.fp.idx.buffer, payload.lamps.buffer, payload.posts.buffer];
   if (buildings) transfer.push(buildings.pos.buffer, buildings.nrm.buffer, buildings.col.buffer, buildings.win.buffer);

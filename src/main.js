@@ -273,10 +273,10 @@ function startRandom() {
 }
 
 // Load the world at a spot, then drive.
-async function begin(lat, lon, heading, kind, { snap = false, teleport = false } = {}) {
+async function begin(lat, lon, heading, kind, { snap = false, teleport = false, loading = null } = {}) {
   game.state = 'loading';
   $('#hud').hidden = true;
-  overlay(`<div class="card loading"><div class="spinner"></div><h2>Loading the map…</h2><p id="lm">Streets, buildings and terrain from OpenStreetMap</p></div>`);
+  overlay(`<div class="card loading"><div class="spinner"></div><h2>${loading || 'Loading the map…'}</h2><p id="lm">Streets, buildings and terrain from OpenStreetMap</p></div>`);
   if (teleport) {
     for (const k of [...world.chunks.keys()]) world.unload(k);
     world.hasOrigin = false;
@@ -948,6 +948,7 @@ function tripScreen() {
     <p class="note">From ${esc(t.from.name)} · about ${fmtDist(t.km * 1000)} · arrives ${arrive.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}. You can close the app: the trip carries on without it.</p>
     ${watch ? `<button class="btn primary" id="twatch">${watch[0]}<small id="twatchs">${watch[1]}</small></button>` : ''}
     ${early ? `<button class="btn" id="toff">Get off here<small id="toffs">Be dropped where the ${m.name.toLowerCase()} has got to by now</small></button>` : ''}
+    ${t.mode === 'plane' ? '<button class="quiet-link" id="tbail">Bail out…</button>' : ''}
     <div class="attrib">${ATTRIB}</div></div>`);
   const map = new TripMap(o.querySelector('#tmap'), t, m.icon);
   map.draw();
@@ -985,6 +986,32 @@ function tripScreen() {
   };
   const wbtn = o.querySelector('#twatch');
   if (wbtn) wbtn.onclick = () => { userGesture(); startWatch(t.mode); };
+  // leaving a flight: walk off before take-off, or (quietly, with a second tap) jump
+  const bail = o.querySelector('#tbail');
+  if (bail) {
+    let armed = 0;
+    const label = () => { const f0 = positionAt(t).f; bail.textContent = f0 <= 0 ? 'Leave the plane' : f0 >= 1 ? '' : 'Bail out…'; bail.hidden = f0 >= 1; };
+    label();
+    const lt = setInterval(() => { if (!bail.isConnected) clearInterval(lt); else if (!armed) label(); }, 5000);
+    bail.onclick = async () => {
+      const p = positionAt(t);
+      if (p.f <= 0) { finishTrip(t.from.lat, t.from.lon, null, '✈️ You left the plane before take-off.', 0, 'Walking back through the terminal…'); return; }
+      if (!armed) {
+        armed = Date.now(); bail.classList.add('armed');
+        bail.textContent = 'Really jump? Tap again. (Parachute included.)';
+        setTimeout(() => { if (armed && bail.isConnected) { armed = 0; bail.classList.remove('armed'); label(); } }, 4500);
+        return;
+      }
+      bail.disabled = true; bail.textContent = "Checking what's below…";
+      const below = await whereIs(p.lat, p.lon).catch(() => null);
+      if (!below?.cc) { bail.disabled = false; armed = 0; bail.classList.remove('armed'); bail.textContent = 'Only open water below. Best stay in your seat.'; setTimeout(label, 4000); return; }
+      const now = Date.now(), wait = MODES.plane.wait * 60000, after = (MODES.plane.after || 0) * 60000;
+      const alt = Math.round(PlaneView.altitude(Math.max(0, now - t.start - wait), t.duration - wait - after));
+      const kind = profile.pos?.kind && profile.pos.kind !== 'boat' ? profile.pos.kind : 'car';
+      const where = below.place ? `near ${esc(below.place)}` : `in ${esc(below.country || 'the countryside')}`;
+      finishTrip(p.lat, p.lon, null, `🪂 You jumped from ${alt.toLocaleString()} m and floated down ${where}. Your ${VEHICLES[kind].name.toLowerCase()} was somehow waiting.`, Math.round(t.km * p.f), '🪂 Floating down…');
+    };
+  }
   clearInterval(tripTimer);
   tripTimer = setInterval(tick, 1000);
   tick();
@@ -1004,7 +1031,7 @@ function arriveTrip() {
   finishTrip(t.to.lat, t.to.lon, null, `${MODES[t.mode].icon} You've arrived in ${esc(t.to.name)}.`, t.km);
 }
 
-function finishTrip(lat, lon, kindOverride, msg, km) {
+function finishTrip(lat, lon, kindOverride, msg, km, loading = null) {
   clearInterval(tripTimer);
   endWatchUI();
   profile.trip = null;
@@ -1015,7 +1042,7 @@ function finishTrip(lat, lon, kindOverride, msg, km) {
   save(true);
   game.country = null; game.lastTile = null;
   input.enabled = true;
-  begin(lat, lon, 0, kind, { snap: kind !== 'boat', teleport: true }).then(() => toast(msg, { ms: 6000 }));
+  begin(lat, lon, 0, kind, { snap: kind !== 'boat', teleport: true, loading }).then(() => toast(msg, { ms: 7000 }));
 }
 
 // ---------- watching a trip: the window seat (plane) and the deck (ferry) ----------
@@ -1054,6 +1081,7 @@ function startWatch(mode) {
 }
 function endWatchUI() {
   $('#watch').hidden = true;
+  updateDeckLabels(0, 0, 0, false);
   if (ferry) scene.remove(ferry);
   if (game.model) game.model.group.visible = true;
   shadow.visible = true;
@@ -1070,7 +1098,7 @@ function watchFrame(dt) {
   if (game.state === 'watch-plane') {
     const wait = m.wait * 60000, after = (m.after || 0) * 60000;
     const alt = PlaneView.altitude(Math.max(0, now - t.start - wait), t.duration - wait - after);
-    planeView.update(dt, p.lat, p.lon, alt, b);
+    planeView.update(dt, p.lat, p.lon, alt, b, DEV_HOUR != null ? new Date(new Date().setUTCHours(DEV_HOUR, 0, 0)) : new Date());
     renderer.render(planeView.scene, planeView.camera);
     if (now - watchInfoAt > 1000) {
       watchInfoAt = now;
@@ -1102,11 +1130,76 @@ function watchFrame(dt) {
   if (Math.abs(camera.fov - 55) > 0.1) { camera.fov = 55; camera.updateProjectionMatrix(); }
   const env = sky.update(dt, p.lat, p.lon, camera, DEV_HOUR != null ? new Date(new Date().setUTCHours(DEV_HOUR, 0, 0)) : new Date());
   ferry.userData.glass.emissive.setRGB(env.night * 0.95, env.night * 0.78, env.night * 0.45);
+  updateDeckLabels(dt, q.x, q.z, ready, b);
   sound.update({ vx: 6, vz: 0, kind: 'boat', rpm: 0.35, grounded: true, slip: 0, surface: 'water', spec: { fuel: 0 }, damage: 0 }, {});
   renderer.render(scene, camera);
   if (now - watchInfoAt > 1000) {
     watchInfoAt = now;
     $('#winfo').textContent = ready ? `${m.icon} To ${t.to.name} · ${p.f <= 0 ? 'boarding' : '30 km/h'} · ${fmtDuration(t.start + t.duration - now)} to go` : `${m.icon} Loading the view…`;
+  }
+}
+
+// Faint name "decals" pinned to real places (water bodies, towns) around the ferry: lying almost
+// flat on the water or land, tilted up a little towards you so they stay readable, fixed in the
+// world so they never jump, few and far between, like a watermark on the landscape.
+const deckLabels = [];
+let deckLabelT = 0;
+function updateDeckLabels(dt, x, z, show, bearing = 0) {
+  if (!deckLabels.length) {
+    for (let k = 0; k < 4; k++) {
+      const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 96;
+      const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
+      const sprite = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: false, opacity: 0.5, side: THREE.DoubleSide }));
+      sprite.rotation.order = 'YXZ';
+      sprite.visible = false; scene.add(sprite);
+      deckLabels.push({ sprite, canvas, tex, key: null });
+    }
+  }
+  if (!show) { for (const l of deckLabels) { l.sprite.visible = false; l.key = null; } return; }
+  deckLabelT -= dt;
+  if (deckLabelT > 0) return;
+  deckLabelT = 2;
+  const cands = [];
+  for (const ch of world.readyChunks()) for (const lb of ch.labels) {
+    const lx = ch.ox + lb.x * ch.sx, lz = ch.oz + lb.z, d = Math.hypot(lx - x, lz - z);
+    if (d < 250 || d > 3000) continue;
+    // only what's ahead and to the sides: the camera looks forward from behind the ferry
+    const ahead = ((lx - x) * Math.sin(bearing) + (lz - z) * -Math.cos(bearing)) / d;
+    if (ahead < 0.1) continue;
+    cands.push({ lb, lx, lz, d, score: d - ahead * 800 - (lb.kind === 'water' ? 0 : 300), key: `${ch.key}:${lb.name}` });
+  }
+  cands.sort((a, b) => a.score - b.score);
+  const want = [];
+  for (const c of cands) { // one label per name, and spread out
+    if (want.length >= 4) break;
+    if (want.some((w) => w.lb.name === c.lb.name || Math.hypot(w.lx - c.lx, w.lz - c.lz) < 600)) continue;
+    want.push(c);
+  }
+  const keep = new Set(want.map((c) => c.key));
+  const free = deckLabels.filter((l) => !keep.has(l.key));
+  for (const c of want) {
+    if (deckLabels.some((l) => l.key === c.key)) continue;
+    const l = free.pop();
+    if (!l) break;
+    const g = l.canvas.getContext('2d');
+    g.clearRect(0, 0, 512, 96);
+    const water = c.lb.kind === 'water';
+    g.font = `${water ? 'italic 500' : '600'} 44px system-ui, sans-serif`;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = water ? 'rgba(220,236,255,0.95)' : 'rgba(255,255,255,0.95)'; g.fillText(c.lb.name, 256, 48);
+    l.tex.needsUpdate = true;
+    const w = Math.max(200, c.d * 0.24);
+    l.sprite.scale.set(w, w * 96 / 512, 1);
+    l.sprite.position.set(c.lx, (world.groundAt(c.lx, c.lz) ?? 0) + 1.5, c.lz);
+    l.sprite.rotation.set(-1.15, Math.atan2(x - c.lx, z - c.lz), 0); // face the ferry, leaning back ~25° off the ground
+    l.sprite.visible = true;
+    l.key = c.key;
+  }
+  for (const l of free) { l.sprite.visible = false; l.key = null; }
+  // haze doesn't touch them (it would hide them entirely); they fade out with distance instead
+  for (const l of deckLabels) if (l.sprite.visible) {
+    const d = Math.hypot(l.sprite.position.x - x, l.sprite.position.z - z);
+    l.sprite.material.opacity = 0.5 * Math.max(0, Math.min(1, (3400 - d) / 1400));
   }
 }
 

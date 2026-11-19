@@ -54,6 +54,78 @@ export function paintTile(ctx, vt, ox, oy, size, look = 'map') {
       path(f); ctx.stroke();
     });
     ctx.setLineDash([]);
+  } else {
+    // from the air: borders as faint dashed lines, like a watermark (countries, regions, towns)
+    each('boundary', (f) => {
+      const lvl = +f.properties.admin_level;
+      if (f.type !== 2 || lvl > 8 || f.properties.maritime === 1) return;
+      ctx.setLineDash(lvl <= 2 ? [10, 6] : lvl <= 4 ? [6, 5] : [3, 4]);
+      ctx.strokeStyle = lvl <= 2 ? 'rgba(255,255,255,0.32)' : lvl <= 4 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.13)';
+      ctx.lineWidth = lvl <= 2 ? 2.2 : lvl <= 4 ? 1.4 : 1;
+      path(f); ctx.stroke();
+    });
+    ctx.setLineDash([]);
+  }
+}
+
+/**
+ * Faint, watermark-like labels painted into the ground itself (so they sit on the landscape, tilt
+ * with it and never jump): seas and lakes, cities and towns, motorway numbers. Sparse on purpose:
+ * `boxes` is shared across a whole mosaic so labels keep their distance from each other.
+ */
+export function paintGroundLabels(ctx, vt, ox, oy, size, boxes, max = 14, scale = 1) {
+  if (!vt) return;
+  const items = [];
+  const pt = (f) => { const g = f.loadGeometry()[0]; return g && g.length ? g[Math.floor(g.length / 2)] : null; };
+  const each = (name, fn) => { const l = vt.layers[name]; if (l) for (let i = 0; i < l.length; i++) fn(l.feature(i)); };
+  each('water_name', (f) => {
+    const p = f.properties, g = pt(f);
+    if (!g || !p.name) return;
+    const big = p.class === 'ocean' || p.class === 'sea';
+    items.push({ text: p['name:en'] || p.name_en || p.name, x: g.x / f.extent, y: g.y / f.extent, kind: 'water', pri: big ? 0 : 2, size: big ? 30 : 17 });
+  });
+  each('place', (f) => {
+    const p = f.properties, g = f.loadGeometry()[0]?.[0];
+    if (!g || !p.name) return;
+    const sizes = { country: 30, city: 22, town: 15 };
+    if (!sizes[p.class] || (p.class === 'town' && (p.rank || 10) > 12)) return;
+    items.push({ text: p.class === 'country' ? (p['name:en'] || p.name).toUpperCase() : (p['name:en'] || p.name_en || p.name), x: g.x / f.extent, y: g.y / f.extent, kind: p.class, pri: p.class === 'country' ? 0 : p.class === 'city' ? 1 : 3, size: sizes[p.class] });
+  });
+  const refs = new Set();
+  each('transportation_name', (f) => {
+    const p = f.properties;
+    if (f.type !== 2 || !p.ref || (p.class !== 'motorway' && p.class !== 'trunk') || refs.has(p.ref)) return;
+    const line = f.loadGeometry()[0];
+    if (!line || line.length < 2) return;
+    const m = Math.floor(line.length / 2), a = line[m - 1] || line[0], b = line[m];
+    refs.add(p.ref);
+    let ang = Math.atan2(b.y - a.y, b.x - a.x);
+    if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI; // keep text upright
+    items.push({ text: p.ref.split(';')[0], x: b.x / f.extent, y: b.y / f.extent, kind: 'road', pri: 4, size: 13, ang });
+  });
+  items.sort((a, b) => a.pri - b.pri);
+  for (const it of items) {
+    if (boxes.length >= max) break;
+    const x = ox + it.x * size, y = oy + it.y * size, fs = Math.round(it.size * scale);
+    ctx.font = `${it.kind === 'water' ? 'italic 500' : it.kind === 'road' ? '700' : '600'} ${fs}px system-ui, sans-serif`;
+    const w = ctx.measureText(it.text).width, h = fs;
+    const pad = it.pri <= 1 ? 50 : 90; // smaller things need more room around them
+    const box = [x - w / 2 - pad, y - h / 2 - pad, x + w / 2 + pad, y + h / 2 + pad];
+    if (boxes.some((b) => b[0] < box[2] && box[0] < b[2] && b[1] < box[3] && box[1] < b[3])) continue;
+    boxes.push(box);
+    ctx.save();
+    ctx.translate(x, y);
+    if (it.ang) ctx.rotate(it.ang);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (it.kind === 'road') { // a small faint shield
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.fillRect(-w / 2 - 4, -h / 2 - 2, w + 8, h + 4);
+    }
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+    ctx.strokeText(it.text, 0, 0);
+    ctx.fillStyle = it.kind === 'water' ? 'rgba(220,236,255,0.42)' : 'rgba(255,255,255,0.4)';
+    ctx.fillText(it.text, 0, 0);
+    ctx.restore();
   }
 }
 
