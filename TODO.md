@@ -23,6 +23,13 @@ somewhere while the app is closed.
   host our own router.
 - Train travel (along OSM railways) as an earned Journey type.
 
+## Watching a train trip
+
+Find a nice way to watch train journeys (buses and other trips have the seatback map). The trip
+line is straight but real track curves, so a 3D side-window view would show the right region but
+not the actual line. Ideas: follow OSM railway lines from the tiles near the route, or a
+low-detail side view that doesn't claim to be the exact track.
+
 ## Meeting other players
 
 - No teleporting means meeting a friend in the game takes real planning, which makes meetups

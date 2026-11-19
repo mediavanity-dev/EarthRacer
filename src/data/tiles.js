@@ -126,20 +126,25 @@ function stripClose(r) {
   return r;
 }
 
-export async function loadBaseTile(z, x, y) {
+/** A raw vector tile at any zoom (cached), or null where nothing is mapped (open sea). */
+export async function loadVectorTile(z, x, y) {
   const url = (await template()).replace('{z}', z).replace('{x}', x).replace('{y}', y);
   const key = `vt:${url}`;
   let buf = await cacheGet(key, TILE_TTL);
-  if (buf === 'empty') return emptyFabric();
+  if (buf === 'empty') return null;
   if (!buf) {
     // 204/404 = nothing mapped here (open sea): an empty area, not an error
     const res = await request(url, { retries: 2, okStatus: (s) => (s >= 200 && s < 300) || s === 404 });
-    if (res.status === 204 || res.status === 404) { cachePut(key, 'empty'); return emptyFabric(); }
+    if (res.status === 204 || res.status === 404) { cachePut(key, 'empty'); return null; }
     buf = await res.arrayBuffer();
     if (buf.byteLength < 3e6) cachePut(key, buf);
   }
-  const vt = new VectorTile(new PbfReader(new Uint8Array(buf)));
-  return normalizeTile(vt);
+  return new VectorTile(new PbfReader(new Uint8Array(buf)));
+}
+
+export async function loadBaseTile(z, x, y) {
+  const vt = await loadVectorTile(z, x, y);
+  return vt ? normalizeTile(vt) : emptyFabric();
 }
 
 function emptyFabric() { return { extent: 4096, buildings: [], areas: [], lines: [], roads: [], pois: [], stops: [], streets: [], walk: [], waterNames: [], waterways: [], areaName: null }; }

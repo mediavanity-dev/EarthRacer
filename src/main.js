@@ -10,6 +10,8 @@ import { Traffic } from './game/traffic.js';
 import { jobsFor, jobTime, jobReward, raceFor, isLandmark, isFuel, pruneRaces } from './game/activities.js';
 import { RANDOM_PLACES } from './game/places.js';
 import { MODES, BOARD_RADIUS, estimate, newTrip, progress, positionAt, fmtDuration } from './game/trips.js';
+import { TripMap } from './ui/tripmap.js';
+import { PlaneView } from './world/planeView.js';
 import { profile, save, flush, resetProfile } from './game/profile.js';
 import { fetchWeather, whereIs, searchPlace, waveHeight, postcard, drivingSide, usesMph, flag } from './data/services.js';
 import { haversine, offsetGeo } from './geo.js';
@@ -36,6 +38,7 @@ function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h; camera.updateProjectionMatrix();
+  if (typeof planeView !== "undefined" && planeView) planeView.setSize(w, h);
   $('#rotate').hidden = !(isTouch && h > w && game.state === 'driving');
 }
 addEventListener('resize', resize);
@@ -935,13 +938,19 @@ function tripScreen() {
   const m = MODES[t.mode];
   const arrive = new Date(t.start + t.duration);
   const early = m.canStopEarly === true || (m.canStopEarly === 'boat' && profile.unlocked.boat);
-  const o = overlay(`<div class="card"><h2>${m.icon} On the ${m.name.toLowerCase()} to ${esc(t.to.name)}</h2>
-    <p>From ${esc(t.from.name)} · about ${fmtDist(t.km * 1000)}. Arrives ${arrive.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.</p>
+  const watch = t.mode === 'plane' ? ['✈️ Window seat', 'Look out at the real ground below'] : t.mode === 'ferry' ? ['⛴️ Watch from the deck', 'Stand on deck as the ferry crosses'] : null;
+  const o = overlay(`<div class="card trip"><h2>${m.icon} On the ${m.name.toLowerCase()} to ${esc(t.to.name)}</h2>
+    <canvas id="tmap" class="tmap" width="760" height="340"></canvas>
+    <p class="note" id="tover">&nbsp;</p>
     <div class="trip-bar"><i id="tpb"></i></div>
     <div class="trip-big" id="tleft"></div>
-    <p class="note" id="twhere">You can close the app: the trip carries on without it.</p>
+    <p class="note">From ${esc(t.from.name)} · about ${fmtDist(t.km * 1000)} · arrives ${arrive.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}. You can close the app: the trip carries on without it.</p>
+    ${watch ? `<button class="btn primary" id="twatch">${watch[0]}<small id="twatchs">${watch[1]}</small></button>` : ''}
     ${early ? `<button class="btn" id="toff">Get off here<small id="toffs">Be dropped where the ${m.name.toLowerCase()} has got to by now</small></button>` : ''}
     <div class="attrib">${ATTRIB}</div></div>`);
+  const map = new TripMap(o.querySelector('#tmap'), t, m.icon);
+  map.draw();
+  let overAt = 0;
   const tick = () => {
     if (!profile.trip) { clearInterval(tripTimer); return; }
     const now = Date.now(), f = progress(t, now);
@@ -950,8 +959,29 @@ function tripScreen() {
     bar.style.width = `${(f * 100).toFixed(1)}%`;
     left.textContent = f >= 1 ? 'Arrived' : `${fmtDuration(t.start + t.duration - now)} to go`;
     const ob = o.querySelector('#toff'); if (ob) ob.disabled = f < 0.02 || f >= 1;
+    const p = positionAt(t, now);
+    map.update(p.lat, p.lon, p.f);
+    const wb = o.querySelector('#twatch');
+    if (wb) {
+      const boarding = p.f <= 0;
+      wb.disabled = t.mode === 'plane' && boarding;
+      o.querySelector('#twatchs').textContent = t.mode === 'plane' && boarding ? 'Available after take-off' : watch[1];
+    }
+    // where you are now, at most once a minute
+    const over = o.querySelector('#tover');
+    if (p.f <= 0) over.textContent = t.mode === 'plane' ? 'Boarding…' : 'Waiting to leave…';
+    else if (p.f < 1 && now - overAt > 60000) {
+      overAt = now;
+      whereIs(p.lat, p.lon).then((w) => {
+        if (!over.isConnected) return;
+        if (w) over.textContent = `Now ${t.mode === 'plane' ? 'over' : 'near'} ${[w.place, w.region, w.country].filter(Boolean).join(', ')}`;
+        else if (t.mode === 'plane' || t.mode === 'ferry') over.textContent = 'Now over open water';
+      });
+    }
     if (f >= 1) { clearInterval(tripTimer); arriveTrip(); }
   };
+  const wbtn = o.querySelector('#twatch');
+  if (wbtn) wbtn.onclick = () => { userGesture(); startWatch(t.mode); };
   clearInterval(tripTimer);
   tripTimer = setInterval(tick, 1000);
   tick();
@@ -973,6 +1003,7 @@ function arriveTrip() {
 
 function finishTrip(lat, lon, kindOverride, msg, km) {
   clearInterval(tripTimer);
+  endWatchUI();
   profile.trip = null;
   profile.stats.trips = (profile.stats.trips || 0) + 1;
   profile.stats.transitKm = (profile.stats.transitKm || 0) + (km || 0);
@@ -982,6 +1013,117 @@ function finishTrip(lat, lon, kindOverride, msg, km) {
   game.country = null; game.lastTile = null;
   input.enabled = true;
   begin(lat, lon, 0, kind, { snap: kind !== 'boat', teleport: true }).then(() => toast(msg, { ms: 6000 }));
+}
+
+// ---------- watching a trip: the window seat (plane) and the deck (ferry) ----------
+let planeView = null, ferry = null, watchInfoAt = 0, watchWorldT = 0, orbit = 0;
+function bearingNow(t) {
+  const p = positionAt(t);
+  const dLon = ((t.to.lon - p.lon + 540) % 360) - 180;
+  return { p, b: Math.atan2(dLon * Math.cos((p.lat * Math.PI) / 180), t.to.lat - p.lat) };
+}
+function startWatch(mode) {
+  const t = profile.trip;
+  if (!t) return;
+  clearInterval(tripTimer);
+  hideOverlay();
+  const w = $('#watch');
+  w.hidden = false;
+  w.className = mode === 'plane' ? 'plane' : 'ferry';
+  watchInfoAt = 0;
+  if (mode === 'plane') {
+    planeView ||= new PlaneView();
+    planeView.setSize(innerWidth, innerHeight);
+    game.state = 'watch-plane';
+    return;
+  }
+  // the deck: the street-level world around the ferry, which moves on the clock
+  if (game.model) game.model.group.visible = false;
+  shadow.visible = false; arrow.visible = false; beacon.visible = false;
+  traffic.clear();
+  ferry ||= buildFerry();
+  scene.add(ferry);
+  const { p } = bearingNow(t);
+  game.lat = p.lat; game.lon = p.lon;
+  const old = world.update(p.lat, p.lon);
+  if (old) rebase(old);
+  game.state = 'watch-ferry';
+}
+function endWatchUI() {
+  $('#watch').hidden = true;
+  if (ferry) scene.remove(ferry);
+  if (game.model) game.model.group.visible = true;
+  shadow.visible = true;
+}
+$('#wback').onclick = () => { endWatchUI(); tripScreen(); };
+
+function watchFrame(dt) {
+  const t = profile.trip;
+  if (!t) { endWatchUI(); return; }
+  const now = Date.now();
+  if (now >= t.start + t.duration) { arriveTrip(); return; }
+  const { p, b } = bearingNow(t);
+  const m = MODES[t.mode];
+  if (game.state === 'watch-plane') {
+    const wait = m.wait * 60000;
+    const alt = PlaneView.altitude(Math.max(0, now - t.start - wait), t.duration - wait);
+    planeView.update(dt, p.lat, p.lon, alt, b);
+    renderer.render(planeView.scene, planeView.camera);
+    if (now - watchInfoAt > 1000) {
+      watchInfoAt = now;
+      const kmh = t.km / ((t.duration - wait) / 3600000);
+      $('#winfo').textContent = `${m.icon} To ${t.to.name} · ${game.mph ? `${Math.round(alt * 3.281).toLocaleString()} ft` : `${Math.round(alt).toLocaleString()} m`} · ${Math.round(game.mph ? kmh / 1.609 : kmh)} ${game.mph ? 'mph' : 'km/h'} · ${fmtDuration(t.start + t.duration - now)} to go`;
+    }
+    return;
+  }
+  // ferry: the street-level world, loaded around the ferry as it goes
+  game.lat = p.lat; game.lon = p.lon;
+  watchWorldT += dt;
+  if (watchWorldT > 0.4) {
+    watchWorldT = 0;
+    const ms = p.f > 0 && p.f < 1 ? 30 / 3.6 : 0;
+    const old = world.update(p.lat, p.lon, Math.sin(b) * ms, Math.cos(b) * ms);
+    if (old) rebase(old);
+  }
+  const q = world.toLocal(p.lat, p.lon);
+  const ready = world.isReady(q.x, q.z);
+  const gy = ready ? Math.max(0.5, world.groundAt(q.x, q.z) ?? 0.5) : 0.5;
+  ferry.position.set(q.x, gy + Math.sin(now / 1400) * 0.25, q.z);
+  ferry.rotation.set(Math.sin(now / 1700) * 0.01, -b, Math.sin(now / 2100) * 0.015);
+  // a slow swing around the ferry
+  orbit += dt * 0.04;
+  const a = -b + Math.PI + Math.sin(orbit) * 1.2, dist = 85;
+  camera.position.set(q.x + Math.sin(a) * dist, gy + 28, q.z - Math.cos(a) * dist);
+  camera.up.set(0, 1, 0);
+  camera.lookAt(q.x, gy + 8, q.z);
+  if (Math.abs(camera.fov - 55) > 0.1) { camera.fov = 55; camera.updateProjectionMatrix(); }
+  const env = sky.update(dt, p.lat, p.lon, camera, DEV_HOUR != null ? new Date(new Date().setUTCHours(DEV_HOUR, 0, 0)) : new Date());
+  ferry.userData.glass.emissive.setRGB(env.night * 0.95, env.night * 0.78, env.night * 0.45);
+  sound.update({ vx: 6, vz: 0, kind: 'boat', rpm: 0.35, grounded: true, slip: 0, surface: 'water', spec: { fuel: 0 }, damage: 0 }, {});
+  renderer.render(scene, camera);
+  if (now - watchInfoAt > 1000) {
+    watchInfoAt = now;
+    $('#winfo').textContent = ready ? `${m.icon} To ${t.to.name} · ${p.f <= 0 ? 'boarding' : '30 km/h'} · ${fmtDuration(t.start + t.duration - now)} to go` : `${m.icon} Loading the view…`;
+  }
+}
+
+function buildFerry() {
+  const g = new THREE.Group();
+  const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+  const glass = new THREE.MeshLambertMaterial({ color: '#2a3440', emissive: '#000000' }); // windows light up after dark
+  g.userData.glass = glass;
+  const box = (w, h, l, c, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, l), c === '#2a3440' ? glass : lam(c)); m.position.set(x, y, z); g.add(m); return m; };
+  box(16, 5, 70, '#f2f2ee', 0, 2.5, 0);           // hull
+  box(16.2, 1.2, 70.2, '#1f4fa0', 0, 0.6, 0);     // waterline band
+  box(14, 4, 40, '#e9e9e4', 0, 7, 4);             // car deck housing
+  box(12, 3.4, 26, '#f6f6f2', 0, 10.7, 2);        // passenger deck
+  box(12.2, 1.1, 26.2, '#2a3440', 0, 10.4, 2);    // windows
+  box(8, 3, 9, '#f6f6f2', 0, 14, -4);             // bridge
+  box(8.2, 1, 9.2, '#2a3440', 0, 14.3, -4);
+  box(3, 5, 3, '#c8102e', 0, 15.5, 10);           // funnel
+  const bow = new THREE.Mesh(new THREE.ConeGeometry(8, 14, 4).rotateX(-Math.PI / 2).rotateY(Math.PI / 4).scale(1, 0.36, 1), lam('#f2f2ee'));
+  bow.position.set(0, 2.5, -42); g.add(bow);
+  return g;
 }
 
 // ---------- random placement guess ----------
@@ -1143,6 +1285,7 @@ function frame(now) {
   if (TIMER) setTimeout(() => frame(performance.now()), 16); else requestAnimationFrame(frame);
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  if (game.state === 'watch-plane' || game.state === 'watch-ferry') { watchFrame(dt); return; }
   if (game.state !== 'driving' || !game.v) {
     renderer.render(scene, camera);
     return;
@@ -1213,7 +1356,7 @@ function windVec() {
 
 function rebase(old) {
   const fix = (o) => { const g = old.toGeo(o.x, o.z); const p = world.toLocal(g.lat, g.lon); o.x = p.x; o.z = p.z; };
-  fix(game.v);
+  if (game.v) fix(game.v);
   traffic.cars.forEach((c) => traffic.place(c));
   const c = { x: camPos.x, z: camPos.z }; fix(c); camPos.x = c.x; camPos.z = c.z;
   const l = { x: camLook.x, z: camLook.z }; fix(l); camLook.x = l.x; camLook.z = l.z;
