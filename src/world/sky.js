@@ -76,7 +76,7 @@ export class Sky {
     this.precip.visible = !!pk;
     if (pk && camera) {
       if (pk !== this.precipKind) {
-        this.precipMat.size = pk === 'snow' ? 0.22 : 0.09;
+        this.precipMat.size = pk === 'snow' ? 0.09 : 0.05;
         this.precipMat.color.set(pk === 'snow' ? '#ffffff' : '#b9c8d8');
         this.precipKind = pk;
       }

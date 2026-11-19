@@ -169,20 +169,20 @@ export class VehicleState {
       this.y += (ground - this.y) * Math.min(1, dt * 3);
       this.grounded = true;
     } else {
-      this.vy -= G * dt;
+      this.vy -= (this.grounded ? G * 2.2 : G) * dt; // suspension keeps the wheels down over small humps
       this.y += this.vy * dt;
       if (this.y <= ground) {
-        if (!this.grounded && this.air > 0.35) ev.push({ type: 'land', air: this.air, hard: this.vy < -6 });
+        if (!this.grounded && this.air > 0.5 && this.airH > 0.6) ev.push({ type: 'land', air: this.air, hard: this.vy < -6 });
         if (!this.grounded && this.vy < -9) this.hurt(-this.vy - 6, ev, 'landing');
         // follow the slope, but a kerb or road edge is a step, not a ramp
         // (smoothed, so small bumps where roads meet never throw the vehicle in the air)
         const dh = ground - this.lastGround, sp = Math.hypot(this.vx, this.vz);
         const raw = Math.abs(dh) > sp * dt * 0.4 + 0.04 ? 0 : dh / dt;
-        this.gvy = (this.gvy || 0) * 0.88 + (Number.isFinite(raw) ? raw : 0) * 0.12;
-        this.gvy = Math.max(-sp * 0.3, Math.min(sp * 0.3, this.gvy));
+        this.gvy = (this.gvy || 0) * 0.9 + (Number.isFinite(raw) ? raw : 0) * 0.1;
+        this.gvy = Math.max(-sp * 0.18, Math.min(sp * 0.18, this.gvy));
         this.y = ground; this.vy = this.gvy;
-        this.grounded = true; this.air = 0;
-      } else if (this.y > ground + 0.35) { this.grounded = false; this.air += dt; }
+        this.grounded = true; this.air = 0; this.airH = 0;
+      } else if (this.y > ground + 0.35) { this.grounded = false; this.air += dt; this.airH = Math.max(this.airH || 0, this.y - ground); }
       else if (!this.grounded) this.air += dt;
     }
     this.lastGround = ground;

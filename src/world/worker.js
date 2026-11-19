@@ -251,6 +251,20 @@ async function build({ x, y, opts }) {
     if (L.length < 2) continue;
     const lift = LIFT[rd.cls] ?? 0.25;
     let hs = L.map(([px, py]) => H(px, py) + lift);
+    // real roads are smooth: average out elevation-data noise along the road (~40 m window),
+    // never sinking more than a little into the ground
+    if (!rd.bridge && hs.length > 2) {
+      for (let pass = 0; pass < 3; pass++) {
+        const sm = hs.slice();
+        for (let k = 1; k < hs.length - 1; k++) {
+          const a = Math.max(0, k - 2), b = Math.min(hs.length - 1, k + 2);
+          let sum = 0; for (let q = a; q <= b; q++) sum += hs[q];
+          sm[k] = sum / (b - a + 1);
+        }
+        hs = sm;
+      }
+      hs = hs.map((h, k) => Math.max(h, H(L[k][0], L[k][1]) + lift - 0.22));
+    }
     if (rd.bridge) { // a bridge deck runs straight between its ends, never below the ground
       const h0 = hs[0], h1 = hs[hs.length - 1];
       let tot = 0; const acc = [0];
