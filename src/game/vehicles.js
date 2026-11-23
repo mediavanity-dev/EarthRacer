@@ -11,64 +11,83 @@ export const SPEED_CAP = 22.2; // m/s = 80 km/h (see TODO.md: raise once loading
 export const VEHICLES = {
   bike: {
     name: 'Bicycle', icon: '🚲', top: 11, accel: 1.5, brake: 5, grip: 11, wheelbase: 1.05, steer: 0.6, radius: 0.6,
-    fuel: 0, use: 0, terrain: 'land', offroadTop: 6, sound: 'bike', camDist: 5.5, camH: 2.2, mass: 0.1,
+    fuel: 0, use: 0, terrain: 'land', offroadTop: 6, sound: 'bike', camDist: 5.5, camH: 2.2, mass: 0.1, tough: 1.6,
     about: 'Real speed: about 25-40 km/h. Quiet, nimble, goes down paths.',
   },
   car: {
     name: 'Car', icon: '🚗', top: 50, accel: 3.0, brake: 8.5, grip: 8.5, wheelbase: 2.7, steer: 0.55, radius: 1.6,
-    fuel: 50, use: 0.07, terrain: 'land', offroadTop: 9, sound: 'car', camDist: 8, camH: 3.2, mass: 1,
+    fuel: 50, use: 0.07, terrain: 'land', offroadTop: 9, sound: 'car', camDist: 8, camH: 3.2, mass: 1, tough: 1,
     about: 'Real top speed 180 km/h (held to 80 km/h for now). 50 L tank, about 700 km.',
   },
   truck: {
     name: 'Delivery truck', icon: '🚚', top: 25, accel: 1.15, brake: 5.5, grip: 6, wheelbase: 4.6, steer: 0.5, radius: 2.4,
-    fuel: 300, use: 0.3, terrain: 'land', offroadTop: 6, sound: 'truck', camDist: 13, camH: 5, mass: 4,
+    fuel: 300, use: 0.3, terrain: 'land', offroadTop: 6, sound: 'truck', camDist: 13, camH: 5, mass: 4, tough: 0.45,
     about: 'Governed to 90 km/h like real trucks (80 for now). Deliveries pay double.',
     unlock: { what: 'Complete 3 deliveries', key: 'deliveries', n: 3 },
   },
   pickup: {
-    name: 'Pickup truck', icon: '🛻', top: 45, accel: 3.1, brake: 8, grip: 8, wheelbase: 3.2, steer: 0.52, radius: 1.8,
-    fuel: 80, use: 0.11, terrain: 'land', offroadK: 0.97, offroadTop: 15, sound: 'car', camDist: 9, camH: 3.6, mass: 1.6,
+    name: 'Pickup truck', icon: '🛻', top: 45, accel: 2.6, brake: 7.5, grip: 7.4, wheelbase: 3.2, steer: 0.5, radius: 1.8,
+    fuel: 80, use: 0.11, terrain: 'land', offroadK: 0.97, offroadTop: 15, sound: 'car', camDist: 9, camH: 3.6, mass: 1.6, tough: 0.7,
     about: 'Four-wheel drive: barely slows down off-road. Real top speed about 170 km/h.',
     unlock: { what: 'Complete 5 deliveries', key: 'deliveries', n: 5 },
   },
   moto: {
     name: 'Motorcycle', icon: '🏍️', top: 55, accel: 5, brake: 9, grip: 9.5, wheelbase: 1.5, steer: 0.55, radius: 0.7,
-    fuel: 15, use: 0.045, terrain: 'land', offroadK: 0.8, offroadTop: 12, sound: 'moto', camDist: 6, camH: 2.4, mass: 0.3, lean: true,
+    fuel: 15, use: 0.045, terrain: 'land', offroadK: 0.8, offroadTop: 12, sound: 'moto', camDist: 6, camH: 2.4, mass: 0.3, lean: true, tough: 1.5,
     about: 'Quick off the line and leans into corners. Real top speed about 200 km/h.',
     unlock: { what: 'Land 10 jumps', key: 'jumps', n: 10 },
   },
   dog: {
     name: 'Dog', icon: '🐕', top: 25, accel: 4, brake: 10, grip: 10, wheelbase: 1, steer: 0.85, radius: 0.6,
-    fuel: 0, use: 0, terrain: 'land', offroadK: 1, offroadTop: 25, sound: 'dog', camDist: 5, camH: 2, mass: 0.2, feat: true,
+    fuel: 0, use: 0, terrain: 'land', offroadK: 1, offroadTop: 25, sound: 'dog', camDist: 5, camH: 2, mass: 0.2, feat: true, tough: 0.9,
     about: 'A very good dog that runs as fast as a car. Never needs fuel.',
     unlock: { what: 'Drive 1,000 miles (1,609 km)', key: 'km', n: 1609 },
   },
   cart: {
     name: 'Shopping cart', icon: '🛒', top: 18, accel: 2.6, brake: 6, grip: 7, wheelbase: 1, steer: 0.6, radius: 0.6,
-    fuel: 0, use: 0, terrain: 'land', offroadK: 0.7, offroadTop: 10, sound: 'cart', camDist: 5, camH: 2, mass: 0.2, feat: true,
+    fuel: 0, use: 0, terrain: 'land', offroadK: 0.7, offroadTop: 10, sound: 'cart', camDist: 5, camH: 2, mass: 0.2, feat: true, tough: 1.3,
     about: 'One wheel always wants to go its own way. Rattles magnificently.',
     unlock: { what: 'Grab 50 stunt stars', key: 'stars', n: 50 },
   },
   duck: {
     name: 'Rubber duck', icon: '🦆', top: 12, accel: 1.8, brake: 2, grip: 2.5, wheelbase: 2, steer: 0.6, radius: 1.2,
-    fuel: 0, use: 0, terrain: 'water', offroadTop: 0, sound: 'duck', camDist: 7, camH: 3, mass: 0.5, feat: true,
+    fuel: 0, use: 0, terrain: 'water', offroadTop: 0, sound: 'duck', camDist: 7, camH: 3, mass: 0.5, feat: true, tough: 0.4,
     about: 'A giant rubber duck. Squeaks when you sound the horn.',
     unlock: { what: 'Steer through 20 buoy gates', key: 'gates', n: 20 },
   },
   para: {
     name: 'Paramotor', icon: '🪂', top: 13, accel: 1.4, brake: 2, grip: 6, wheelbase: 2, steer: 0.5, radius: 1.2,
-    fuel: 12, use: 0.11, terrain: 'air', offroadTop: 13, sound: 'para', camDist: 11, camH: 4.5, mass: 0.3,
+    fuel: 12, use: 0.11, terrain: 'air', offroadTop: 13, sound: 'para', camDist: 11, camH: 4.5, mass: 0.3, tough: 1.3,
     about: 'A powered paraglider: about 40 km/h, up to 150 m above the ground. Take off from a park or open field; the real wind pushes you about.',
     unlock: { what: 'Finish 3 daily races', key: 'races', n: 3 },
   },
   boat: {
     name: 'Speedboat', icon: '🚤', top: 20, accel: 2.2, brake: 2.5, grip: 2.2, wheelbase: 4, steer: 0.5, radius: 2,
-    fuel: 150, use: 0.5, terrain: 'water', offroadTop: 0, sound: 'boat', camDist: 10, camH: 4, mass: 1.5,
+    fuel: 150, use: 0.5, terrain: 'water', offroadTop: 0, sound: 'boat', camDist: 10, camH: 4, mass: 1.5, tough: 0.8,
     about: 'Real top speed about 70 km/h. Water only. Summon it at a shore.',
     unlock: { what: 'Reach the water\'s edge (river, lake or sea)', key: 'shore', n: 1 },
   },
+  solar: {
+    name: 'Solar buggy', icon: '☀️', top: 9.7, accel: 1.6, brake: 6, grip: 8, wheelbase: 1.9, steer: 0.6, radius: 1.1,
+    fuel: 0, use: 0, terrain: 'land', offroadK: 0.8, offroadTop: 8, sound: 'solar', camDist: 6.5, camH: 2.6, mass: 0.4, tough: 1.2, solar: true, always: true,
+    about: 'Emergency only: never needs fuel, but 35 km/h at best, and it crawls once the sun is down.',
+  },
 };
-export const VEHICLE_ORDER = ['bike', 'car', 'pickup', 'moto', 'truck', 'boat', 'para', 'dog', 'cart', 'duck'];
+export const VEHICLE_ORDER = ['bike', 'car', 'pickup', 'moto', 'truck', 'boat', 'para', 'solar', 'dog', 'cart', 'duck'];
+
+// How each vehicle compares, 0..1, for the Garage (what you actually get in the game, under the cap).
+export function ratings(k) {
+  const s = VEHICLES[k];
+  const air = s.terrain === 'air', water = s.terrain === 'water';
+  return {
+    speed: Math.min(s.top, SPEED_CAP) / SPEED_CAP,
+    accel: Math.min(1, s.accel / 5),
+    handling: water || air ? Math.min(1, s.grip / 10) * 0.6 : Math.min(1, 0.5 * Math.min(1, s.grip / 10) + 0.5 * Math.min(1, s.steer / s.wheelbase / 0.6)),
+    tough: Math.min(1, 0.45 / (s.tough ?? 1)),
+    offroad: water || air ? null : (s.offroadK ?? 0.86),
+    range: s.fuel ? Math.round(s.fuel / s.use) : null, // km on a full tank
+  };
+}
 
 const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
 const box = (w, h, l, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, l), mat); m.position.set(x, y, z); return m; };
@@ -238,10 +257,64 @@ export function buildModel(kind, color = '#d23a2e') {
     cage.position.set(0, 1.15, 0.55); body.add(cage);
     const prop = box(1.3, 0.12, 0.04, dark, 0, 1.15, 0.5); body.add(prop);
     wheels.push({ mesh: prop, front: false, r: 0.05, prop: true });
+  } else if (kind === 'solar') {
+    // a little open buggy under a big solar panel roof
+    const frame = lam('#e9e6df'), cell = lam('#1d3a6b'), rim = lam('#b8bec4');
+    body.add(box(1.5, 0.22, 2.5, frame, 0, 0.42, 0));
+    body.add(box(1.3, 0.35, 0.6, frame, 0, 0.66, -0.95));                 // nose
+    body.add(box(0.7, 0.5, 0.12, dark, 0, 0.85, 0.35));                   // seat back
+    for (const [x, z] of [[-0.68, -0.9], [0.68, -0.9], [-0.68, 0.9], [0.68, 0.9]]) body.add(box(0.06, 1.15, 0.06, rim, x, 1.12, z));
+    body.add(box(1.9, 0.06, 2.6, rim, 0, 1.72, 0));
+    const panel = box(1.82, 0.05, 2.5, cell, 0, 1.76, 0); body.add(panel); // the solar cells
+    for (let k = -2; k <= 2; k++) body.add(box(1.82, 0.055, 0.02, rim, 0, 1.765, k * 0.5));
+    const suit = lam('#2f6fb0'), skin = lam('#d7a985');
+    body.add(box(0.42, 0.5, 0.3, suit, 0, 0.9, 0.12));
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), skin); head.position.set(0, 1.3, 0.05); body.add(head);
+    body.add(box(0.3, 0.12, 0.06, headM, 0, 0.7, -1.26));
+    body.add(box(0.3, 0.1, 0.06, tailM, -0.5, 0.5, 1.26), box(0.3, 0.1, 0.06, tailM, 0.5, 0.5, 1.26));
+    body.add(box(0.12, 0.1, 0.06, revM, 0, 0.5, 1.26));
+    for (const [x, z, front] of [[-0.78, -0.9, true], [0.78, -0.9, true], [-0.78, 0.9, false], [0.78, 0.9, false]]) {
+      const w = wheel(0.3, 0.2, tyre); w.position.set(x, 0.3, z); group.add(w); wheels.push({ mesh: w, front, r: 0.3 });
+    }
   }
   const tailLights = [];
   body.traverse((o) => { if (o.material === tailM) tailLights.push(o); });
   return { group, body, wheels, tailM, headM, revM };
+}
+
+// ---------- how damage looks: knocked panels and grime, put right by a repair ----------
+const SOOT = new THREE.Color('#3a3631');
+const DENTS = new Set(['car', 'truck', 'pickup', 'moto', 'boat', 'solar', 'cart', 'para']);
+export function prepDamage(m, kind) {
+  const mats = new Set(), panels = [];
+  m.body.traverse((o) => { if (o.isMesh && o.material?.isMeshLambertMaterial) { mats.add(o.material); if (o.geometry.type === 'BoxGeometry') panels.push(o); } });
+  m.dmg = { mats: [...mats].map((mt) => [mt, mt.color.clone()]), panels: DENTS.has(kind) ? panels : [], level: -1 };
+}
+/** A knock: one panel gets bent out of true (a little more each time, within reason). */
+export function dent(m, amount) {
+  const d = m.dmg;
+  if (!d?.panels.length || amount < 3) return;
+  const o = d.panels[Math.floor(Math.random() * d.panels.length)];
+  const u = (o.userData.orig ||= { p: o.position.clone(), r: o.rotation.clone() });
+  const k = Math.min(0.1, amount * 0.007), lim = 0.16;
+  const clamp = (x, c) => Math.max(c - lim, Math.min(c + lim, x));
+  o.rotation.x = clamp(o.rotation.x + (Math.random() - 0.5) * 2 * k, u.r.x);
+  o.rotation.z = clamp(o.rotation.z + (Math.random() - 0.5) * 2 * k, u.r.z);
+  o.position.y = Math.max(u.p.y - 0.06, o.position.y - k * 0.2);
+}
+/** Grime and scorch build up with damage (0..100). */
+export function grime(m, damage) {
+  const d = m.dmg, lv = Math.round(damage / 5);
+  if (!d || lv === d.level) return;
+  d.level = lv;
+  const f = Math.min(0.55, (damage / 100) * 0.55);
+  for (const [mt, base] of d.mats) mt.color.copy(base).lerp(SOOT, f);
+}
+export function repairLook(m) {
+  const d = m.dmg;
+  if (!d) return;
+  for (const o of d.panels) { const u = o.userData.orig; if (u) { o.position.copy(u.p); o.rotation.copy(u.r); } }
+  d.level = -1; grime(m, 0);
 }
 
 // One merged geometry for all traffic cars (one draw call; per-car colour via instance colour).

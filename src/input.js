@@ -145,11 +145,12 @@ export class Input {
       node.addEventListener('pointerup', end);
       node.addEventListener('pointercancel', end);
     };
-    const gas = el('pedal gas', '<span>GAS</span>');
-    const brake = el('pedal brake', '<span>BRAKE<br>/ REV</span>');
+    const W = this.words || {};
+    const gas = el('pedal gas', `<span>${W.gas || 'GAS'}</span>`);
+    const brake = el('pedal brake', `<span>${W.brake || 'BRAKE<br>/ REV'}</span>`);
     hold(gas, () => { this.touch.gas = 1; }, () => { this.touch.gas = 0; });
     hold(brake, () => { this.touch.brake = 1; }, () => { this.touch.brake = 0; });
-    const hb = el('tbtn hand', 'Handbrake');
+    const hb = el('tbtn hand', W.hand || 'Handbrake');
     hold(hb, () => { this.touch.hand = true; }, () => { this.touch.hand = false; });
     if (this.mode === 'slider') {
       const pad = el('slider', '<div class="track"></div><div class="knob"></div>');
@@ -176,7 +177,7 @@ export class Input {
         if (this.tilt.cal[k]) this.tilt.cal[k].center = this.tilt.center;
       });
       this.wheelEl = el('wheel-ind', '<div class="wheel-dial"></div>');
-      this.wakeEl = el('tbtn tilt-wake', '📱 Tap to turn on tilt steering');
+      this.wakeEl = el('tbtn tilt-wake', W.wake || '📱 Tap to turn on tilt steering');
       this.wakeEl.hidden = true;
       this.wakeEl.addEventListener('pointerdown', (e) => {
         e.preventDefault(); this.source = 'touch';

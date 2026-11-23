@@ -252,3 +252,83 @@ body[data-sign="au"] #sidepops .nm { --bg: #fff; --fg: #16357a; --bd: #16357a; }
 .mg-x { background: #ffffff14; border: none; border-radius: 8px; color: #cfe; width: 34px; height: 30px; }
 .mg canvas { width: 100%; height: auto; display: block; border-radius: 8px; image-rendering: pixelated; touch-action: none; }
 .mg-help { color: #3f9a62; font-size: 12px; margin-top: 6px; font-family: ui-monospace, monospace; }
+
+/* ---------- menu header: the tabs scroll, the close button stays put beside them ---------- */
+#panel .phead { display: flex; align-items: center; gap: 6px; padding: 6px 6px 0 0; flex-shrink: 0; }
+#panel .phead .tabs { flex: 1; min-width: 0; padding-right: 0; }
+#panel .phead .close { position: static; flex-shrink: 0; background: #ffffff1a; border: none; border-radius: 10px; width: 40px; height: 40px; padding: 0; margin: 0; font-size: 18px; color: var(--ink); }
+
+/* ---------- garage: vehicle trade-offs ---------- */
+.vst { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 4px 10px; margin-top: 7px; }
+.vst div { font-size: 11px; color: var(--muted); }
+.vst i { display: block; height: 4px; margin-top: 2px; background: #ffffff18; border-radius: 2px; overflow: hidden; }
+.vst b { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+#b-fuel { background: #a8551f; font-size: 15px; font-weight: 700; }
+
+/* ---------- HUD layout: left = where you are, middle = the task and messages, right = map,
+   speed above the gas pedal. Checked with every element on at once in each phone size. ---------- */
+:root { --map: 150px; --where: 30vw; }
+#where { max-width: var(--where); }
+#street, #area { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sidepops .sp { max-width: 100%; }
+#where #radio { margin: 5px 0 0; justify-content: flex-start; max-width: 100%; width: fit-content; pointer-events: auto; text-shadow: none; }
+#midcol { position: absolute; top: calc(62px + var(--safe-t)); left: calc(var(--where) + 24px + var(--safe-l)); right: calc(var(--map) + 34px + var(--safe-r)); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
+#midcol #task { position: relative; left: auto; top: auto; transform: none; max-width: 100%; min-width: min(220px, 100%); }
+#midcol #toasts { position: static; transform: none; width: auto; max-width: 100%; top: auto; left: auto; }
+#topbtns { right: calc(var(--map) + 22px + var(--safe-r)); }
+#topbtns.compact button span { display: none; }
+#dash #coins { display: inline; margin: 0; font-size: 14px; color: var(--accent); font-weight: 700; }
+#dash #gscore { display: inline-flex; gap: 5px; align-items: baseline; margin: 0 0 0 8px; padding: 2px 8px; }
+#dash #gscore[hidden] { display: none; }
+#dash #gscore b { display: inline; font-size: 15px; }
+#dash > div:last-child { margin-top: 5px; }
+.touch .tbtn.tilt-wake { bottom: calc(62px + var(--safe-b)); }
+.touch:has(.tilt-wake:not([hidden])) .wheel-ind { display: none; }
+@media (max-height: 500px) {
+  :root { --map: 118px; }
+  #midcol { top: calc(56px + var(--safe-t)); }
+  #dash { bottom: calc(146px + var(--safe-b)); }
+}
+@media (max-width: 600px) {
+  :root { --map: 110px; --where: calc(100vw - 150px); }
+  #midcol { left: calc(12px + var(--safe-l)); right: calc(64px + var(--safe-r)); top: calc(180px + var(--safe-t)); }
+  #topbtns { right: calc(12px + var(--safe-r)); top: calc(150px + var(--safe-t)); }
+}
+
+/* layout, second pass (from the overlap check) */
+#topbtns.compact button { padding: 0 8px; min-width: 38px; }
+#midcol #task > div:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-height: 500px) {
+  .toast { font-size: 13px; padding: 6px 11px; }
+  #dash { bottom: calc(136px + var(--safe-b)); }
+  .touch:not(.mode-tilt) .tbtn.hand { right: calc(228px + var(--safe-r)); bottom: calc(16px + var(--safe-b)); width: 80px; height: 88px; }
+}
+@media (max-height: 400px) {
+  :root { --map: 104px; }
+  #speed b { font-size: 30px; }
+}
+@media (max-width: 600px) {
+  #topbtns button span { display: none; }
+  .touch .pedal { width: 80px; }
+  .touch .pedal.brake { right: calc(108px + var(--safe-r)); }
+  .touch:not(.mode-tilt) .tbtn.hand { right: calc(108px + var(--safe-r)); width: 80px; }
+  .touch .tbtn.steer { width: 72px; height: 80px; }
+  .touch .tbtn.right { left: calc(96px + var(--safe-l)); }
+  .touch .tbtn.tilt-wake { bottom: calc(160px + var(--safe-b)); max-width: 80vw; white-space: normal; text-align: center; }
+  #rotate { bottom: calc(230px + var(--safe-b)); }
+}
+/* layout, third pass */
+#mapwrap { width: var(--map); }
+#minimap { width: var(--map); height: var(--map); }
+#weather { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; }
+@media (max-height: 400px) {
+  #dash { bottom: calc(132px + var(--safe-b)); }
+  #limit { min-height: 0; }
+}
+@media (max-width: 600px) {
+  #dash { bottom: calc(176px + var(--safe-b)); }
+  .touch .tbtn.tilt-wake { bottom: calc(300px + var(--safe-b)); }
+  #rotate { bottom: calc(380px + var(--safe-b)); }
+}
+@media (max-width: 600px) { #midcol { top: calc(204px + var(--safe-t)); } }
+.touch .pedal { text-align: center; } .touch .pedal span { overflow-wrap: anywhere; }

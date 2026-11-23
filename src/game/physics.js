@@ -17,8 +17,9 @@ const HITBOX = {
   cart: [[0, 0.45]],
   duck: [[-0.8, 1.2], [0.8, 1.2]],
   para: [[0, 1.0]],
+  solar: [[-0.7, 0.75], [0.7, 0.75]],
 };
-const LENGTH = { bike: 1.7, car: 4.3, truck: 9.4, boat: 6, pickup: 5.3, moto: 2.1, dog: 1.3, cart: 1, duck: 3.4, para: 2 };
+const LENGTH = { bike: 1.7, car: 4.3, truck: 9.4, boat: 6, pickup: 5.3, moto: 2.1, dog: 1.3, cart: 1, duck: 3.4, para: 2, solar: 2.6 };
 
 export class VehicleState {
   constructor(kind, x, z, heading) {
@@ -90,6 +91,7 @@ export class VehicleState {
     if (this.damage >= 100) { top = Math.min(top, 4); why = 'wrecked: summon a fresh one'; }
     else if (this.damage > 70) { top *= 0.75; why = why || 'damaged'; }
     if (s.fuel && this.fuel <= 0) { top = Math.min(top, 2.5); why = 'out of fuel'; }
+    if (s.solar && (ctx.night ?? 0) > 0.55) { top = Math.min(top, 3); why = 'solar: no sun, crawling on the battery'; }
     // boost pads (gamer mode): a short surge past the usual limit, but never past the map loading
     if (this.boost > 0) { this.boost -= dt; if (!(ctx.loadLimit < SPEED_CAP)) top = Math.max(top, Math.min(s.top, SPEED_CAP) * 1.3); }
     this.limit = top; this.limitWhy = why;
@@ -323,7 +325,7 @@ export class VehicleState {
   }
 
   hurt(amount, ev, cause = 'crash') {
-    const add = amount * (this.kind === 'truck' ? 0.6 : this.kind === 'bike' ? 1.6 : 1.1);
+    const add = amount * 1.1 * (this.spec.tough ?? 1); // tough vehicles shrug off more
     this.damage = Math.min(100, this.damage + add);
     ev.push({ type: 'crash', impact: amount, cause });
   }

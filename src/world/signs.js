@@ -47,6 +47,10 @@ function roundRect(g, x, y, w, h, r) {
   g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
 }
 
+// Tip a post over by `ang` towards heading `dir` (0 = north), keeping the blades' own directions.
+const _axis = new THREE.Vector3();
+function tilt(group, dir, ang) { group.quaternion.setFromAxisAngle(_axis.set(-Math.cos(dir), 0, -Math.sin(dir)), ang); }
+
 export class Signs {
   constructor(scene) {
     this.style = 'blue';
@@ -219,7 +223,8 @@ export class Signs {
     }
     if (!spot) { post.group.visible = false; post.key = c.key; return; }
     const { x, z } = spot;
-    post.down = null; post.group.rotation.set(0, 0, 0);
+    post.down = null; post.wob = null; post.group.rotation.set(0, 0, 0);
+    for (const b of post.blades) b.holder.rotation.z = 0;
     post.group.position.set(x, world.groundAt(x, z) ?? 0, z);
     post.group.visible = true;
     post.key = c.key;
@@ -230,15 +235,30 @@ export class Signs {
     });
   }
 
-  /** Gamer mode: knock a sign post over, falling away from `dir` (radians, the hitter's heading). */
-  knock(post, dir) { if (!post.down) post.down = { t: 0, dir }; }
+  /** Gamer mode: knock a sign post over, falling away from `dir` (radians, the hitter's heading);
+   *  it bounces where it lands and the blades come off their bracket at an angle. */
+  knock(post, dir) {
+    if (post.down) return;
+    post.down = { t: 0, dir }; post.wob = null;
+    for (const b of post.blades) b.holder.rotation.z = (Math.random() - 0.5) * 0.9;
+  }
+  /** Explorer mode: a sign you clip just wobbles on its post and settles. */
+  wobble(post, dir, speed) { if (!post.down && !post.wob) post.wob = { t: 0, dir, a: Math.min(0.35, 0.08 + speed * 0.02) }; }
   animate(dt) {
     for (const p of this.posts) {
-      if (!p.down || p.down.t > 1) continue;
-      p.down.t += dt;
-      const ang = Math.min(Math.PI / 2 - 0.08, (p.down.t * 3) ** 2);
-      p.group.rotation.order = 'YXZ';
-      p.group.rotation.set(-ang, -p.down.dir, 0);
+      if (p.wob) {
+        const w = p.wob; w.t += dt;
+        const ang = Math.sin(w.t * 13) * w.a * Math.exp(-w.t * 3.5);
+        tilt(p.group, w.dir, w.t > 2 ? 0 : ang);
+        if (w.t > 2) p.wob = null;
+        continue;
+      }
+      if (!p.down || p.down.t > 2) continue;
+      const d = p.down; d.t += dt;
+      const lie = Math.PI / 2 - 0.08;
+      const t0 = Math.sqrt(lie) / 3; // when it first hits the ground
+      const ang = d.t < t0 ? (d.t * 3) ** 2 : lie - Math.abs(Math.sin((d.t - t0) * 11)) * 0.22 * Math.exp(-(d.t - t0) * 6);
+      tilt(p.group, d.dir, ang);
     }
   }
 

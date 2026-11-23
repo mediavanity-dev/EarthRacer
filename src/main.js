@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { World } from './world/world.js';
 import { Sky } from './world/sky.js';
 import { VehicleState } from './game/physics.js';
-import { VEHICLES, VEHICLE_ORDER, SPEED_CAP, buildModel } from './game/vehicles.js';
+import { VEHICLES, VEHICLE_ORDER, SPEED_CAP, buildModel, ratings, prepDamage, dent, grime, repairLook } from './game/vehicles.js';
 import { Traffic } from './game/traffic.js';
 import { jobsFor, jobTime, jobReward, raceFor, isLandmark, isFuel, pruneRaces } from './game/activities.js';
 import { RANDOM_PLACES } from './game/places.js';
@@ -18,12 +18,13 @@ import { profile, save, flush, resetProfile, randomLeft, nextWeekReset, RANDOM_P
 import { fetchWeather, whereIs, searchPlace, waveHeight, postcard, drivingSide, usesMph, flag } from './data/services.js';
 import { haversine, offsetGeo } from './geo.js';
 import { Input } from './input.js';
+import { L, isEnglish } from './i18n.js';
 import { Sound } from './audio.js';
 import { drawMinimap } from './ui/minimap.js';
 import { regionOf, regionStyle } from './world/region.js';
 import { Signs } from './world/signs.js';
 import { Smoke } from './world/smoke.js';
-import { Debris } from './world/debris.js';
+import { Debris, TreeHits } from './world/debris.js';
 import { Radio } from './data/radio.js';
 import { animateStars, starAvailable, animateGamer, coinAvailable, collected as starsCollected } from './world/stunts.js';
 
@@ -48,8 +49,15 @@ function resize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / h; camera.updateProjectionMatrix();
   if (typeof planeView !== "undefined" && planeView) planeView.setSize(w, h);
-  $('#rotate').hidden = !(isTouch && h > w && game.state === 'driving');
+  // portrait: a short hint to turn the phone, gone after a few seconds
+  const want = isTouch && h > w && game.state === 'driving';
+  if (want !== rotateWant) {
+    rotateWant = want; clearTimeout(rotateT);
+    $('#rotate').hidden = !want;
+    if (want) rotateT = setTimeout(() => ($('#rotate').hidden = true), 3000);
+  }
 }
+let rotateWant = false, rotateT = null;
 addEventListener('resize', resize);
 
 const world = new World(scene, {
@@ -60,6 +68,7 @@ const sky = new Sky(scene);
 const signs = new Signs(scene);
 const smoke = new Smoke(scene);
 const debris = new Debris(scene);
+const treeHits = new TreeHits();
 // a tile refined with OSM building detail replaces the old one: same roads, so traffic carries on
 world.on((ev) => { if (ev.type === 'chunk' && ev.old) for (const c of traffic.cars) if (c.chunk === ev.old) c.chunk = ev.chunk; });
 // local radio for the country you're in; the car's own sounds duck under it
@@ -92,7 +101,7 @@ const game = {
 const input = new Input($('#controls'), { onAction });
 input.tilt.cal = { ...(profile.settings.tiltCal || {}) }; // remembered per screen orientation
 input.sliderSens = profile.settings.sens ?? 1;
-input.words = { recentre: RECENTRE };
+input.words = { ...L, recentre: isEnglish ? RECENTRE : L.recentre };
 const ctrlMode = profile.settings.controls || (isTouch ? 'slider' : 'slider');
 input.setMode(ctrlMode);
 if (!isTouch) $('#controls').classList.add('touch-off');
@@ -122,6 +131,11 @@ function spawnVehicle(kind, x, z, heading) {
   if (prev) { game.v.y = prev.y; }
   game.model = buildModel(kind, kind === 'bike' ? '#2f6fb0' : kind === 'truck' ? '#2f6fb0' : '#d23a2e');
   scene.add(game.model.group);
+  // a damaged vehicle still looks it when it comes back
+  prepDamage(game.model, kind);
+  for (let k = 0; k < Math.floor(game.v.damage / 18); k++) dent(game.model, 8);
+  grime(game.model, game.v.damage);
+  game.fuelOut = false;
   const r = VEHICLES[kind].radius;
   shadow.scale.set(r * 1.4, 1, r * (kind === 'truck' ? 4.4 : kind === 'bike' ? 2.2 : 3));
   sound.kind = kind;
@@ -422,6 +436,8 @@ $('#b-cam').onclick = () => onAction('camera');
 $('#b-radio').onclick = () => radioNext();
 $('#b-guess').onclick = () => openGuess();
 $('#b-trip').onclick = () => { if (game.nearStop) openTripPlanner(game.nearStop); };
+$('#b-fuel').onclick = () => outOfFuel();
+$('#b-guess span').textContent = ` ${L.guess}`; $('#b-fuel span').textContent = ` ${L.help}`;
 
 function resetToRoad() {
   const v = game.v;
@@ -448,7 +464,10 @@ function toast(html, { ms = 3800, img = null } = {}) {
   const t = document.createElement('div'); t.className = 'toast';
   t.innerHTML = (img ? `<img src="${esc(img)}" alt="">` : '') + `<div>${html}</div>`;
   box.appendChild(t);
-  while (box.children.length > 3) box.firstChild.remove();
+  while (box.children.length > (innerHeight < 500 ? 2 : 3)) box.firstChild.remove(); // a short screen has room for two
+  // and never down over the pedals and steering: the oldest message goes first
+  const lim = innerHeight - (innerHeight < 500 ? 140 : innerWidth < 600 ? 430 : 190);
+  while (box.children.length > 1 && $('#midcol').getBoundingClientRect().bottom > lim) box.firstChild.remove();
   setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 450); }, ms);
 }
 function stylePop(text, pts) {
@@ -681,7 +700,7 @@ function tickPassive(dt, moved) {
     game.nearStop = stop;
     const b = $('#b-trip');
     b.hidden = !stop;
-    if (stop) b.textContent = `${MODES[stop.kind].icon} Take a ${MODES[stop.kind].name.toLowerCase()}`;
+    if (stop) b.innerHTML = `${MODES[stop.kind].icon}<span> ${esc(L.trip[stop.kind] || `Take a ${MODES[stop.kind].name.toLowerCase()}`)}</span>`;
   }
   let nearFuel = null;
   if (ch) {
@@ -762,8 +781,16 @@ function refreshHud() {
   $('#coins').textContent = `🪙 ${profile.coins}`;
 }
 
+// The top buttons drop their labels (icons only) when the row would run into the street name.
+function fitHud() {
+  const tb = $('#topbtns'), wh = $('#where');
+  tb.classList.remove('compact');
+  if (innerWidth > 600 && tb.getBoundingClientRect().left < wh.getBoundingClientRect().right + 10) tb.classList.add('compact');
+}
+let fitT = 0;
 function hudFrame() {
   const v = game.v;
+  if (++fitT % 10 === 0) fitHud();
   const kmh = Math.abs(v.vf) * 3.6;
   $('#speed').innerHTML = `<b>${Math.round(game.mph ? kmh / 1.609 : kmh)}</b><span>${game.mph ? 'mph' : 'km/h'} ${v.spec.icon}</span>`;
   const why = v.limitWhy;
@@ -785,7 +812,8 @@ function openPanel(tab = panelTab) {
   input.enabled = false;
   const el = $('#panel');
   el.hidden = false;
-  el.innerHTML = `<div class="card"><div class="tabs">${TABS.map(([k, l]) => `<button data-t="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}<button class="close" title="Close">✕</button></div><div class="pbody" id="pbody"></div></div>`;
+  el.innerHTML = `<div class="card"><div class="phead"><div class="tabs">${TABS.map(([k, l]) => `<button data-t="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div><button class="close" title="Close">✕</button></div><div class="pbody" id="pbody"></div></div>`;
+  el.querySelector('.tabs .on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   el.querySelectorAll('.tabs button[data-t]').forEach((b) => b.onclick = () => openPanel(b.dataset.t));
   el.querySelector('.close').onclick = closePanel;
   el.onclick = (e) => { if (e.target === el) closePanel(); };
@@ -801,9 +829,9 @@ function renderTab(tab, body) {
       <h3>Service</h3><div class="list" id="svc"></div>`;
     const vl = body.querySelector('#vl');
     for (const k of VEHICLE_ORDER) {
-      const s = VEHICLES[k], open = profile.unlocked[k];
+      const s = VEHICLES[k], open = profile.unlocked[k] || s.always;
       const d = document.createElement('div'); d.className = `item${open ? '' : ' locked'}`;
-      d.innerHTML = `<div class="ic">${open ? s.icon : '🔒'}</div><div class="tx"><b>${s.name}</b><small>${esc(s.about)}${!open && s.unlock ? `<br>🔓 ${esc(s.unlock.what)}` : ''}</small></div><button ${open && k !== v.kind ? '' : 'disabled'}>${k === v.kind ? 'Driving' : 'Summon'}</button>`;
+      d.innerHTML = `<div class="ic">${open ? s.icon : '🔒'}</div><div class="tx"><b>${s.name}</b><small>${esc(s.about)}${!open && s.unlock ? `<br>🔓 ${esc(s.unlock.what)}` : ''}</small>${open || !s.feat ? vstats(k) : ''}</div><button ${open && k !== v.kind ? '' : 'disabled'}>${k === v.kind ? 'Driving' : 'Summon'}</button>`;
       d.querySelector('button').onclick = () => summon(k);
       vl.appendChild(d);
     }
@@ -812,9 +840,11 @@ function renderTab(tab, body) {
     const free = profile.coins < repairCost && v.damage >= 100;
     svc.innerHTML = `<div class="item"><div class="ic">🔧</div><div class="tx"><b>Roadside repair</b><small>Damage ${Math.round(v.damage)}% · ${free ? 'free tow-truck repair (you\'re short of coins)' : `${repairCost} coins`}</small></div><button id="rep" ${v.damage < 1 || (!free && profile.coins < repairCost) ? 'disabled' : ''}>Repair</button></div>
       ${v.spec.fuel ? `<div class="item"><div class="ic">⛽</div><div class="tx"><b>Fuel delivery</b><small>${Math.round(v.fuel)} / ${v.spec.fuel} L · ${fuelCost} coins. Fuel stations (⛽ on the map) are free: just stop at one.</small></div><button id="fuel" ${fuelNeed < 1 || profile.coins < fuelCost ? 'disabled' : ''}>Fill up</button></div>` : ''}`;
-    svc.querySelector('#rep').onclick = () => { if (!free) profile.coins -= repairCost; v.damage = 0; storeVehicle(); save(); toast('🔧 Repaired.'); openPanel('garage'); };
+    svc.querySelector('#rep').onclick = () => { if (!free) profile.coins -= repairCost; v.damage = 0; game.wreckWarned = false; repairLook(game.model); storeVehicle(); save(); toast('🔧 Repaired.'); openPanel('garage'); };
     const fb = svc.querySelector('#fuel');
     if (fb) fb.onclick = () => { profile.coins -= fuelCost; v.fuel = v.spec.fuel; storeVehicle(); save(); toast('⛽ Filled up.'); openPanel('garage'); };
+    if (v.spec.fuel && v.fuel <= 0) svc.insertAdjacentHTML('afterbegin', '<button class="btn" id="oof">⛽ Out of fuel: see your options</button>');
+    const oof = svc.querySelector('#oof'); if (oof) oof.onclick = () => { closePanel(); outOfFuel(); };
   } else if (tab === 'jobs') {
     const jobs = ch ? jobsFor(ch, world) : [];
     body.innerHTML = `<h3>Today's delivery jobs here</h3><p class="note">Pick up from a real shop or café nearby and deliver across town against the clock. Everyone in this area gets the same jobs today. New ones tomorrow.${v.kind === 'truck' ? ' <b>Truck bonus: double pay.</b>' : ''}</p><div class="list" id="jl"></div>`;
@@ -903,7 +933,87 @@ function renderTab(tab, body) {
       <div class="attrib">${ATTRIB}</div>`;
   }
 }
+// The trade-offs, side by side: what each vehicle is good and bad at (in the game, under the cap).
+function vstats(k) {
+  const r = ratings(k), s = VEHICLES[k];
+  const kmh = Math.round(Math.min(s.top, SPEED_CAP) * 3.6);
+  const rows = [[`Speed ${game.mph ? Math.round(kmh / 1.609) + ' mph' : kmh + ' km/h'}`, r.speed], ['Acceleration', r.accel], ['Handling', r.handling], ['Toughness', r.tough]];
+  if (r.offroad != null) rows.push(['Off-road', r.offroad]);
+  return `<div class="vst">${rows.map(([n, x]) => `<div><span>${n}</span><i><b style="width:${Math.round(x * 100)}%"></b></i></div>`).join('')}<div><span>${r.range ? `⛽ ${game.mph ? Math.round(r.range / 1.609) + ' mi' : r.range + ' km'} a tank` : '⛽ no fuel needed'}</span></div></div>`;
+}
 const stat = (b, s) => `<div class="stat"><b>${esc(b)}</b><span>${esc(s)}</span></div>`;
+
+// ---------- out of fuel ----------
+// Call a tow truck (coins), switch vehicle, or: by day the emergency solar buggy, by night siphon
+// fuel from another of your vehicles (or take the bicycle).
+function tickFuel() {
+  const v = game.v;
+  const empty = !!v.spec.fuel && v.fuel <= 0 && v.spec.terrain !== 'air';
+  $('#b-fuel').hidden = !empty;
+  if (!empty) { game.fuelOut = false; return; }
+  if (!game.fuelOut && Math.hypot(v.vx, v.vz) < 1.2 && $('#panel').hidden && $('#overlay').hidden) { game.fuelOut = true; outOfFuel(); }
+}
+function nearestFuelStation(maxD = 6000) {
+  const v = game.v;
+  let best = null;
+  for (const c of world.readyChunks()) for (const p of c.pois) {
+    if (!isFuel(p)) continue;
+    const x = c.ox + p.x * c.sx, z = c.oz + p.z, d = Math.hypot(x - v.x, z - v.z);
+    if (d < maxD && (!best || d < best.d)) best = { x, z, d, name: p.name };
+  }
+  return best;
+}
+const tankOf = (k) => profile.fuel[k] ?? VEHICLES[k].fuel;
+function outOfFuel() {
+  const v = game.v;
+  if (!(v.spec.fuel && v.fuel <= 0) || game.state !== 'driving') return;
+  input.enabled = false;
+  const land = v.spec.terrain === 'land';
+  const st = land ? nearestFuelStation() : null;
+  const cost = st ? Math.round(30 + (st.d / 1000) * 15) : 45;
+  const can = profile.coins >= cost;
+  const day = sky.night < 0.55;
+  const owned = (k) => profile.unlocked[k] || VEHICLES[k].always;
+  const swaps = VEHICLE_ORDER.filter((k) => k !== v.kind && k !== 'solar' && owned(k) && VEHICLES[k].terrain === 'land' && (!VEHICLES[k].fuel || tankOf(k) > 1));
+  const donor = VEHICLE_ORDER.filter((k) => k !== v.kind && owned(k) && VEHICLES[k].fuel && tankOf(k) >= 3).sort((a, b) => tankOf(b) - tankOf(a))[0];
+  const sip = donor ? Math.min(12, Math.floor(tankOf(donor) - 1), v.spec.fuel) : 0;
+  const o = overlay(`<div class="card"><h2>⛽ Out of fuel</h2>
+    <p>The tank's dry. You can still roll along at walking pace, or:</p>
+    <button class="btn primary" id="tow" ${can ? '' : 'disabled'}>🛻 Call a tow truck · ${cost} coins<small>${st ? `Tows you to ${esc(st.name || 'the nearest fuel station')}, ${fmtDist(st.d)} away, and you fill up there.` : `Nowhere to refuel near here, so it brings a can of fuel (${Math.round(v.spec.fuel * 0.25)} L).`}${can ? '' : ` You have ${profile.coins}.`}</small></button>
+    ${swaps.length ? `<h3 class="tg-h">Or switch vehicle</h3><div class="chips" id="sw">${swaps.map((k) => `<button class="chip" data-k="${k}">${VEHICLES[k].icon} ${VEHICLES[k].name}</button>`).join('')}</div>` : ''}
+    ${day
+      ? `<button class="btn" id="sol">☀️ Emergency solar buggy<small>Never needs fuel, but 35 km/h at best, and only while the sun's up.</small></button>`
+      : `${donor && land ? `<button class="btn" id="sip">🧪 Siphon fuel from your ${esc(VEHICLES[donor].name.toLowerCase())}<small>${sip} L, free.</small></button>` : ''}<p class="note">It's dark, so the solar buggy would only crawl.${profile.unlocked.bike ? ' The bicycle always works.' : ''}</p>`}
+    <button class="btn" id="nn">Not now</button></div>`, 'dim');
+  const close = () => { hideOverlay(); input.enabled = true; };
+  o.querySelector('#nn').onclick = close;
+  o.querySelector('#tow').onclick = () => tow(st, cost);
+  o.querySelectorAll('#sw .chip').forEach((b) => b.onclick = () => { close(); summon(b.dataset.k); });
+  const sol = o.querySelector('#sol'); if (sol) sol.onclick = () => { close(); summon('solar'); };
+  const sp = o.querySelector('#sip');
+  if (sp) sp.onclick = () => {
+    profile.fuel[donor] = Math.round((tankOf(donor) - sip) * 10) / 10;
+    v.fuel = sip; storeVehicle(); save(); close();
+    toast(`🧪 Siphoned ${sip} L from your ${esc(VEHICLES[donor].name.toLowerCase())}. Find a fuel station (⛽ on the map).`, { ms: 5000 });
+  };
+}
+async function tow(st, cost) {
+  const v = game.v;
+  if (profile.coins < cost) return;
+  profile.coins -= cost; save();
+  overlay(`<div class="card loading"><div class="spinner"></div><h2>🛻 The tow truck is on its way…</h2><p>${st ? `Off to ${esc(st.name || 'the fuel station')}` : 'With a can of fuel'}</p></div>`, 'dim');
+  await new Promise((r) => setTimeout(r, 2400));
+  if (st) {
+    const r = findRoadNear(st.x, st.z, 150);
+    v.x = r ? r.px : st.x; v.z = r ? r.pz : st.z;
+    if (r) v.heading = Math.atan2(r.dirX, -r.dirZ);
+    v.vx = v.vz = v.vf = 0; v.init = false;
+    v.fuel = v.spec.fuel;
+  } else v.fuel = Math.max(v.fuel, v.spec.fuel * 0.25);
+  game.lowFuelWarned = false; storeVehicle(); save(true);
+  hideOverlay(); input.enabled = true; refreshHud();
+  toast(st ? `🛻 Towed to ${esc(st.name || 'the fuel station')} and filled up.` : '🛻 A can of fuel. Get to a fuel station (⛽ on the map).', { ms: 5000 });
+}
 
 function summon(kind) {
   const v = game.v;
@@ -1561,7 +1671,7 @@ function frame(now) {
     if (!world.isReady(v.x + ux * 250, v.z + uz * 250)) loadLimit = 7;
     else if (!world.isReady(v.x + ux * 550, v.z + uz * 550)) loadLimit = 14;
   }
-  const ctx = { world, grip: sky.grip(), wind: windVec(), loadLimit, traffic: traffic.density ? traffic : null, draft: game.style.draftOn };
+  const ctx = { world, grip: sky.grip(), wind: windVec(), loadLimit, traffic: traffic.density ? traffic : null, draft: game.style.draftOn, night: sky.night };
   if (v.spec.terrain === 'water' && game.waves) ctx.grip *= Math.max(0.6, 1 - game.waves * 0.12);
   let acc = dt, moved = 0;
   const x0 = v.x, z0 = v.z;
@@ -1585,6 +1695,9 @@ function frame(now) {
   if (traffic.density) traffic.update(dt, v, world);
   signs.update(dt, world, v);
   tickStunts(dt);
+  tickTrees(dt);
+  tickEngineSmoke(dt);
+  tickFuel();
   tickStyle(dt, inp);
   tickActivity(dt);
   tickPassive(dt, moved);
@@ -1690,15 +1803,21 @@ function tickGamer(dt, chunks) {
       }
     }
   }
-  // street signs go down when you hit them
+  // street signs: in Gamer mode they go down (with bits of sign flying); in Explorer they wobble
   const spd = Math.hypot(v.vx, v.vz);
-  if (spd > 3 && world.stuntMode === 'gamer') for (const p of signs.posts) {
-    if (!p.group.visible || p.down) continue;
+  if (spd > 2 && v.spec.terrain === 'land') for (const p of signs.posts) {
+    if (!p.group.visible || p.down || p.wob) continue;
     const px = p.group.position.x, pz = p.group.position.z;
     if (Math.abs(px - v.x) < 3 && Math.abs(pz - v.z) < 3 && Math.hypot(px - v.x, pz - v.z) < v.spec.radius + 0.35) {
-      signs.knock(p, v.heading); sound.crash(3); input.rumble(0.3, 0.3, 120);
-      profile.stats.signs = (profile.stats.signs || 0) + 1;
-      stylePop('Sign down', 25);
+      if (world.stuntMode === 'gamer' && spd > 3) {
+        signs.knock(p, v.heading); sound.crash(3); input.rumble(0.3, 0.3, 120);
+        const [fx, fz] = v.fwd();
+        debris.bits(px, p.group.position.y + 2.4, pz, fx, fz, spd * 0.6, '#cfd5da', { n: 5, size: 0.55, lift: 0.6 });
+        profile.stats.signs = (profile.stats.signs || 0) + 1;
+        stylePop('Sign down', 25);
+      } else {
+        signs.wobble(p, v.heading, spd); sound.tone([620, 540], 0.09, 'square', 0.05); // a clang
+      }
     }
   }
   signs.animate(dt);
@@ -1785,7 +1904,8 @@ function handleEvent(e) {
   if (e.type === 'crash') {
     if (e.impact > 2) { sound.crash(e.impact); game.shake = Math.min(1.2, e.impact * 0.06); input.rumble(Math.min(1, e.impact / 12), 0.3, 200); }
     if (e.impact > 3) { breakCombo(); game.style.driftT = 0; game.style.drift = 0; }
-    if (e.at && e.impact > 3 && world.stuntMode === 'gamer') debris.burst(e.at.x, e.at.y, e.at.z, e.at.nx, e.at.nz, e.impact, '#c9bfae');
+    if (e.impact > 3 && game.model) { dent(game.model, e.impact); if (e.impact > 9) dent(game.model, e.impact * 0.6); grime(game.model, v.damage); }
+    if (e.at && e.impact > 3) wallHit(e.at, e.impact);
     if (v.damage >= 100 && !game.wreckWarned) { game.wreckWarned = true; toast('💥 Wrecked. Open ☰ Garage to repair it.', { ms: 5000 }); }
   } else if (e.type === 'land') {
     sound.burst(0.25, 250, 0.2); game.shake = 0.25;
@@ -1811,6 +1931,58 @@ function handleEvent(e) {
     if (e.why === 'shore' && !game.waterHint) { game.waterHint = true; toast('Land ahead. Summon a land vehicle from the Garage.'); setTimeout(() => (game.waterHint = false), 8000); }
     if (e.impact > 3) { sound.crash(e.impact * 0.6); game.shake = 0.3; }
   }
+}
+
+// A wall hit leaves a mark in both modes (dust and a scrape); Gamer mode also knocks chunks out
+// of it and cracks it.
+function wallHit(at, impact) {
+  const gamer = world.stuntMode === 'gamer';
+  for (let k = 0; k < (impact > 8 ? 4 : 2); k++) smoke.puff(at.x + at.nx * 0.6, at.y + 0.5 + Math.random(), at.z + at.nz * 0.6, { color: '#c8bca8', size: 1.2 + impact * 0.04, rise: 0.5, life: 1.6, opacity: 0.45, spread: 2 });
+  if (gamer) debris.burst(at.x, at.y, at.z, at.nx, at.nz, impact, '#c9bfae');
+  else if (impact > 5) debris.bits(at.x, at.y, at.z, at.nx, at.nz, impact * 0.5, '#bfb4a2', { n: 3, size: 0.6, lift: 0.8 });
+  debris.scuff(at.x, at.y, at.z, at.nx, at.nz, impact);
+}
+
+// Smoke from a damaged engine: wisps past half damage, thick and dark once it's wrecked.
+const ENGINE = { car: [1.6, 0.9], pickup: [1.9, 1.0], truck: [4.2, 1.3], moto: [0, 0.8], boat: [-2.8, 1.0] };
+function tickEngineSmoke(dt) {
+  const v = game.v, at = ENGINE[v.kind];
+  if (!at || v.damage < 55) return;
+  const wreck = v.damage >= 100;
+  game.smokeAcc = (game.smokeAcc || 0) + dt * (wreck ? 10 : 2 + (v.damage - 55) / 8);
+  const [fx, fz] = v.fwd();
+  while (game.smokeAcc >= 1) {
+    game.smokeAcc -= 1;
+    smoke.puff(v.x + fx * at[0], v.y + at[1], v.z + fz * at[0], { color: wreck ? '#2a2a2a' : '#a9a9a9', size: wreck ? 1.1 : 0.7, rise: 1.6, life: wreck ? 2.2 : 1.4, opacity: wreck ? 0.55 : 0.35, spread: 0.5 });
+  }
+}
+
+// Trees: clip one and it shakes and sheds leaves (both modes); in Gamer mode a car-sized vehicle
+// at speed fells it. Trees slow you right down, but never trap you.
+function tickTrees(dt) {
+  treeHits.update(dt);
+  const v = game.v;
+  if (v.spec.terrain !== 'land' || !v.grounded) return;
+  const sp = Math.hypot(v.vx, v.vz);
+  if (sp < 1.5) return;
+  const ch = world.chunkAt(v.x, v.z);
+  if (!ch?.treeHit) return;
+  const r = v.spec.radius * 0.7;
+  const h = ch.treeHit((v.x - ch.ox) / ch.sx, v.z - ch.oz, r);
+  if (!h) return;
+  const gamer = world.stuntMode === 'gamer';
+  const fell = gamer && sp > 9 && v.spec.mass >= 0.9;
+  if (!treeHits.hit(ch, h, v.vx, v.vz, fell)) return;
+  const tx = ch.ox + h.x * ch.sx, tz = ch.oz + h.z;
+  const keep = fell ? 0.55 : v.spec.mass >= 1.5 ? 0.45 : 0.3;
+  v.vx *= keep; v.vz *= keep; v.vf *= keep;
+  const dx = v.x - tx, dz = v.z - tz, d = Math.hypot(dx, dz) || 1;
+  if (d < h.r + r) { v.x = tx + (dx / d) * (h.r + r); v.z = tz + (dz / d) * (h.r + r); }
+  const ev = []; v.hurt(sp * (gamer ? 0.5 : 0.3), ev, 'tree'); ev.forEach(handleEvent);
+  const t = ch.treeSets[h.set].t, o = h.k * 16;
+  debris.leaves(tx, t.mat[o + 13], tz, t.mat[o], [t.col[h.k * 3], t.col[h.k * 3 + 1], t.col[h.k * 3 + 2]], Math.min(18, 6 + Math.round(sp)));
+  sound.burst(0.18, 3200, 0.5); // the rustle
+  if (fell) { setTimeout(() => sound.crash(5), 900); profile.stats.trees = (profile.stats.trees || 0) + 1; stylePop('Timber!', 60); }
 }
 
 function tickStyle(dt, inp) {

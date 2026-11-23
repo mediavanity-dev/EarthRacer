@@ -48,8 +48,9 @@ export function makeChunk(p, { anisotropy = 4 } = {}) {
     add(new THREE.Mesh(g, buildingMat));
   }
   const m4 = new THREE.Matrix4();
+  const treeSets = [];
   for (const [t, geo] of [[p.trees, treeGeo], [p.cones, coneGeo]]) {
-    if (!t) continue;
+    if (!t) { treeSets.push(null); continue; }
     const crowns = new THREE.InstancedMesh(geo, treeMat, t.n);
     const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, t.n);
     const col = new THREE.Color();
@@ -59,6 +60,7 @@ export function makeChunk(p, { anisotropy = 4 } = {}) {
       crowns.setColorAt(k, col.setRGB(t.col[k * 3], t.col[k * 3 + 1], t.col[k * 3 + 2]));
     }
     group.add(crowns, trunks);
+    treeSets.push({ crowns, trunks, t });
   }
   const quat = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1), v = new THREE.Vector3();
   const lamps = [];
@@ -102,6 +104,13 @@ export function makeChunk(p, { anisotropy = 4 } = {}) {
     bBox.set([x0, z0, x1, z1], b * 4);
     cover(bldCells, x0, z0, x1, z1, 3, b);
   }
+  // trees: trunks you can hit (a tree id is set * 65536 + index)
+  const treeCells = new Map();
+  treeSets.forEach((ts, si) => {
+    if (!ts) return;
+    for (let k = 0; k < ts.t.n; k++) { const x = ts.t.mat[k * 16 + 12], z = ts.t.mat[k * 16 + 14]; cover(treeCells, x, z, x, z, 3, si * 65536 + k); }
+  });
+  const fallen = new Set();
   p.streets.forEach((st, si) => {
     const a = st.p;
     for (let k = 2; k < a.length; k += 2) cover(nameCells, a[k - 2], a[k - 1], a[k], a[k + 1], 12, si * 65536 + k / 2);
@@ -188,6 +197,20 @@ export function makeChunk(p, { anisotropy = 4 } = {}) {
         }
       }
       return best;
+    },
+    treeSets, fallen,
+    /** The tree trunk a circle (x, z, radius) touches, or null: { id, set, k, x, y (base), z, r }. */
+    treeHit(x, z, rad) {
+      const l = treeCells.get(cellOf(x, z));
+      if (!l) return null;
+      for (const id of l) {
+        if (fallen.has(id)) continue;
+        const set = id >> 16, k = id & 65535, t = treeSets[set].t, o = k * 16;
+        const tx = t.mat[o + 12], tz = t.mat[o + 14], r = t.trunk[o] * 0.16 + 0.12;
+        if (Math.abs(tx - x) > r + rad || Math.abs(tz - z) > r + rad) continue;
+        if (Math.hypot(tx - x, tz - z) < r + rad) return { id, set, k, x: tx, y: t.trunk[o + 13] + 0.3, z: tz, r };
+      }
+      return null;
     },
     /** Push a circle (x, z, radius) out of buildings. Returns { x, z, nx, nz, depth } or null. */
     collide(x, z, rad) {

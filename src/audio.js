@@ -64,7 +64,7 @@ export class Sound {
   setMuted(m) { this.muted = m; this.applyLevel(); }
   /** While the radio plays, the car's own sounds sit well underneath it. */
   setDuck(on) { this.duck = on; this.applyLevel(); }
-  applyLevel() { if (this.master) this.master.gain.setTargetAtTime(this.muted ? 0 : this.duck ? 0.2 : 0.6, this.ctx.currentTime, 0.3); }
+  applyLevel() { if (this.master) this.master.gain.setTargetAtTime(this.muted ? 0 : this.duck ? 0.34 : 0.6, this.ctx.currentTime, 0.3); }
 
   update(v, { rain = 0 } = {}) {
     if (!this.ctx) return;
@@ -77,6 +77,7 @@ export class Sound {
     else if (kind === 'boat') { f = 55 + v.rpm * 110; eg = 0.08 + v.rpm * 0.08; cut = 700 + v.rpm * 1400; }
     else if (kind === 'moto') { f = 55 + v.rpm * 190; eg = 0.09 + v.rpm * 0.07; cut = 900 + v.rpm * 2600; }
     else if (kind === 'pickup') { f = 34 + v.rpm * 105; eg = 0.12 + v.rpm * 0.07; cut = 450 + v.rpm * 1300; }
+    else if (kind === 'solar') { f = 140 + v.rpm * 420; eg = v.rpm > 0.05 ? 0.03 + v.rpm * 0.03 : 0; cut = 2400; } // an electric whine
     else if (kind === 'para') { f = 70 + v.rpm * 150; eg = v.rpm > 0.05 ? 0.06 + v.rpm * 0.07 : 0; cut = 900 + v.rpm * 1800; }
     if (v.damage >= 100 || (v.spec.fuel && v.fuel <= 0)) eg *= 0.3;
     this.o1.frequency.setTargetAtTime(f || 30, t, sm);

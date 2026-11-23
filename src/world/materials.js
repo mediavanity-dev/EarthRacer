@@ -37,6 +37,18 @@ export const roadMat = hook(new THREE.MeshLambertMaterial({
   fragment: 'diffuseColor.rgb *= 1.0 - uWet * 0.3; diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.92, 0.95), uSnow * 0.35);',
   after: '#include <color_fragment>',
 });
+// Roads always show over the ground they run across: the terrain mesh is coarser than the roads, so
+// in places it bulges a little above them. Each road vertex is drawn a little towards the camera
+// (more with distance, where the terrain is coarsest), so roads win against terrain that's just
+// above them, while real hills and buildings in front still hide them.
+roadMat.onBeforeCompile = ((prev) => (sh, r) => {
+  prev?.(sh, r);
+  sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+    { float d = length(mvPosition.xyz);
+      mvPosition.xyz -= mvPosition.xyz / max(d, 0.001) * clamp(0.08 + d * 0.012, 0.0, 1.6);
+      gl_Position = projectionMatrix * mvPosition; }`);
+})(roadMat.onBeforeCompile);
+roadMat.customProgramCacheKey = () => 'er-road-front';
 
 const SWAY = `
 #ifdef USE_INSTANCING

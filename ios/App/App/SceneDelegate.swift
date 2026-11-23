@@ -14,6 +14,24 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
     }
 
+    // iOS shows a snapshot of the app while it comes back to the front, and a WebGL view can leave
+    // a stale one (a vehicle you've since swapped). Cover the game with its plain background when
+    // it goes to the background, so the snapshot is neutral, and uncover once it has redrawn.
+    private var cover: UIView?
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        guard let window = window, cover == nil else { return }
+        let v = UIView(frame: window.bounds)
+        v.backgroundColor = UIColor(red: 15 / 255, green: 23 / 255, blue: 32 / 255, alpha: 1)
+        v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        window.addSubview(v)
+        cover = v
+    }
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        guard let v = cover else { return }
+        cover = nil
+        UIView.animate(withDuration: 0.25, delay: 0.2, options: [], animations: { v.alpha = 0 }, completion: { _ in v.removeFromSuperview() })
+    }
+
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         SceneDelegateProxy.shared.scene(scene, openURLContexts: URLContexts)
     }
