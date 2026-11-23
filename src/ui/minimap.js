@@ -32,7 +32,7 @@ function tileImage(ch) {
   return ch.mapImg;
 }
 
-export function drawMinimap(canvas, world, player, markers = [], { hideFuel = false, hubs = [], mph = false } = {}) {
+export function drawMinimap(canvas, world, player, markers = [], { hideFuel = false, hubs = [], mph = false, portal = null } = {}) {
   const g = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height, R = W / 2;
   const s = R / RADIUS_M;
@@ -104,6 +104,20 @@ export function drawMinimap(canvas, world, player, markers = [], { hideFuel = fa
     g.strokeText(`${h.icon} ${txt}`, lx, ly); g.fillStyle = '#fff'; g.fillText(`${h.icon} ${txt}`, lx, ly);
     g.restore();
   });
+  // an open portal: a pulsing star on the rim, pointing the way (the only clue to where it is)
+  if (portal) {
+    const ang = Math.atan2(portal.x - player.x, -(portal.z - player.z)) - player.heading;
+    const px = R + Math.sin(ang) * (R - 14), py = R - Math.cos(ang) * (R - 14);
+    const pulse = 0.75 + Math.sin(performance.now() / 220) * 0.25;
+    g.save();
+    g.translate(px, py); g.rotate(performance.now() / 1500);
+    g.shadowColor = '#c9a2ff'; g.shadowBlur = 22 * pulse;
+    g.fillStyle = `rgba(232, 214, 255, ${0.7 + pulse * 0.3})`; g.strokeStyle = '#8a4dff'; g.lineWidth = 2;
+    g.beginPath();
+    for (let k = 0; k < 10; k++) { const r = (k % 2 ? 6 : 15) * (0.9 + pulse * 0.15), a = (k / 10) * Math.PI * 2; g.lineTo(Math.sin(a) * r, -Math.cos(a) * r); }
+    g.closePath(); g.fill(); g.stroke();
+    g.restore();
+  }
   // north: a small red arrow on the rim, always on top
   const nx = R + Math.sin(north) * (R - 16), ny = R - Math.cos(north) * (R - 16);
   g.save();

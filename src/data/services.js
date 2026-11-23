@@ -21,13 +21,14 @@ async function nominatim(url) {
 
 /** Country (and place) at a spot. Cached per ~5 km cell. -> { cc, country, place } or null */
 export async function whereIs(lat, lon) {
-  const key = `rev:${lat.toFixed(2)},${lon.toFixed(2)}`;
+  const key = `rev2:${lat.toFixed(2)},${lon.toFixed(2)}`;
   const hit = await cacheGet(key, 30 * 24 * 3600 * 1000);
   if (hit) return hit;
   const j = await nominatim(`${NOMINATIM}/reverse?format=jsonv2&zoom=10&lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}`);
   if (!j?.address) return null;
   const a = j.address;
-  const out = { cc: (a.country_code || '').toUpperCase(), country: a.country || null, place: a.city || a.town || a.village || a.municipality || a.county || a.state || null, region: a.state || null };
+  const out = { cc: (a.country_code || '').toUpperCase(), country: a.country || null, place: a.city || a.town || a.village || a.municipality || a.county || a.state || null, region: a.state || null,
+    bbox: j.boundingbox ? j.boundingbox.map(Number) : null, areaKey: `${a.country_code || ''}:${a.state || ''}:${a.city || a.town || a.village || a.municipality || a.county || ''}` }; // the municipality, for portals
   cachePut(key, out);
   return out;
 }

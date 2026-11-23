@@ -44,13 +44,13 @@ const geos = {
   buoy: new THREE.CylinderGeometry(0.55, 0.7, 1.8, 10).translate(0, 0.6, 0),
   star: new THREE.OctahedronGeometry(1.1, 0),
   coin: new THREE.CylinderGeometry(0.7, 0.7, 0.14, 20).rotateX(Math.PI / 2),
-  boost: (() => { // three glowing chevrons pointing the way (local -z)
+  boost: (() => { // boost arrows: four big chevrons painted on the road, pointing the way (local -z)
     const parts = [];
-    for (let k = 0; k < 3; k++) {
+    for (let k = 0; k < 4; k++) {
       const sh = new THREE.Shape();
-      const z0 = -k * 2.2;
-      sh.moveTo(-1.6, z0); sh.lineTo(0, z0 - 1.6); sh.lineTo(1.6, z0); sh.lineTo(1.6, z0 + 0.7); sh.lineTo(0, z0 - 0.9); sh.lineTo(-1.6, z0 + 0.7); sh.closePath();
-      parts.push(new THREE.ShapeGeometry(sh).rotateX(Math.PI / 2).translate(0, 0, 2));
+      const z0 = -k * 2.4;
+      sh.moveTo(-1.9, z0); sh.lineTo(0, z0 - 1.9); sh.lineTo(1.9, z0); sh.lineTo(1.9, z0 + 0.8); sh.lineTo(0, z0 - 1.05); sh.lineTo(-1.9, z0 + 0.8); sh.closePath();
+      parts.push(new THREE.ShapeGeometry(sh).rotateX(Math.PI / 2).translate(0, 0, 3.6));
     }
     return mergeGeometries(parts);
   })(),
@@ -67,7 +67,7 @@ const mats = {
   green: new THREE.MeshLambertMaterial({ color: '#1f9d4a', emissive: '#030' }),
   star: new THREE.MeshLambertMaterial({ color: '#ffd23f', emissive: '#a8780a' }),
   coin: new THREE.MeshLambertMaterial({ color: '#ffcf3a', emissive: '#8a6200' }),
-  boost: new THREE.MeshBasicMaterial({ color: '#35e0ff', transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }),
+  boost: new THREE.MeshBasicMaterial({ color: '#7ff0ff', transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }),
   cone: new THREE.MeshLambertMaterial({ color: '#ff6a1a', emissive: '#4a1500' }),
 };
 

@@ -51,3 +51,12 @@ low-detail side view that doesn't claim to be the exact track.
 - More earned vehicles: tuk-tuk (Thailand), snowmobile (snowy areas), road train (outback),
   ferry passes on real `route=ferry` lines.
 - iPhone app (Capacitor), following OpenWorld's path.
+
+## Better forests and land cover where OpenStreetMap has none (investigated 2026-11-23)
+
+ESA WorldCover (10 m, global, CC BY 4.0) would fill in forests, grassland, cropland, wetland and
+bare ground where OSM has no land-cover polygons (common outside Europe). Drawing cost is the same
+(trees are already instanced), but reading it needs a few range requests per tile and a GeoTIFF
+decoder in the worker. Blocker: its S3 bucket sends no CORS header, so a browser can't read it
+directly. Options: a small caching relay (same as the Overpass/Nominatim proxy idea), or a native
+fetch in the iPhone app only (the website would then differ). Use it only where OSM has nothing.

@@ -3,6 +3,7 @@
 // the map. The floating origin re-bases every 1.5 km so render coordinates stay small.
 // All queries here take scene coordinates (metres in the current local frame).
 
+import { loadSpeedLimits } from '../data/osm.js';
 import { LocalFrame, chunkIndex, chunkKey, haversine, offsetGeo } from '../geo.js';
 import { makeChunk } from './chunk.js';
 import { seasonAt } from './season.js';
@@ -19,6 +20,7 @@ export class World {
     this.frame = new LocalFrame();
     this.hasOrigin = false;
     this.chunks = new Map();
+    this.speeds = new Map(); // tile key -> road speed limits
     this.listeners = new Set();
     this.anisotropy = anisotropy;
     this.quality = quality || { tex: 1024, maxTrees: 3500, maxProps: 1400 };
@@ -107,6 +109,7 @@ export class World {
       this.scene.add(chunk.group);
       this.emit({ type: 'chunk', chunk });
       if (this.quality.detail !== false) this.refine(key, entry);
+      if (this.quality.detail !== false) this.loadSpeeds(key, entry);
     } catch (err) {
       console.warn('map tile failed', key, err);
       entry.state = 'error';
@@ -120,6 +123,51 @@ export class World {
   // Each tile is built in its own tangent plane; east-west it's stretched by a tiny factor (~1.0005)
   // so its edges land exactly where the shared frame puts them. Without this, tiles away from the
   // origin leave gaps of up to a metre at their seams (cracks in the ground, invisible walls).
+  // Road speed limits from OSM (in the background): a grid of segments in tile-local metres.
+  async loadSpeeds(key, entry) {
+    try {
+      const b = entry.chunk?.bounds;
+      if (!b) return;
+      const rows = await loadSpeedLimits(key, b);
+      const c = this.chunks.get(key)?.chunk;
+      if (!c || !rows.length) return;
+      const CELL = 50, cells = new Map(), segs = [];
+      for (const row of rows) {
+        let prev = null;
+        for (let k = 1; k < row.length; k += 2) {
+          const p = this.frame.toLocal(row[k], row[k + 1]);
+          const q = { x: (p.x - c.ox) / c.sx, z: p.z - c.oz };
+          if (prev) {
+            const i = segs.length; segs.push([prev.x, prev.z, q.x, q.z, row[0]]);
+            const x0 = Math.floor(Math.min(prev.x, q.x) / CELL) - 1, x1 = Math.floor(Math.max(prev.x, q.x) / CELL) + 1;
+            const z0 = Math.floor(Math.min(prev.z, q.z) / CELL) - 1, z1 = Math.floor(Math.max(prev.z, q.z) / CELL) + 1;
+            for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) { const kk = `${cx},${cz}`; let l = cells.get(kk); if (!l) cells.set(kk, (l = [])); l.push(i); }
+          }
+          prev = q;
+        }
+      }
+      this.speeds.set(key, { cells, segs, CELL });
+    } catch (err) { console.warn('speed limits unavailable', key, err.message); }
+  }
+  /** The posted speed limit (km/h) of the road at (x, z), or null when the map doesn't say. */
+  speedLimitAt(x, z) {
+    const c = this.chunkAt(x, z);
+    const s = c && this.speeds.get(c.key);
+    if (!s) return null;
+    const lx = (x - c.ox) / c.sx, lz = z - c.oz;
+    const l = s.cells.get(`${Math.floor(lx / s.CELL)},${Math.floor(lz / s.CELL)}`);
+    if (!l) return null;
+    let best = 9, kmh = null;
+    for (const i of l) {
+      const [ax, az, bx, bz, v] = s.segs[i];
+      const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((lx - ax) * dx + (lz - az) * dz) / L2));
+      const d = Math.hypot(lx - ax - dx * t, lz - az - dz * t);
+      if (d < best) { best = d; kmh = v; }
+    }
+    return kmh;
+  }
+
   // Real building detail from OSM (in the background): when it arrives, rebuild the tile with it
   // and swap it in. If it never arrives, the tile simply keeps its regional look.
   async refine(key, entry) {
@@ -150,6 +198,7 @@ export class World {
   }
 
   unload(key) {
+    this.speeds.delete(key);
     const c = this.chunks.get(key);
     if (!c) return;
     if (c.chunk) { this.scene.remove(c.chunk.group); c.chunk.dispose(); if (this.hint === c.chunk) this.hint = null; }

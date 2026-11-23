@@ -26,6 +26,8 @@ import { Signs } from './world/signs.js';
 import { Smoke } from './world/smoke.js';
 import { Debris, TreeHits } from './world/debris.js';
 import { Radio } from './data/radio.js';
+import { portalNow, PORTAL_POINTS, PORTAL_COINS } from './game/portals.js';
+import { PortalView, PORTAL_RADIUS } from './world/portal.js';
 import { animateStars, starAvailable, animateGamer, coinAvailable, collected as starsCollected } from './world/stunts.js';
 
 const $ = (s) => document.querySelector(s);
@@ -69,6 +71,7 @@ const signs = new Signs(scene);
 const smoke = new Smoke(scene);
 const debris = new Debris(scene);
 const treeHits = new TreeHits();
+const portalView = new PortalView(scene);
 // a tile refined with OSM building detail replaces the old one: same roads, so traffic carries on
 world.on((ev) => { if (ev.type === 'chunk' && ev.old) for (const c of traffic.cars) if (c.chunk === ev.old) c.chunk = ev.chunk; });
 // local radio for the country you're in; the car's own sounds duck under it
@@ -232,7 +235,7 @@ function wireModeChooser(o) {
   });
 }
 function controlsChooser() {
-  if (!isTouch) return `<p class="note" style="margin-top:14px">Controls: <span class="kbd">W A S D</span> or arrows, <span class="kbd">Space</span> handbrake, <span class="kbd">C</span> camera, <span class="kbd">Esc</span> menu. An Xbox or other game controller works too: just press a button on it.</p>`;
+  if (!isTouch) return `<p class="note" style="margin-top:14px">Controls: <span class="kbd">W A S D</span> or arrows, <span class="kbd">Space</span> or <span class="kbd">Shift</span> handbrake, <span class="kbd">C</span> camera, <span class="kbd">Esc</span> menu. An Xbox or other game controller works too: just press a button on it.</p>`;
   const m = input.mode;
   return `<h3 style="margin:16px 0 6px;font-size:15px">How do you want to steer?</h3>
     <div class="seg" id="ctl">
@@ -795,8 +798,9 @@ function hudFrame() {
   $('#speed').innerHTML = `<b>${Math.round(game.mph ? kmh / 1.609 : kmh)}</b><span>${game.mph ? 'mph' : 'km/h'} ${v.spec.icon}</span>`;
   const why = v.limitWhy;
   const limitV = v.limit * 3.6 / (game.mph ? 1.609 : 1);
+  const posted = game.roadKmh ? `limit ${Math.round(game.mph ? game.roadKmh / 1.609 / 5 : game.roadKmh / 5) * 5}` : '';
   if (v.kind === 'para') { $('#limit').textContent = `${v.flying ? `altitude ${Math.round(game.mph ? (v.y - (world.groundAt(v.x, v.z) ?? v.y)) * 3.281 : v.y - (world.groundAt(v.x, v.z) ?? v.y))} ${game.mph ? 'ft' : 'm'}` : 'on the ground'}${v.limitWhy ? ` · ${v.limitWhy}` : ''}`; } else
-  $('#limit').textContent = why && (Math.abs(v.vf) > v.limit * 0.85 || why === 'map loading ahead' || why === 'out of fuel' || why.startsWith('wrecked')) ? `${why} · max ${Math.round(limitV)}` : (game.style.draftOn ? 'slipstream +5%' : '');
+  $('#limit').textContent = why && (Math.abs(v.vf) > v.limit * 0.85 || why === 'map loading ahead' || why === 'out of fuel' || why.startsWith('wrecked')) ? `${why} · max ${Math.round(limitV)}` : posted;
   const fb = $('#fuelbar');
   fb.hidden = !v.spec.fuel;
   if (v.spec.fuel) { const f = v.fuel / v.spec.fuel; fb.firstChild.style.width = `${f * 100}%`; fb.firstChild.style.background = f < 0.15 ? 'var(--bad)' : 'var(--good)'; }
@@ -906,7 +910,9 @@ function renderTab(tab, body) {
       <h3>Camera</h3><div class="seg" id="camseg">${['Chase', 'Far', 'Bumper', 'Top down'].map((n, i) => `<button data-c="${i}" class="${game.cam === i ? 'on' : ''}">${n}</button>`).join('')}</div>
       <h3>Traffic</h3><div class="seg" id="trf">${[['None', 0], ['Light', 0.5], ['Normal', 1], ['Busy', 1.5]].map(([n, d]) => `<button data-d="${d}" class="${traffic.density === d ? 'on' : ''}">${n}</button>`).join('')}</div>
       <h3>Sound</h3><div class="seg"><button id="snd" class="${profile.settings.mute ? '' : 'on'}">${profile.settings.mute ? '🔇 Off' : '🔊 On'}</button></div>
-      <h3>Start over</h3><p class="note">Begins the whole game again from nothing.</p><button class="btn" id="wipe">Start over…</button>`;
+      <h3>Start over</h3><p class="note">Begins the whole game again from nothing.</p><button class="btn" id="wipe">Start over…</button>
+      ${window.__tipJar ? `<div class="tipjar"><h3>💛 Support EarthRacer</h3><p class="note">EarthRacer is free, with no ads and nothing to unlock. If you enjoy it, you can leave a tip. It doesn't change the game; it helps keep it going.</p><div class="row" id="tip-btns"><span class="note">Loading…</span></div><p class="note" id="tip-msg"></p></div>` : ''}`;
+    if (window.__tipJar) tipJar(body);
     body.querySelectorAll('#ctl button').forEach((b) => b.onclick = async () => { await setControls(b.dataset.m); openPanel('settings'); });
     const cal = body.querySelector('#cal'); if (cal) cal.onclick = () => { closePanel(); calibrateTilt(); };
     body.querySelectorAll('#sensseg button').forEach((b) => b.onclick = () => { profile.settings.sens = +b.dataset.k; input.sliderSens = +b.dataset.k; save(); openPanel('settings'); });
@@ -923,7 +929,7 @@ function renderTab(tab, body) {
       <h3>Controls</h3><table class="keys">
       <tr><td>Drive / brake &amp; reverse</td><td><span class="kbd">W</span>/<span class="kbd">S</span> or arrows · RT / LT</td></tr>
       <tr><td>Steer</td><td><span class="kbd">A</span>/<span class="kbd">D</span> · left stick</td></tr>
-      <tr><td>Handbrake (drift)</td><td><span class="kbd">Space</span> · A</td></tr>
+      <tr><td>Handbrake (drift)</td><td><span class="kbd">Space</span> or <span class="kbd">Shift</span> · A</td></tr>
       <tr><td>Camera</td><td><span class="kbd">C</span> · Y</td></tr>
       <tr><td>Horn / bell</td><td><span class="kbd">H</span> · X</td></tr>
       <tr><td>Back on the road</td><td><span class="kbd">R</span> · B</td></tr>
@@ -941,7 +947,120 @@ function vstats(k) {
   if (r.offroad != null) rows.push(['Off-road', r.offroad]);
   return `<div class="vst">${rows.map(([n, x]) => `<div><span>${n}</span><i><b style="width:${Math.round(x * 100)}%"></b></i></div>`).join('')}<div><span>${r.range ? `⛽ ${game.mph ? Math.round(r.range / 1.609) + ' mi' : r.range + ' km'} a tank` : '⛽ no fuel needed'}</span></div></div>`;
 }
+// The tip jar (iPhone app only): three in-app tips that unlock nothing, like OpenEarth's.
+const TIP_NAMES = { 'com.mediavanity.earthracer.tip.small': 'Small tip', 'com.mediavanity.earthracer.tip.medium': 'Kind tip', 'com.mediavanity.earthracer.tip.large': 'Generous tip' };
+async function tipJar(body) {
+  const box = body.querySelector('#tip-btns'), msg = body.querySelector('#tip-msg');
+  let r;
+  try { r = await window.__tipJar.tipProducts(); } catch { r = { products: [] }; }
+  const list = (r.products || []).sort((a, b) => a.value - b.value);
+  if (!box.isConnected) return;
+  if (!list.length) { box.innerHTML = '<span class="note">The tip jar isn’t available right now.</span>'; return; }
+  box.innerHTML = list.map((p) => `<button class="btn" data-tip="${esc(p.id)}" style="text-align:center">${esc(TIP_NAMES[p.id] || p.name)}<small>${esc(p.price)}</small></button>`).join('');
+  box.querySelectorAll('[data-tip]').forEach((b) => b.onclick = async () => {
+    b.disabled = true; msg.textContent = 'Opening the App Store…';
+    let res;
+    try { res = await window.__tipJar.tip({ id: b.dataset.tip }); } catch (err) { res = { error: String(err?.message || err) }; }
+    b.disabled = false;
+    if (res.ok) { msg.textContent = 'Thank you! That really helps. 💛'; sound.chime(); input.rumble(0.3, 0.5, 200); profile.stats.tips = (profile.stats.tips || 0) + 1; save(); }
+    else if (res.cancelled) msg.textContent = '';
+    else if (res.pending) msg.textContent = 'Waiting for approval…';
+    else msg.textContent = `The tip didn’t go through${res.error ? ` (${res.error})` : ''}.`;
+  });
+}
 const stat = (b, s) => `<div class="stat"><b>${esc(b)}</b><span>${esc(s)}</span></div>`;
+
+// ---------- portals ----------
+// Once an hour, for 10 minutes, a portal opens on a road somewhere in your town. A star on the edge
+// of the minimap is the only clue. Through it: lots of points, and you're in the city on its label
+// (one way). It closes as soon as you've been through.
+async function updatePortal() {
+  const v = game.v;
+  const off = () => { if (game.portal) { game.portal = null; portalView.hide(); } };
+  if (profile.random.active || game.state !== 'driving') return off();
+  // an open portal stays yours until it closes or you use it, wherever you drive to find it
+  const keep = game.portal && (Date.now() < game.portal.closes || (DEV && params.has('portal')));
+  const w = keep ? null : await whereIs(game.lat, game.lon).catch(() => null);
+  const p = keep ? game.portal : w?.bbox ? portalNow({ key: w.areaKey, bbox: w.bbox }, { lat: game.lat, lon: game.lon }, Date.now(), DEV && params.has('portal')) : null;
+  if (!p || profile.portals?.[p.id]) return off();
+  if (game.portal?.id !== p.id) {
+    game.portal = { ...p, pos: null, placed: false };
+    if (!profile.stats.portalsSeen) toast('✨ Something has opened nearby… follow the star on the map.', { ms: 6000 });
+    profile.stats.portalsSeen = (profile.stats.portalsSeen || 0) + 1;
+  }
+  const gp = game.portal;
+  const raw = world.toLocal(gp.lat, gp.lon);
+  if (!gp.placed) {
+    gp.pos = { x: raw.x, z: raw.z }; // until its tile has loaded, the star points at the raw spot
+    if (world.isReady(raw.x, raw.z)) {
+      const r = nearestStreet(raw.x, raw.z, 6000); // the spot may be on a lake or in a field: the nearest street
+      if (r) {
+        gp.pos = { x: r.px, z: r.pz }; gp.placed = true;
+        portalView.place(r.px, r.y ?? world.groundAt(r.px, r.pz) ?? 0, r.pz, Math.atan2(r.dirX, -r.dirZ), `✨ Portal to ${gp.dest.name}`);
+        gp.local = { x: r.px - raw.x, z: r.pz - raw.z }; // kept relative to its geo spot (the origin moves)
+      }
+    }
+  } else {
+    gp.pos = { x: raw.x + gp.local.x, z: raw.z + gp.local.z };
+    const gy = world.groundAt(gp.pos.x, gp.pos.z);
+    if (Math.abs(portalView.group.position.x - gp.pos.x) > 0.5 || Math.abs(portalView.group.position.z - gp.pos.z) > 0.5) portalView.place(gp.pos.x, gy ?? portalView.group.position.y, gp.pos.z, portalView.face, portalView.text);
+  }
+  void v;
+}
+// The nearest point on a proper street (not a path or service lane) to (x, z), searching every
+// loaded tile: exact, so everyone in the area finds the same spot.
+function nearestStreet(x, z, maxD) {
+  let best = null, bd = maxD;
+  for (const ch of world.readyChunks()) {
+    if (Math.abs(ch.ox - x) > ch.half + maxD || Math.abs(ch.oz - z) > ch.half + maxD) continue;
+    for (const rd of ch.roads) {
+      if (rd.c > 5 || (rd.f & 2)) continue; // streets only, not on a bridge
+      const a = rd.p;
+      for (let k = 0; k < a.length; k += 3) {
+        const px = ch.ox + a[k] * ch.sx, pz = ch.oz + a[k + 2], d = Math.hypot(px - x, pz - z);
+        if (d >= bd) continue;
+        const j = k + 3 < a.length ? k + 3 : k - 3;
+        if (j < 0) continue;
+        let dx = (ch.ox + a[j] * ch.sx) - px, dz = (ch.oz + a[j + 2]) - pz;
+        if (j < k) { dx = -dx; dz = -dz; }
+        const L = Math.hypot(dx, dz) || 1;
+        bd = d; best = { px, pz, y: a[k + 1], dirX: dx / L, dirZ: dz / L };
+      }
+    }
+  }
+  return best;
+}
+let portalSide = 0;
+function tickPortal(dt) {
+  const gp = game.portal;
+  portalView.animate(performance.now() / 1000);
+  if (!gp?.placed || !portalView.group.visible) { portalSide = 0; return; }
+  const v = game.v;
+  const m = portalView.measure(v.x, v.y, v.z);
+  if (m.d > 40) { portalSide = 0; return; }
+  const side = Math.sign(m.u) || 1;
+  if (portalSide && side !== portalSide && Math.abs(m.w) < PORTAL_RADIUS - 0.6 && m.h > -1 && m.h < PORTAL_RADIUS * 2) enterPortal(gp);
+  portalSide = side;
+}
+function enterPortal(gp) {
+  game.portal = null; portalView.hide(); portalSide = 0;
+  (profile.portals ||= {})[gp.id] = Date.now();
+  for (const [k, t] of Object.entries(profile.portals)) if (Date.now() - t > 3 * 864e5) delete profile.portals[k];
+  profile.stats.portals = (profile.stats.portals || 0) + 1;
+  profile.stats.style += PORTAL_POINTS; profile.coins += PORTAL_COINS;
+  if (game.activity) endActivity(null);
+  sound.whoosh(); sound.chime(); input.rumble(0.6, 0.9, 400);
+  storeVehicle();
+  const kind = VEHICLES[game.v.kind].terrain === 'land' ? game.v.kind : 'car';
+  const d = gp.dest;
+  const g = offsetGeo(d.lat, d.lon, (Math.random() - 0.5) * 600, (Math.random() - 0.5) * 600);
+  profile.pos = { lat: g.lat, lon: g.lon, heading: Math.random() * Math.PI * 2, kind, at: Date.now() };
+  save(true);
+  game.country = null; game.streetLabel = undefined;
+  begin(g.lat, g.lon, profile.pos.heading, kind, { snap: true, teleport: true, loading: `✨ Through the portal to ${esc(d.name)}…` }).then(() => {
+    toast(`✨ Portal! +${PORTAL_POINTS.toLocaleString()} points, +${PORTAL_COINS} coins. Welcome to <b>${esc(d.name)}</b>.`, { ms: 7000 });
+  });
+}
 
 // ---------- out of fuel ----------
 // Call a tow truck (coins), switch vehicle, or: by day the emergency solar buggy, by night siphon
@@ -1605,7 +1724,11 @@ function updateModel(dt) {
     const amp = 0.08 + Math.min(1.2, waves) * 0.35;
     bob = Math.sin(t * 1.7) * amp; wavePitch = Math.sin(t * 1.3 + 1) * amp * 0.08; waveRoll = Math.sin(t * 1.1) * amp * 0.1;
   }
-  m.group.position.set(v.x, v.y + bob, v.z);
+  // suspension: the body follows small changes in the ground smoothly instead of copying every one
+  const gy = v.y;
+  if (game.visY == null || !v.grounded || v.spec.terrain !== 'land' || Math.abs(gy - game.visY) > 1.5) game.visY = gy;
+  else game.visY += (gy - game.visY) * Math.min(1, dt * 14);
+  m.group.position.set(v.x, game.visY + bob, v.z);
   m.group.rotation.set(0, 0, 0);
   m.group.rotation.order = 'YXZ';
   m.group.rotation.y = -v.heading;
@@ -1677,7 +1800,8 @@ function frame(now) {
     if (!world.isReady(v.x + ux * 250, v.z + uz * 250)) loadLimit = 7;
     else if (!world.isReady(v.x + ux * 550, v.z + uz * 550)) loadLimit = 14;
   }
-  const ctx = { world, grip: sky.grip(), wind: windVec(), loadLimit, traffic: traffic.density ? traffic : null, draft: game.style.draftOn, night: sky.night };
+  if ((game.limT = (game.limT || 0) + dt) > 0.3) { game.limT = 0; game.roadKmh = v.road ? world.speedLimitAt(v.x, v.z) : null; }
+  const ctx = { world, grip: sky.grip(), wind: windVec(), loadLimit, traffic: traffic.density ? traffic : null, draft: game.style.draftOn, night: sky.night, roadLimit: game.roadKmh };
   if (v.spec.terrain === 'water' && game.waves) ctx.grip *= Math.max(0.6, 1 - game.waves * 0.12);
   let acc = dt, moved = 0;
   const x0 = v.x, z0 = v.z;
@@ -1702,6 +1826,7 @@ function frame(now) {
   signs.update(dt, world, v);
   tickStunts(dt);
   tickTrees(dt);
+  tickPortal(dt);
   tickEngineSmoke(dt);
   tickFuel();
   tickStyle(dt, inp);
@@ -1713,7 +1838,7 @@ function frame(now) {
   sound.update(v, { rain: env.raining ? 1 : 0 });
   hudFrame();
   mapT += dt;
-  if (mapT > 0.12) { mapT = 0; drawMinimap($('#minimap'), world, v, markers(), { hideFuel: false, hubs: nearestHubs(), mph: game.mph }); }
+  if (mapT > 0.12) { mapT = 0; drawMinimap($('#minimap'), world, v, markers(), { hideFuel: false, hubs: nearestHubs(), mph: game.mph, portal: game.portal?.pos || null }); }
   saveT += dt;
   if (saveT > 1) {
     saveT = 0;
@@ -1721,6 +1846,7 @@ function frame(now) {
     storeVehicle(); save();
     updateWeather();
     if ((game.featT = (game.featT || 0) + 1) % 3 === 0) checkUnlocks();
+    updatePortal();
   }
   waveT += dt;
   if (waveT > 120) { waveT = 0; updateWaves(); }
@@ -1740,6 +1866,7 @@ function rebase(old) {
   traffic.cars.forEach((c) => traffic.place(c));
   const c = { x: camPos.x, z: camPos.z }; fix(c); camPos.x = c.x; camPos.z = c.z;
   const l = { x: camLook.x, z: camLook.z }; fix(l); camLook.x = l.x; camLook.z = l.z;
+  if (game.portal?.placed) updatePortal(); // the portal moves with the new origin straight away
 }
 
 // ---------- play mode: explorer (the real world, a few stunts) or gamer (stunts everywhere) ----------
@@ -1794,8 +1921,11 @@ function tickGamer(dt, chunks) {
       }
     }
     if (v.grounded) for (const o of st.boosts) {
-      if (Math.hypot(o.x - lx, o.z - lz) < 3 && !(v.boost > 0.5)) {
+      if (Math.hypot(o.x - lx, o.z - lz) < 4.5 && !(v.boost > 0.5)) {
         v.boost = 2.5; sound.whoosh(); game.shake = 0.25; input.rumble(0.3, 0.6, 150);
+        const k = Math.min(1.6, Math.max(1, 14 / Math.max(1, Math.abs(v.vf)))); // a shove, more from slow
+        v.vx *= k; v.vz *= k; v.vf *= k;
+        profile.stats.boosts = (profile.stats.boosts || 0) + 1;
       }
     }
     const R = v.spec.radius + 0.4;

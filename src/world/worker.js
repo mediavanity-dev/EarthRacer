@@ -118,6 +118,9 @@ async function build({ x, y, opts }) {
   }
   const lut = (t, v) => { const f = Math.min(lutN, Math.max(0, (v / E) * lutN)); const i = Math.min(lutN - 1, Math.floor(f)); return t[i] + (t[i + 1] - t[i]) * (f - i); };
   const X = (px) => lut(lutX, px), Z = (py) => lut(lutZ, py);
+  // ground height at tile-local metres (the inverse of X and Z is linear to well under a pixel)
+  const X0 = X(0), X1 = X(E), Z0 = Z(0), Z1 = Z(E);
+  const Hxz = (x, z) => H(((x - X0) / (X1 - X0)) * E, ((z - Z0) / (Z1 - Z0)) * E);
   const xs = new Float32Array(W), zs = new Float32Array(W);
   for (let k = 0; k <= GRID; k++) { xs[k] = X((k / GRID) * E); zs[k] = Z((k / GRID) * E); }
 
@@ -309,6 +312,7 @@ async function build({ x, y, opts }) {
 
   // ---------- road ribbons, markings, bridge railings ----------
   const rPos = [], rCol = [], rNrm = [];
+  const roadSegs = []; // [ax, az, ay, bx, bz, by, reach] for every road segment, to keep terrain under roads
   const quad = (a, b, c, d, cl, n = [0, 1, 0]) => { // wound so the front face points along n
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
     const gx = uy * vz - uz * vy, gy = uz * vx - ux * vz, gz = ux * vy - uy * vx;
@@ -325,9 +329,11 @@ async function build({ x, y, opts }) {
   const rand = rng(seed ^ 0x5bd1e995);
   const MAXPROPS = opts.maxProps ?? 1400;
 
-  for (const rd of fabric.roads) {
-    // densify to <= 8 m and convert to local metres
-    const L = [];
+  // Heights first, for every road: smoothed along the road, then made to agree where roads meet,
+  // so driving is smooth (no steps at junctions, no elevation-data noise underfoot).
+  const prep = fabric.roads.map((rd) => {
+    // densify to <= 8 m
+    const L = [], vtx = []; // vtx: index in L of each original vertex (shared at junctions)
     for (let k = 0; k < rd.pts.length; k++) {
       const [px, py] = rd.pts[k];
       if (k) {
@@ -335,25 +341,46 @@ async function build({ x, y, opts }) {
         const segM = Math.hypot(px - qx, py - qy) * mPerPx, n = Math.ceil(segM / 8);
         for (let t = 1; t < n; t++) L.push([qx + ((px - qx) * t) / n, qy + ((py - qy) * t) / n]);
       }
-      L.push([px, py]);
+      vtx.push(L.length); L.push([px, py]);
     }
-    if (L.length < 2) continue;
+    if (L.length < 2) return null;
     const lift = LIFT[rd.cls] ?? 0.25;
     let hs = L.map(([px, py]) => H(px, py) + lift);
-    // real roads are smooth: average out elevation-data noise along the road (~40 m window),
-    // never sinking more than a little into the ground
+    // real roads are smooth: average out elevation-data noise along the road (~70 m window),
+    // sinking at most a little below the raw ground (the drawn terrain is pressed under roads)
     if (!rd.bridge && hs.length > 2) {
-      for (let pass = 0; pass < 3; pass++) {
+      for (let pass = 0; pass < 4; pass++) {
         const sm = hs.slice();
         for (let k = 1; k < hs.length - 1; k++) {
-          const a = Math.max(0, k - 2), b = Math.min(hs.length - 1, k + 2);
+          const a = Math.max(0, k - 3), b = Math.min(hs.length - 1, k + 3);
           let sum = 0; for (let q = a; q <= b; q++) sum += hs[q];
           sm[k] = sum / (b - a + 1);
         }
         hs = sm;
       }
-      hs = hs.map((h, k) => Math.max(h, H(L[k][0], L[k][1]) + lift - 0.22));
+      hs = hs.map((h, k) => Math.max(h, H(L[k][0], L[k][1]) + lift - 0.35));
     }
+    return { L, vtx, hs };
+  });
+  // junctions: roads sharing a vertex take the same height there, blended in over ~25 m
+  {
+    const at = new Map();
+    prep.forEach((q, ri) => { if (q && !fabric.roads[ri].bridge) for (const i of q.vtx) { const [px, py] = q.L[i]; const key = `${Math.round(px)},${Math.round(py)}`; let l = at.get(key); if (!l) at.set(key, (l = [])); l.push([ri, i]); } });
+    for (const l of at.values()) {
+      if (l.length < 2) continue;
+      const h = l.reduce((sum, [ri, i]) => sum + prep[ri].hs[i], 0) / l.length;
+      for (const [ri, i] of l) {
+        const hs = prep[ri].hs, d = h - hs[i];
+        for (let k = -3; k <= 3; k++) { const j = i + k; if (j >= 0 && j < hs.length) hs[j] += d * (1 - Math.abs(k) / 4); }
+      }
+    }
+  }
+
+  for (let ri = 0; ri < fabric.roads.length; ri++) {
+    const rd = fabric.roads[ri], q = prep[ri];
+    if (!q) continue;
+    const { L } = q;
+    let hs = q.hs;
     if (rd.bridge) { // a bridge deck runs straight between its ends, never below the ground
       const h0 = hs[0], h1 = hs[hs.length - 1];
       let tot = 0; const acc = [0];
@@ -361,6 +388,7 @@ async function build({ x, y, opts }) {
       hs = hs.map((h, k) => Math.max(h, h0 + (h1 - h0) * (acc[k] / (tot || 1))));
     }
     const P = L.map(([px, py], k) => [X(px), hs[k], Z(py)]);
+    if (!rd.bridge) for (let k = 1; k < P.length; k++) roadSegs.push(P[k - 1][0], P[k - 1][2], P[k - 1][1], P[k][0], P[k][2], P[k][1], rd.width / 2 + 1.5);
     const flatPath = rd.cls === 'path' || rd.cls === 'pedestrian';
     const ci = ROAD_CLASSES.indexOf(rd.cls);
     const flat = new Float32Array(P.length * 3);
@@ -378,7 +406,9 @@ async function build({ x, y, opts }) {
     const color = rd.cls === 'path' ? PATHC : rd.unpaved ? DIRT : (ASPHALT[rd.cls] || ASPHALT.minor);
     const tint = 0.97 + rand() * 0.06;
     const cl = shade(color, tint);
-    const off = (p, sd, d, dy = 0) => [p[0] + sd[0] * d, p[1] + dy, p[2] + sd[1] * d];
+    // every road vertex (edges and markings too) sits just above the ground right where it is: a road
+    // across a slope tilts with it rather than its uphill edge sinking under the hillside
+    const off = (p, sd, d, dy = 0) => { const x = p[0] + sd[0] * d, z = p[2] + sd[1] * d; return [x, Math.max(p[1], Hxz(x, z) + 0.1) + dy, z]; };
     if (!flatPath) for (let k = 1; k < P.length; k++) {
       const a = P[k - 1], c = P[k], sa = side[k - 1], sc = side[k];
       quad(off(a, sa, -hw), off(c, sc, -hw), off(c, sc, hw), off(a, sa, hw), cl);
@@ -461,6 +491,24 @@ async function build({ x, y, opts }) {
   }
   function pxOf(q) { return [inv(lutX, q[0]), inv(lutZ, q[2])]; }
 
+  // terrain grid points that poke up through a road are pressed down just below it (the drawn
+  // terrain only: the height grid used for driving off-road is unchanged)
+  {
+    const dx = xs[1] - xs[0], dz = zs[1] - zs[0];
+    for (let i = 0; i < roadSegs.length; i += 7) {
+      const ax = roadSegs[i], az = roadSegs[i + 1], ay = roadSegs[i + 2], bx = roadSegs[i + 3], bz = roadSegs[i + 4], by = roadSegs[i + 5], r = roadSegs[i + 6];
+      const c0 = Math.max(0, Math.floor((Math.min(ax, bx) - r - xs[0]) / dx)), c1 = Math.min(GRID, Math.ceil((Math.max(ax, bx) + r - xs[0]) / dx));
+      const r0 = Math.max(0, Math.floor((Math.min(az, bz) - r - zs[0]) / dz)), r1 = Math.min(GRID, Math.ceil((Math.max(az, bz) + r - zs[0]) / dz));
+      const ex = bx - ax, ez = bz - az, L2 = ex * ex + ez * ez || 1;
+      for (let rr = r0; rr <= r1; rr++) for (let cc = c0; cc <= c1; cc++) {
+        const vx = xs[cc], vz = zs[rr];
+        const t = Math.max(0, Math.min(1, ((vx - ax) * ex + (vz - az) * ez) / L2));
+        if (Math.hypot(vx - ax - ex * t, vz - az - ez * t) > r) continue;
+        const k = (rr * W + cc) * 3 + 1, y = ay + (by - ay) * t - 0.15;
+        if (tPos[k] > y) tPos[k] = y;
+      }
+    }
+  }
   const roadMesh = rPos.length ? { pos: new Float32Array(rPos), col: new Float32Array(rCol), nrm: new Float32Array(rNrm) } : null;
 
   // ---------- trees in woods and parks (never on roads, water or buildings) ----------

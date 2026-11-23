@@ -15,6 +15,10 @@ async function startNative() {
   if (value && (!local || at(value) > at(local))) { try { localStorage.setItem(KEY, value); } catch { /* blocked */ } }
   window.__nativeSave = (json) => { Preferences.set({ key: KEY, value: json }).catch(() => {}); };
   document.documentElement.classList.add('native');
+  // the app's own plugin: the tip jar (a Capacitor plugin proxy answers to `then`, so never await it)
+  const { registerPlugin } = await import('@capacitor/core');
+  const raw = registerPlugin('EarthRacer');
+  window.__tipJar = new Proxy({}, { get: (_, k) => (k === 'then' ? undefined : raw[k]) });
 }
 
 (native ? startNative().catch((e) => console.warn('native start', e)) : Promise.resolve()).then(() => import('./main.js'));

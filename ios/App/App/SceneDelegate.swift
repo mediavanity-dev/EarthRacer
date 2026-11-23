@@ -48,6 +48,7 @@ class GameViewController: CAPBridgeViewController {
     private static let pageBackground = UIColor(red: 15 / 255, green: 23 / 255, blue: 32 / 255, alpha: 1) // #0F1720
 
     override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(EarthRacerPlugin()) // the tip jar
         view.backgroundColor = GameViewController.pageBackground
         webView?.isOpaque = false
         webView?.backgroundColor = GameViewController.pageBackground

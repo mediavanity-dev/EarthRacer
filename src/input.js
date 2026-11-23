@@ -1,5 +1,5 @@
 // Controls. Every source writes into one state: { throttle, brake, steer, handbrake, analog }.
-//   Keyboard: W/S or arrows, A/D steer, Space handbrake, C camera, H horn, R back to road, Esc menu.
+//   Keyboard: W/S or arrows, A/D steer, Space or Shift handbrake, C camera, H horn, R back to road, Esc menu.
 //   Gamepad (Xbox and other "standard" pads, wired or Bluetooth): RT gas, LT brake/reverse,
 //     left stick steer, A handbrake, Y camera, X horn, B back to road, Menu button = menu. Rumbles.
 //   Phone, three styles (chosen in Settings):
@@ -7,7 +7,7 @@
 //     slider  - drag your left thumb along a slider to steer
 //     buttons - ◀ ▶ buttons on the left, pedals on the right
 
-const KEYS = { up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'], hand: ['Space'] };
+const KEYS = { up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'], hand: ['Space', 'ShiftLeft', 'ShiftRight'] }; // Shift too: many keyboards drop Space with two arrows held (ghosting)
 
 export class Input {
   constructor(root, { onAction } = {}) {
@@ -25,6 +25,7 @@ export class Input {
 
     addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
+      if (document.activeElement?.tagName === 'BUTTON') document.activeElement.blur(); // a clicked button mustn't catch Space
       this.keys.add(e.code);
       this.source = 'keyboard';
       if (!e.repeat) {

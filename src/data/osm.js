@@ -72,3 +72,34 @@ out tags qt;`);
     return out;
   });
 }
+
+// Road speed limits (maxspeed) for a tile: [[km/h, lat, lon, lat, lon, ...], ...]. Cached a month.
+// "50" is km/h, "30 mph" is mph, "none" (German motorways) counts as 130; anything else is skipped.
+function parseSpeed(v) {
+  if (!v) return null;
+  if (v === 'none') return 130;
+  const m = /^(\d+(?:\.\d+)?)\s*(mph|km\/h|kmh)?$/.exec(v.trim());
+  if (!m) return null;
+  const n = +m[1];
+  return m[2] === 'mph' ? n * 1.609 : n;
+}
+export async function loadSpeedLimits(key, b) {
+  const ck = `speeds:v1:${key}`;
+  const hit = await cacheGet(ck, 30 * 24 * 3600 * 1000);
+  if (hit) return hit;
+  return slot(async () => {
+    const raw = await overpass(`[out:json][timeout:60][bbox:${b.s},${b.w},${b.n},${b.e}];
+way["highway"]["maxspeed"];
+out tags geom qt;`);
+    const out = [];
+    for (const el of raw.elements || []) {
+      const kmh = parseSpeed(el.tags?.maxspeed);
+      if (!kmh || !el.geometry?.length) continue;
+      const row = [Math.round(kmh)];
+      for (const g of el.geometry) row.push(+g.lat.toFixed(6), +g.lon.toFixed(6));
+      out.push(row);
+    }
+    cachePut(ck, out);
+    return out;
+  });
+}

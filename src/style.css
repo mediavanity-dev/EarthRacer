@@ -339,3 +339,6 @@ body[data-sign="au"] #sidepops .nm { --bg: #fff; --fg: #16357a; --bd: #16357a; }
 .wheel-ind.quiet .wtip { opacity: 0; }
 .wheel-ind.flash .wheel-dial { animation: wflash 0.5s ease-out; }
 @keyframes wflash { 0% { border-color: var(--accent); transform: scale(1.12); } 100% { border-color: #ffffffaa; transform: scale(1); } }
+
+.tipjar { margin-top: 18px; padding-top: 6px; border-top: 1px solid #ffffff14; }
+.tipjar .row .btn small { text-align: center; font-size: 14px; font-weight: 700; color: var(--ink); }

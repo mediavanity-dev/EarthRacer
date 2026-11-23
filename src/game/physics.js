@@ -63,6 +63,8 @@ export class VehicleState {
     let vf = this.vx * fx + this.vz * fz, vr = this.vx * rx + this.vz * rz;
 
     // ---------- what's under us ----------
+    // the speed cap: a posted limit + 10 mph where the map gives one, else the usual SPEED_CAP
+    const cap = ctx.roadLimit && this.road ? Math.max(SPEED_CAP * 0.5, ctx.roadLimit / 3.6 + 4.47) : SPEED_CAP;
     let surfGrip = 1, surfTop = s.top, drag = 0.0;
     if (s.terrain === 'water') {
       this.surface = 'water'; this.road = null;
@@ -73,27 +75,28 @@ export class VehicleState {
       if (on) {
         const c = on.road.c, unpaved = (on.road.f & 1) || c === 7;
         // off the tarmac you're nearly as fast (the grip is what changes)
-        const roadTop = Math.min(s.top, SPEED_CAP);
+        const roadTop = Math.min(s.top, cap);
         if (c === 8 || c === 9) { this.surface = 'path'; surfGrip = this.kind === 'bike' ? 0.95 : 0.75; surfTop = roadTop * (this.kind === 'bike' ? 1 : 0.88); }
         else if (unpaved) { this.surface = 'unpaved'; surfGrip = 0.75; surfTop = roadTop * 0.92; drag = 0.04; }
         else this.surface = 'road';
       } else {
-        this.surface = 'offroad'; surfGrip = 0.65; surfTop = Math.min(s.top, SPEED_CAP) * (s.offroadK ?? 0.86); drag = 0.06;
+        this.surface = 'offroad'; surfGrip = 0.65; surfTop = Math.min(s.top, cap) * (s.offroadK ?? 0.86); drag = 0.06;
       }
     }
     // wind: a headwind slows bikes and boats noticeably; cars barely notice
     const windAlong = ctx.wind ? ctx.wind[0] * fx + ctx.wind[1] * -fz : 0; // + = tailwind
     const windK = this.kind === 'bike' ? 0.3 : s.terrain === 'water' ? 0.15 : 0.02;
-    let top = Math.min(surfTop + windAlong * windK, SPEED_CAP);
-    let why = top < SPEED_CAP - 0.5 ? (this.surface === 'offroad' ? 'off-road' : this.surface === 'unpaved' ? 'gravel' : null) : 'speed cap';
-    if (top >= s.top - 0.1 && s.top < SPEED_CAP) why = 'top speed';
+    let top = Math.min(surfTop + windAlong * windK, cap);
+    let why = top < cap - 0.5 ? (this.surface === 'offroad' ? 'off-road' : this.surface === 'unpaved' ? 'gravel' : null) : cap !== SPEED_CAP ? 'speed limit +10 mph' : 'speed cap';
+    if (top >= s.top - 0.1 && s.top < cap) why = 'top speed';
     if (ctx.loadLimit < top) { top = ctx.loadLimit; why = 'map loading ahead'; }
     if (this.damage >= 100) { top = Math.min(top, 4); why = 'wrecked: summon a fresh one'; }
     else if (this.damage > 70) { top *= 0.75; why = why || 'damaged'; }
     if (s.fuel && this.fuel <= 0) { top = Math.min(top, 2.5); why = 'out of fuel'; }
     if (s.solar && (ctx.night ?? 0) > 0.55) { top = Math.min(top, 3); why = 'solar: no sun, crawling on the battery'; }
     // boost pads (gamer mode): a short surge past the usual limit, but never past the map loading
-    if (this.boost > 0) { this.boost -= dt; if (!(ctx.loadLimit < SPEED_CAP)) top = Math.max(top, Math.min(s.top, SPEED_CAP) * 1.3); }
+    // boost arrows (gamer mode): double speed for a couple of seconds, but never past the map loading
+    if (this.boost > 0) { this.boost -= dt; top = Math.max(top, Math.min(Math.min(s.top, cap) * 2, ctx.loadLimit)); }
     this.limit = top; this.limitWhy = why;
 
     // ---------- forward ----------
@@ -102,7 +105,7 @@ export class VehicleState {
     if (this.grounded || s.terrain === 'water') {
       if ((t > 0 || this.boost > 0) && vf > -0.5) {
         const k = Math.max(0, 1 - (vf / top) ** 2);
-        vf += s.accel * (this.boost > 0 ? 2.2 : 1) * Math.max(t, this.boost > 0 ? 1 : 0) * k * (0.55 + 0.45 * Math.min(1, grip / s.grip + 0.3)) * dt;
+        vf += s.accel * (this.boost > 0 ? 4 : 1) * Math.max(t, this.boost > 0 ? 1 : 0) * k * (0.55 + 0.45 * Math.min(1, grip / s.grip + 0.3)) * dt;
       }
       if (t > 0 && vf <= -0.5) vf = Math.min(0, vf + s.brake * t * dt);
       if (b > 0) {
@@ -124,7 +127,7 @@ export class VehicleState {
     // drifting: a flick of the handbrake while turning at speed kicks the rear out, and the slide
     // holds (steer to set the angle, counter-steer to straighten) until you straighten up or slow down
     const canDrift = s.terrain === 'land' && this.grounded && this.kind !== 'cart';
-    if (canDrift && !this.drifting && input.handbrake && Math.abs(vf) > 8 && Math.abs(this.steer) > 0.25) this.drifting = true;
+    if (canDrift && !this.drifting && input.handbrake && Math.abs(vf) > 6 && Math.abs(this.steer) > 0.25) this.drifting = true;
     if (this.drifting && (!canDrift || Math.abs(vf) < 4 || input.brake > 0.6 || (!input.handbrake && this.slip < 1.0 && Math.abs(this.steer) < 0.2))) this.drifting = false;
     if (this.drifting) yaw *= input.handbrake ? 1.55 : 1.2;
     else if (input.handbrake && Math.abs(vf) > 5 && s.terrain !== 'water') yaw *= 1.45;
@@ -231,7 +234,7 @@ export class VehicleState {
     const hf = this.rawGround(w, this.x + fx * L * 0.4, this.z + fz * L * 0.4), hb = this.rawGround(w, this.x - fx * L * 0.4, this.z - fz * L * 0.4);
     const tp = s.terrain === 'water' ? -Math.min(0.15, Math.max(0, nvf - 8) * 0.012) : Math.atan2(hf - hb, L * 0.8);
     const accelPitch = (nvf - (this.prevVf ?? nvf)) / Math.max(dt, 1e-3) * -0.006;
-    this.pitch += (tp + accelPitch * 0.5 - this.pitch) * Math.min(1, dt * 8);
+    this.pitch += (tp + accelPitch * 0.5 - this.pitch) * Math.min(1, dt * 5);
     const lean = this.kind === 'bike' || s.lean ? Math.max(-0.6, Math.min(0.6, -yaw * nvf * (s.lean ? 0.05 : 0.08))) : Math.max(-0.08, Math.min(0.08, yaw * nvf * 0.012));
     this.roll += (lean - this.roll) * Math.min(1, dt * 6);
     this.prevVf = nvf;
