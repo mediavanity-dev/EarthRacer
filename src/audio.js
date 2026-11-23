@@ -10,6 +10,16 @@ export class Sound {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     const ctx = (this.ctx = new AC());
+    // iOS suspends or "interrupts" audio after a lock, a call or switching apps, and doesn't bring it
+    // back by itself: resume on the next touch and whenever the app comes back to the front
+    const wake = () => { if (ctx.state !== 'running' && !document.hidden) ctx.resume?.().catch(() => {}); };
+    addEventListener('pointerdown', wake, true);
+    addEventListener('touchend', wake, true);
+    addEventListener('keydown', wake, true);
+    document.addEventListener('visibilitychange', wake);
+    addEventListener('pageshow', wake);
+    ctx.onstatechange = () => { if (ctx.state !== 'running') setTimeout(wake, 500); };
+    this.wake = wake;
     this.master = ctx.createGain(); this.master.gain.value = this.muted ? 0 : 0.6; this.master.connect(ctx.destination);
     const noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const d = noise.getChannelData(0);
@@ -42,6 +52,7 @@ export class Sound {
 
   update(v, { rain = 0 } = {}) {
     if (!this.ctx) return;
+    if (this.ctx.state !== 'running' && performance.now() - (this.wokeAt || 0) > 2000) { this.wokeAt = performance.now(); this.wake?.(); }
     const t = this.ctx.currentTime, sm = 0.06;
     const speed = Math.hypot(v.vx, v.vz), kind = v.kind;
     let f = 0, eg = 0, cut = 900;

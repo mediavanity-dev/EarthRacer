@@ -195,3 +195,36 @@ body[data-sign="fr"] .shield, body[data-sign="de"] .shield, body[data-sign="cent
 
 .quiet-link { display: block; margin: 10px auto 0; background: none; border: none; color: var(--muted); font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; opacity: 0.7; padding: 4px 8px; }
 .quiet-link.armed { color: #ffb4a8; opacity: 1; }
+
+/* ---------- small notes under the street name (street changes, postcards, bridges) ---------- */
+#sidepops { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; align-items: flex-start; }
+#sidepops .sp { display: flex; gap: 8px; align-items: center; background: rgba(15, 23, 32, 0.62); border-radius: 8px; padding: 4px 9px; font-size: 12.5px; max-width: min(300px, 44vw); animation: spin-in 0.25s ease-out; text-shadow: none; }
+#sidepops .sp.out { opacity: 0; transition: opacity 0.35s; }
+#sidepops .sp.cross { background: rgba(15, 23, 32, 0.4); color: #d6dee6; font-size: 11.5px; padding: 2px 8px; }
+#sidepops .sp .x { opacity: 0.6; font-size: 10px; }
+#sidepops .sp.enter { background: none; padding: 0; }
+#sidepops .sp.enter .nm { --bg: #1f4fa0; --fg: #fff; --bd: #fff; background: var(--bg); color: var(--fg); border: 2px solid var(--bd); border-radius: 6px; padding: 2px 10px; font-weight: 700; font-size: 14px; }
+body[data-sign="us"] #sidepops .nm, body[data-sign="za"] #sidepops .nm { --bg: #1f6b3a; }
+body[data-sign="uk"] #sidepops .nm, body[data-sign="de"] #sidepops .nm { --bg: #fff; --fg: #111; --bd: #111; }
+body[data-sign="fr"] #sidepops .nm { --bg: #1d3c78; --bd: #1f7a3f; }
+body[data-sign="med"] #sidepops .nm { --bg: #f4efe2; --fg: #1b1b1b; --bd: #6b5a42; }
+body[data-sign="au"] #sidepops .nm { --bg: #fff; --fg: #16357a; --bd: #16357a; }
+#sidepops .sp.postcard img { width: 46px; height: 34px; object-fit: cover; border-radius: 4px; }
+#sidepops .sp .dim { color: var(--muted); font-size: 11px; }
+@keyframes spin-in { from { transform: translateX(-6px); opacity: 0; } }
+#banner { display: none; }
+
+/* ---------- which way: an arrow in the task panel ---------- */
+#task { position: absolute; padding-right: 54px; }
+#task .tdir { position: absolute; right: 10px; top: 50%; margin-top: -19px; width: 38px; height: 38px; border-radius: 50%; background: #ffffff14; transition: transform 0.15s linear; }
+#task .tdir i { position: absolute; left: 50%; top: 5px; margin-left: -9px; width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 24px solid var(--accent); }
+
+/* ---------- start over warning ---------- */
+.card.danger { border: 2px solid #ff6b5b88; }
+.card.danger ul.lost { margin: 4px 0 10px 18px; padding: 0; color: #e6edf3; font-size: 14px; line-height: 1.6; }
+.btn.red { background: #c62f24; border-color: #ff6b5b; color: #fff; }
+
+/* ---------- gamer mode score ---------- */
+#gscore { margin-top: 6px; text-align: center; background: rgba(15, 23, 32, 0.7); border-radius: 10px; padding: 4px 8px; }
+#gscore b { display: block; font-size: 18px; color: var(--accent); font-variant-numeric: tabular-nums; }
+#gscore span { font-size: 11px; color: #e6edf3; }

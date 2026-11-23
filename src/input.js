@@ -146,7 +146,7 @@ export class Input {
       node.addEventListener('pointercancel', end);
     };
     const gas = el('pedal gas', '<span>GAS</span>');
-    const brake = el('pedal brake', '<span>BRAKE</span>');
+    const brake = el('pedal brake', '<span>BRAKE<br>/ REV</span>');
     hold(gas, () => { this.touch.gas = 1; }, () => { this.touch.gas = 0; });
     hold(brake, () => { this.touch.brake = 1; }, () => { this.touch.brake = 0; });
     const hb = el('tbtn hand', 'Handbrake');

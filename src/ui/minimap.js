@@ -32,7 +32,7 @@ function tileImage(ch) {
   return ch.mapImg;
 }
 
-export function drawMinimap(canvas, world, player, markers = [], { hideFuel = false } = {}) {
+export function drawMinimap(canvas, world, player, markers = [], { hideFuel = false, hubs = [], mph = false } = {}) {
   const g = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height, R = W / 2;
   const s = R / RADIUS_M;
@@ -80,8 +80,38 @@ export function drawMinimap(canvas, world, player, markers = [], { hideFuel = fa
   // player arrow (always pointing up)
   g.fillStyle = '#4ea3ff'; g.strokeStyle = '#fff'; g.lineWidth = 2;
   g.beginPath(); g.moveTo(R, R - 11); g.lineTo(R + 8, R + 8); g.lineTo(R, R + 4); g.lineTo(R - 8, R + 8); g.closePath(); g.fill(); g.stroke();
-  // north marker
-  const nx = R + Math.sin(-player.heading) * (R - 12), ny = R - Math.cos(-player.heading) * (R - 12);
-  g.fillStyle = '#ff6b5b'; g.font = 'bold 18px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText('N', nx, ny);
+  // nearest journey hubs: a glowing sixth of the rim pointing at each (the nearer one bolder),
+  // with its distance just inside
+  const north = -player.heading;
+  hubs.slice(0, 2).reverse().forEach((h, k, arr) => {
+    const main = k === arr.length - 1;
+    const ang = Math.atan2(h.x - player.x, -(h.z - player.z)) - player.heading; // 0 = straight up
+    const a0 = ang - Math.PI / 2;
+    g.save();
+    g.globalAlpha = main ? 0.95 : 0.5;
+    g.strokeStyle = h.color; g.lineWidth = main ? 9 : 5; g.lineCap = 'round';
+    g.shadowColor = h.color; g.shadowBlur = main ? 16 : 8;
+    g.beginPath(); g.arc(R, R, R - 6, a0 - Math.PI / 6, a0 + Math.PI / 6); g.stroke();
+    g.shadowBlur = 0;
+    // keep the label clear of the north arrow
+    const nearN = Math.abs(Math.atan2(Math.sin(ang - north), Math.cos(ang - north))) < 0.45;
+    const lr = R - (nearN ? 58 : 34);
+    const lx = R + Math.sin(ang) * lr, ly = R - Math.cos(ang) * lr;
+    const km = h.d / 1000;
+    const txt = mph ? (km * 0.6214 < 0.1 ? `${Math.round(h.d * 3.281)} ft` : `${(km * 0.6214).toFixed(1)} mi`) : (km < 1 ? `${Math.round(h.d / 10) * 10} m` : `${km.toFixed(km < 10 ? 1 : 0)} km`);
+    g.font = `${main ? 'bold 22px' : '18px'} system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,0.6)';
+    g.strokeText(`${h.icon} ${txt}`, lx, ly); g.fillStyle = '#fff'; g.fillText(`${h.icon} ${txt}`, lx, ly);
+    g.restore();
+  });
+  // north: a small red arrow on the rim, always on top
+  const nx = R + Math.sin(north) * (R - 16), ny = R - Math.cos(north) * (R - 16);
+  g.save();
+  g.translate(nx, ny); g.rotate(north);
+  g.fillStyle = '#ff5b4b'; g.strokeStyle = '#fff'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(0, -13); g.lineTo(9, 8); g.lineTo(0, 3); g.lineTo(-9, 8); g.closePath(); g.fill(); g.stroke();
+  g.rotate(-north);
+  g.fillStyle = '#fff'; g.font = 'bold 13px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('N', 0, 17);
+  g.restore();
 }

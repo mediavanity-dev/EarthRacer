@@ -12,7 +12,7 @@ import { RANDOM_PLACES } from './game/places.js';
 import { MODES, BOARD_RADIUS, estimate, newTrip, progress, positionAt, fmtDuration } from './game/trips.js';
 import { TripMap } from './ui/tripmap.js';
 import { PlaneView } from './world/planeView.js';
-import { profile, save, flush, resetProfile } from './game/profile.js';
+import { profile, save, flush, resetProfile, randomLeft, nextWeekReset, RANDOM_PER_WEEK } from './game/profile.js';
 import { fetchWeather, whereIs, searchPlace, waveHeight, postcard, drivingSide, usesMph, flag } from './data/services.js';
 import { haversine, offsetGeo } from './geo.js';
 import { Input } from './input.js';
@@ -20,7 +20,7 @@ import { Sound } from './audio.js';
 import { drawMinimap } from './ui/minimap.js';
 import { regionOf, regionStyle } from './world/region.js';
 import { Signs } from './world/signs.js';
-import { animateStars, starAvailable, collected as starsCollected } from './world/stunts.js';
+import { animateStars, starAvailable, animateGamer, coinAvailable, collected as starsCollected } from './world/stunts.js';
 
 const $ = (s) => document.querySelector(s);
 const params = new URLSearchParams(location.search);
@@ -120,13 +120,14 @@ function startScreen() {
       <h1>Earth<em>Racer</em></h1>
       <p>You carry on from exactly where you stopped last time. That's the rule.</p>
       <button class="btn primary" id="go">▶ Carry on<small id="lastwhere">${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}</small></button>
-      <button class="btn purple" id="rnd">🎲 Random placement<small>Get dropped somewhere on Earth and work out where you are. It becomes your new spot.</small></button>
+      <button class="btn purple" id="rnd" ${randomLeft() ? '' : 'disabled'}>🎲 Random placement<small>${randomLeft()} of ${RANDOM_PER_WEEK} left this week. Get dropped somewhere on Earth and work out where you are.</small></button>
+      ${modeChooser()}
       ${controlsChooser()}
       <div class="attrib">${ATTRIB}</div></div>`);
     whereIs(p.lat, p.lon).then((w) => { const el = o.querySelector('#lastwhere'); if (w && el && !profile.random.active) el.textContent = [w.place, w.country].filter(Boolean).join(', '); else if (el && profile.random.active) el.textContent = 'Somewhere unknown… (random placement in progress)'; });
     o.querySelector('#go').onclick = () => { userGesture(); begin(p.lat, p.lon, p.heading || 0, p.kind || 'car'); };
     o.querySelector('#rnd').onclick = () => { userGesture(); confirmRandom(); };
-    wireControlsChooser(o);
+    wireControlsChooser(o); wireModeChooser(o);
     return;
   }
   const o = overlay(`<div class="card">
@@ -137,7 +138,8 @@ function startScreen() {
     <div class="row" style="margin-top:8px"><input type="search" id="q" placeholder="Or search a town, street or landmark…" /></div>
     <div class="results" id="res"></div>
     <div class="chips" id="pre"></div>
-    <button class="btn purple" id="rnd">🎲 Surprise me<small>Start with a random placement</small></button>
+    <button class="btn purple" id="rnd">🎲 Surprise me<small>Start with a random placement (uses 1 of this week's ${RANDOM_PER_WEEK})</small></button>
+    ${modeChooser()}
     ${controlsChooser()}
     <div class="attrib">${ATTRIB}</div></div>`);
   const PRE = [['Greenwich, London', 51.4826, -0.0077], ['Paris', 48.8584, 2.2945], ['Manhattan', 40.758, -73.9855], ['Tokyo', 35.6595, 139.7005], ['Stelvio Pass', 46.5287, 10.4533], ['Sydney', -33.8568, 151.2153], ['Cape Town', -33.9067, 18.4207], ['San Francisco', 37.8024, -122.4058]];
@@ -172,9 +174,21 @@ function startScreen() {
     }, 600);
   };
   o.querySelector('#rnd').onclick = () => { userGesture(); startRandom(); };
-  wireControlsChooser(o);
+  wireControlsChooser(o); wireModeChooser(o);
 }
 
+function modeChooser() {
+  const m = profile.settings.mode || 'explorer';
+  return `<h3 style="margin:16px 0 6px;font-size:15px">How do you want to play?</h3>
+    <div class="seg" id="mch"><button data-m="explorer" class="${m === 'explorer' ? 'on' : ''}">🧭 Explorer<br><small>The real world, a few stunts</small></button><button data-m="gamer" class="${m === 'gamer' ? 'on' : ''}">🎮 Gamer<br><small>Stunts everywhere</small></button></div>`;
+}
+function wireModeChooser(o) {
+  o.querySelectorAll('#mch button').forEach((b) => b.onclick = () => {
+    o.querySelectorAll('#mch button').forEach((x) => x.classList.toggle('on', x === b));
+    profile.settings.mode = b.dataset.m; save(); world.setStuntMode(b.dataset.m); document.body.dataset.mode = b.dataset.m;
+    $('#gscore').hidden = b.dataset.m !== 'gamer';
+  });
+}
 function controlsChooser() {
   if (!isTouch) return `<p class="note" style="margin-top:14px">Controls: <span class="kbd">W A S D</span> or arrows, <span class="kbd">Space</span> handbrake, <span class="kbd">C</span> camera, <span class="kbd">Esc</span> menu. An Xbox or other game controller works too: just press a button on it.</p>`;
   const m = input.mode;
@@ -253,12 +267,14 @@ function confirmRandom() {
   const o = overlay(`<div class="card"><h2>🎲 Random placement</h2>
     <p>You'll be dropped somewhere on Earth with no map labels. Read the street names, signs and shop names, notice which side people drive on, then guess where you are. The closer and the sooner, the more you score.</p>
     <p><b>This is a one-way trip:</b> wherever you end up becomes your new spot. You can't go back to where you were.</p>
-    <div class="row"><button class="btn" id="no">Cancel</button><button class="btn purple" id="yes">Drop me somewhere</button></div></div>`);
+    <p class="note">${randomLeft()} of ${RANDOM_PER_WEEK} left this week (resets ${new Date(nextWeekReset()).toLocaleDateString(undefined, { weekday: 'long' })}).</p>
+    <div class="row"><button class="btn" id="no">Cancel</button><button class="btn purple" id="yes" ${randomLeft() ? '' : 'disabled'}>Drop me somewhere</button></div></div>`);
   o.querySelector('#no').onclick = () => (game.state === 'driving' ? hideOverlay() : startScreen());
   o.querySelector('#yes').onclick = () => startRandom();
 }
 
 function startRandom() {
+  if (randomLeft() <= 0) { toast('No random placements left this week.'); return; }
   if (profile.trip) { profile.trip = null; } // a random placement ends any trip in progress
   const [la, lo] = RANDOM_PLACES[Math.floor(Math.random() * RANDOM_PLACES.length)];
   const d = 300 + Math.random() * 1700, a = Math.random() * Math.PI * 2;
@@ -387,6 +403,16 @@ function resetToRoad() {
 }
 
 // ---------- toasts and style pops ----------
+// Small notes under the street name, on the left (street changes, postcards, bridges): out of the way.
+function sidePop(html, cls = 'note', ms = 2600, img = null) {
+  const box = $('#sidepops');
+  if (!box) return;
+  const el = document.createElement('div'); el.className = `sp ${cls}`;
+  el.innerHTML = (img ? `<img src="${esc(img)}" alt="">` : '') + `<div>${html}</div>`;
+  box.appendChild(el);
+  while (box.children.length > 3) box.firstChild.remove();
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 400); }, ms);
+}
 function toast(html, { ms = 3800, img = null } = {}) {
   const box = $('#toasts');
   const t = document.createElement('div'); t.className = 'toast';
@@ -466,7 +492,7 @@ function tickActivity(dt) {
     const left = a.stage === 'drop' ? a.limit - a.elapsed : null;
     task.innerHTML = `<div>${a.stage === 'pickup' ? '📦 Pick up at' : `📦 Deliver ${esc(a.job.cargo)} to`} <b>${esc(tgt.name)}</b></div>
       <div class="big ${left != null && left < 0 ? 'late' : ''}">${left != null ? (left < 0 ? `+${fmtTime(-left)} late` : fmtTime(left)) : fmtDist(d)}</div>
-      <div class="sub">${left != null ? fmtDist(d) + ' away · ' : ''}stop next to it · reward ${a.reward}</div>`;
+      <div class="sub">${left != null ? fmtDist(d) + ' away · ' : ''}stop next to it · reward ${a.reward}</div><div class="tdir"><i></i></div>`;
   } else if (a.type === 'race') {
     const cps = a.race.cps;
     const cp = cps[a.idx];
@@ -496,7 +522,7 @@ function tickActivity(dt) {
     }
     task.innerHTML = `<div>🏁 Today's race${a.race.area && !profile.random.active ? ` in ${esc(a.race.area)}` : ''} · gate ${Math.min(a.idx + 1, cps.length)}/${cps.length}</div>
       <div class="big">${a.t != null ? fmtTime(a.t) : fmtDist(d)}</div>
-      <div class="sub">${a.t == null ? 'to the start gate' : fmtDist(d) + ' to next gate'}${a.best ? ` · best ${fmtTime(a.best)}` : ''}</div>`;
+      <div class="sub">${a.t == null ? 'to the start gate' : fmtDist(d) + ' to next gate'}${a.best ? ` · best ${fmtTime(a.best)}` : ''}</div><div class="tdir"><i></i></div>`;
     // gates
     for (let k = 0; k < 2; k++) {
       const g = gates[k], c = cps[a.idx + k];
@@ -516,10 +542,10 @@ function tickActivity(dt) {
     const p = world.toLocal(target.lat, target.lon);
     beacon.visible = a.type === 'job';
     if (beacon.visible) { beacon.position.set(p.x, (world.groundAt(p.x, p.z) ?? v.y) + 80, p.z); beacon.material.color.set(a.stage === 'pickup' ? '#4ea3ff' : '#f4c430'); }
-    arrow.visible = true;
-    const H = VEHICLES[v.kind].camH;
-    arrow.position.set(v.x, v.y + H * 0.9 + 1.2, v.z);
-    arrow.rotation.set(0, Math.atan2(p.x - v.x, p.z - v.z) + Math.PI, 0);
+    // which way: relative to where you're heading (up = straight ahead)
+    const rel = Math.atan2(p.x - v.x, -(p.z - v.z)) - v.heading;
+    const dirEl = task.querySelector('.tdir');
+    if (dirEl) dirEl.style.transform = `rotate(${rel}rad)`;
   }
 }
 function fmtDist(m) { return game.mph ? (m < 400 ? `${Math.round(m * 1.094)} yd` : `${(m / 1609).toFixed(1)} mi`) : m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`; }
@@ -563,14 +589,26 @@ function tickPassive(dt, moved) {
   const ch = world.chunkAt(v.x, v.z);
   // street atlas
   const info = v.spec.terrain === 'water' ? null : world.streetInfoAt(v.x, v.z);
-  const name = info?.name || null;
-  const label = name || info?.ref || null;
-  if (label !== game.streetLabel) {
-    game.streetLabel = label;
-    $('#street').innerHTML = (info?.ref ? `<span class="shield">${esc(info.ref)}</span> ` : '') + esc(name || '');
-    if (label) showBanner(name, info?.ref);
+  const label = info?.name || info?.ref || null;
+  // A different street name must last ~1.2 s (or 25 m) before it's "your" street: passing through a
+  // junction only flashes the cross street for a moment, which gets a tiny line instead.
+  const commit = (inf) => {
+    const lb = inf?.name || inf?.ref || null;
+    const first = game.streetLabel === undefined;
+    game.streetLabel = lb; game.street = inf?.name || null; game.lastCross = null;
+    $('#street').innerHTML = (inf?.ref ? `<span class="shield">${esc(inf.ref)}</span> ` : '') + esc(inf?.name || '');
+    if (lb && !first) sidePop(`${inf?.ref ? `<span class="shield">${esc(inf.ref)}</span> ` : ''}${inf?.name ? `<span class="nm">${esc(inf.name)}</span>` : ''}`, 'enter', 2800);
+  };
+  if (game.streetLabel === undefined) commit(info);
+  else if (label === game.streetLabel) game.pend = null;
+  else if (!game.pend || game.pend.label !== label) {
+    game.pend = { label, info, t: 0, m: 0 };
+    if (label && label !== game.lastCross) { game.lastCross = label; sidePop(`<span class="x">✕</span> ${esc(label)}`, 'cross', 1600); }
+  } else {
+    game.pend.t += pdt; game.pend.m += moved;
+    if (game.pend.t > 1.2 || game.pend.m > 25) { commit(game.pend.info); game.pend = null; }
   }
-  game.street = name;
+  const name = game.street;
   const run = game.streetRun;
   if (name && name === run.name) run.m += moved; else { run.name = name; run.m = 0; }
   if (name && run.m > 60 && ch) {
@@ -579,7 +617,7 @@ function tickPassive(dt, moved) {
     if (!list.includes(name)) {
       list.push(name); save();
       const total = ch.streetNames().length;
-      toast(`🛣️ New street: <b>${esc(name)}</b>${hidden ? '' : ` · ${list.length}/${Math.max(total, list.length)} in ${esc(ch.areaName || 'this area')}`}`, { ms: 2600 });
+      sidePop(`🛣️ New street${hidden ? '' : ` · ${list.length}/${Math.max(total, list.length)} in ${esc(ch.areaName || 'this area')}`}`, 'note', 2600);
     }
   }
   // bridges
@@ -588,7 +626,7 @@ function tickPassive(dt, moved) {
     if (!profile.atlas.bridgeIds.includes(id)) {
       profile.atlas.bridgeIds.push(id); if (profile.atlas.bridgeIds.length > 3000) profile.atlas.bridgeIds.shift();
       profile.atlas.bridges++; save();
-      toast(`🌉 Bridge crossed · ${profile.atlas.bridges} so far`, { ms: 2400 });
+      sidePop(`🌉 Bridge · ${profile.atlas.bridges} crossed`, 'note', 2400);
     }
   }
   // landmarks (postcards) and fuel
@@ -615,7 +653,7 @@ function tickPassive(dt, moved) {
     for (const p of ch.pois) {
       const d = Math.hypot(ch.ox + p.x * ch.sx - v.x, p.z + ch.oz - v.z);
       if (isFuel(p) && d < (v.kind === 'boat' ? 150 : 30)) nearFuel = p;
-      if (d < 45 && isLandmark(p) && !game.collectedNear.has(p.ref) && !profile.atlas.postcards.some((c) => c.ref === p.ref)) {
+      if (d < 45 && isLandmark(p) && !game.collectedNear.has(p.ref) && !profile.atlas.postcards.some((c) => c.ref === p.ref || (c.name === p.name && haversine(c.lat, c.lon, p.lat, p.lon) < 1000))) {
         game.collectedNear.add(p.ref);
         collectPostcard(p);
       }
@@ -656,7 +694,7 @@ async function collectPostcard(p) {
   if (w) Object.assign(card, { title: w.title, img: w.img, url: w.url, text: w.text });
   profile.atlas.postcards.push(card); profile.coins += 10; save();
   sound.chime();
-  toast(`📮 Postcard: <b>${esc(card.title || card.name)}</b> +10`, { img: card.img, ms: 5000 });
+  sidePop(`<b>📮 ${esc(card.title || card.name)}</b><br><span class="dim">Postcard collected · +10</span>`, 'postcard', 5500, card.img);
 }
 
 // ---------- weather (Open-Meteo) and waves ----------
@@ -780,26 +818,28 @@ function renderTab(tab, body) {
   } else if (tab === 'random') {
     const act = profile.random.active;
     body.innerHTML = `<h3>🎲 Random placement</h3>
-      <p class="note">Get dropped somewhere on Earth with no labels, then work out where you are from street names, shop signs, which side traffic drives on and the landscape. Use it as often as you like. Wherever you end up becomes your new spot.</p>
-      ${act ? '<button class="btn purple" id="g">Make a guess</button>' : '<button class="btn purple" id="r">Drop me somewhere</button>'}
+      <p class="note">Get dropped somewhere on Earth with no labels, then work out where you are from street names, shop signs, which side traffic drives on and the landscape. ${RANDOM_PER_WEEK} a week, resets ${new Date(nextWeekReset()).toLocaleDateString(undefined, { weekday: 'long' })}. Wherever you end up becomes your new spot.</p>
+      ${act ? '<button class="btn purple" id="g">Make a guess</button>' : `<button class="btn purple" id="r" ${randomLeft() ? '' : 'disabled'}>Drop me somewhere (${randomLeft()} left)</button>`}
       <h3>History</h3><div class="list">${profile.random.history.slice().reverse().map((h) => `<div class="item"><div class="ic">${flag(h.cc)}</div><div class="tx"><b>${esc(h.where)}</b><small>Guessed ${esc(h.guess)} · ${h.km >= 1 ? `${Math.round(h.km)} km off` : 'spot on'} · ${h.points} points</small></div></div>`).join('') || '<p class="note">No placements yet.</p>'}</div>`;
     const r = body.querySelector('#r'); if (r) r.onclick = () => { closePanel(); confirmRandom(); };
     const g = body.querySelector('#g'); if (g) g.onclick = () => { closePanel(); openGuess(); };
   } else if (tab === 'settings') {
     body.innerHTML = `${isTouch ? `<h3>Steering</h3><div class="seg" id="ctl">${['tilt', 'slider', 'buttons'].map((m) => `<button data-m="${m}" class="${input.mode === m ? 'on' : ''}">${{ tilt: '📱 Tilt (wheel)', slider: '👍 Slider', buttons: '◀ ▶ Buttons' }[m]}</button>`).join('')}</div>${input.mode === 'tilt' ? '<button class="btn" id="cal">Recalibrate tilt</button>' : ''}` : ''}
+      <h3>Play mode</h3><div class="seg" id="modeseg">${[['explorer', '🧭 Explorer', 'The real world, with a few stunts to find'], ['gamer', '🎮 Gamer', 'Ramps, coins, boosts and cones everywhere']].map(([k, n, d]) => `<button data-m="${k}" class="${(profile.settings.mode || 'explorer') === k ? 'on' : ''}">${n}<br><small>${d}</small></button>`).join('')}</div>
       <h3>Camera</h3><div class="seg" id="camseg">${['Chase', 'Far', 'Bumper', 'Top down'].map((n, i) => `<button data-c="${i}" class="${game.cam === i ? 'on' : ''}">${n}</button>`).join('')}</div>
       <h3>Traffic</h3><div class="seg" id="trf">${[['None', 0], ['Light', 0.5], ['Normal', 1], ['Busy', 1.5]].map(([n, d]) => `<button data-d="${d}" class="${traffic.density === d ? 'on' : ''}">${n}</button>`).join('')}</div>
       <h3>Sound</h3><div class="seg"><button id="snd" class="${profile.settings.mute ? '' : 'on'}">${profile.settings.mute ? '🔇 Off' : '🔊 On'}</button></div>
-      <h3>Start over</h3><p class="note">Wipes your progress and your spot on this device. You'll choose a new starting point.</p><button class="btn" id="wipe">Start over…</button>`;
+      <h3>Start over</h3><p class="note">Begins the whole game again from nothing.</p><button class="btn" id="wipe">Start over…</button>`;
     body.querySelectorAll('#ctl button').forEach((b) => b.onclick = async () => { await setControls(b.dataset.m); openPanel('settings'); });
     const cal = body.querySelector('#cal'); if (cal) cal.onclick = () => { closePanel(); calibrateTilt(); };
+    body.querySelectorAll('#modeseg button').forEach((b) => b.onclick = () => { setMode(b.dataset.m); openPanel('settings'); });
     body.querySelectorAll('#camseg button').forEach((b) => b.onclick = () => { game.cam = +b.dataset.c; profile.settings.cam = game.cam; save(); openPanel('settings'); });
     body.querySelectorAll('#trf button').forEach((b) => b.onclick = () => { traffic.density = +b.dataset.d; profile.settings.traffic = traffic.density; if (!traffic.density) traffic.clear(); save(); openPanel('settings'); });
     body.querySelector('#snd').onclick = () => { onAction('mute'); openPanel('settings'); };
     const wipe = body.querySelector('#wipe');
-    wipe.onclick = () => { if (wipe.dataset.sure) resetProfile(); else { wipe.dataset.sure = 1; wipe.textContent = 'Tap again to wipe everything'; } };
+    wipe.onclick = () => confirmStartOver();
   } else if (tab === 'help') {
-    body.innerHTML = `<h3>The rules</h3><p class="note">The world is the real one, built live from OpenStreetMap. You can only carry on from where you last stopped. To go somewhere new, drive there, take a bus, train, ferry or plane from a real stop (in real time), or use a random placement. Vehicles go at real-world speeds, held to ${Math.round(SPEED_CAP * 3.6)} km/h for now so the map can keep up.</p>
+    body.innerHTML = `<h3>The rules</h3><p class="note">The world is the real one, built live from OpenStreetMap. You can only carry on from where you last stopped. To go somewhere new, drive there, take a bus, train, ferry or plane from a real stop (in real time), or use a random placement (${RANDOM_PER_WEEK} a week). Vehicles go at real-world speeds, held to ${Math.round(SPEED_CAP * 3.6)} km/h for now so the map can keep up.</p>
       <h3>Things to do</h3><p class="note">📦 <b>Jobs</b>: deliveries between real shops. 🏁 <b>Races</b>: a daily route in each area, with your ghost. 🛣️ <b>Street atlas</b>: every named street you drive. 🌉 <b>Bridges</b>. 📮 <b>Postcards</b>: drive past landmarks. ${flag('UN')} <b>Countries</b>. ✨ <b>Style</b>: near misses, drifts, overtakes, slipstreams and airtime build a combo; crashes break it.</p>
       <h3>Real conditions</h3><p class="note">Weather is live where you are: rain and snow cut grip, fog shortens the view, headwinds slow bikes and boats. Day and night follow the real sun. Traffic drives on the correct side for the country. Fuel runs out, so stop at real fuel stations.</p>
       <h3>Controls</h3><table class="keys">
@@ -1359,6 +1399,7 @@ function updateModel(dt) {
   }
   // brake lights
   if (m.tailM) m.tailM.color.set(game.braking ? '#ff2a1a' : sky.night > 0.5 ? '#c02020' : '#7a1010');
+  if (m.revM) m.revM.color.set(game.reversing ? '#ffffff' : '#55585c');
   if (m.headM) m.headM.color.set(sky.night > 0.4 ? '#ffffff' : '#fff6d8');
   // shadow
   const g = v.spec.terrain === 'water' ? v.y : (v.road ? v.road.y : world.groundAt(v.x, v.z) ?? v.y);
@@ -1390,6 +1431,7 @@ function frame(now) {
   const inp = input.poll();
   input.drawWheel();
   game.braking = inp.brake > 0 && v.vf > 0.5;
+  game.reversing = inp.brake > 0 && v.vf < -0.2;
   // map loading governor: never outrun the map
   const sp = Math.hypot(v.vx, v.vz);
   let loadLimit = Infinity;
@@ -1431,7 +1473,7 @@ function frame(now) {
   sound.update(v, { rain: env.raining ? 1 : 0 });
   hudFrame();
   mapT += dt;
-  if (mapT > 0.12) { mapT = 0; drawMinimap($('#minimap'), world, v, markers(), { hideFuel: false }); }
+  if (mapT > 0.12) { mapT = 0; drawMinimap($('#minimap'), world, v, markers(), { hideFuel: false, hubs: nearestHubs(), mph: game.mph }); }
   saveT += dt;
   if (saveT > 1) {
     saveT = 0;
@@ -1459,6 +1501,80 @@ function rebase(old) {
   const l = { x: camLook.x, z: camLook.z }; fix(l); camLook.x = l.x; camLook.z = l.z;
 }
 
+// ---------- play mode: explorer (the real world, a few stunts) or gamer (stunts everywhere) ----------
+function setMode(mode) {
+  profile.settings.mode = mode; save();
+  world.setStuntMode(mode);
+  document.body.dataset.mode = mode;
+  $('#gscore').hidden = mode !== 'gamer';
+  toast(mode === 'gamer' ? '🎮 Gamer mode: ramps, coins, boosts and cones everywhere.' : '🧭 Explorer mode: the real world, with a few stunts to find.');
+}
+
+function confirmStartOver() {
+  closePanel();
+  input.enabled = false;
+  const km = Math.round(profile.stats.km), streets = Object.values(profile.atlas.streets).reduce((a, l) => a + l.length, 0);
+  const o = overlay(`<div class="card danger"><h2>⚠️ Start the whole game over?</h2>
+    <p>This deletes <b>everything</b> on this device, for good:</p>
+    <ul class="lost"><li>your spot on Earth (you'll pick a new start)</li><li>${profile.coins} coins and every unlocked vehicle</li><li>${km} km driven, ${streets} streets, ${profile.atlas.postcards.length} postcard${profile.atlas.postcards.length === 1 ? '' : 's'}, ${profile.atlas.countries.length} countr${profile.atlas.countries.length === 1 ? 'y' : 'ies'}</li><li>race times, jobs, trips and settings</li></ul>
+    <p><b>It can't be undone.</b></p>
+    <div class="row"><button class="btn" id="keep">Keep my game</button><button class="btn red" id="del">Delete everything and start over</button></div></div>`);
+  o.querySelector('#keep').onclick = () => { hideOverlay(); input.enabled = true; };
+  o.querySelector('#del').onclick = () => resetProfile();
+}
+
+// Nearest journey hubs (bus stop, station, ferry terminal, airport) by type, for the minimap ring.
+const HUB_COLORS = { bus: '#3ecf6e', train: '#b18cff', ferry: '#39c6e6', plane: '#ff9f43' };
+function nearestHubs() {
+  const v = game.v, best = {};
+  for (const ch of world.readyChunks()) for (const s of ch.stops) {
+    const x = ch.ox + s.x * ch.sx, z = ch.oz + s.z, d = Math.hypot(x - v.x, z - v.z);
+    if (!best[s.kind] || d < best[s.kind].d) best[s.kind] = { kind: s.kind, d, x, z, color: HUB_COLORS[s.kind], icon: MODES[s.kind].icon };
+  }
+  return Object.values(best).sort((a, b) => a.d - b.d).slice(0, 2);
+}
+
+// Gamer mode pickups: coins (a few coins each), boost pads (a surge of speed), cones to smash.
+let coneAcc = 0, coneT = 0, coinAcc = 0, coinT = 0;
+function tickGamer(dt, chunks) {
+  const v = game.v, vy = v.y + 1;
+  animateGamer(chunks, stuntT, dt, (ch, x, z) => ch.heightAt(x, z));
+  for (const ch of chunks) {
+    const st = ch.stunts;
+    if (!st || st.mode !== 'gamer' || Math.abs(ch.ox - v.x) > ch.half + 60 || Math.abs(ch.oz - v.z) > ch.half + 60) continue;
+    const lx = (v.x - ch.ox) / ch.sx, lz = v.z - ch.oz;
+    for (const o of st.coins) {
+      if (Math.abs(o.x - lx) > 3 || Math.abs(o.z - lz) > 3 || !coinAvailable(o.key)) continue;
+      if (Math.hypot(o.x - lx, o.y - vy, o.z - lz) < 2.6) {
+        starsCollected.set(o.key, Date.now());
+        profile.coins += 1; coinAcc++; coinT = 0.7;
+        profile.stats.coinsPicked = (profile.stats.coinsPicked || 0) + 1;
+        sound.tone([1320 + coinAcc * 40], 0.06, 'square', 0.04);
+      }
+    }
+    if (v.grounded) for (const o of st.boosts) {
+      if (Math.hypot(o.x - lx, o.z - lz) < 3 && !(v.boost > 0.5)) {
+        v.boost = 2.5; sound.whoosh(); game.shake = 0.25; input.rumble(0.3, 0.6, 150);
+      }
+    }
+    const R = v.spec.radius + 0.4;
+    for (const c of st.cones) {
+      if (c.hit || Math.abs(c.x - lx) > R + 1 || Math.abs(c.z - lz) > R + 1) continue;
+      const d = Math.hypot(c.x - lx, c.z - lz), sp = Math.hypot(v.vx, v.vz);
+      if (d < R && sp > 2) {
+        const nx = (c.x - lx) / (d || 1), nz = (c.z - lz) / (d || 1);
+        c.hit = 0.001; c.vx = v.vx * 1.1 + nx * 3 + (Math.random() - 0.5) * 2; c.vz = v.vz * 1.1 + nz * 3 + (Math.random() - 0.5) * 2; c.vy = 3 + sp * 0.25;
+        st.conesMoving = true; coneAcc++; coneT = 0.6;
+      }
+    }
+  }
+  // one pop per burst, not one per cone or coin
+  if (coneAcc) { coneT -= dt; if (coneT <= 0) { profile.stats.cones = (profile.stats.cones || 0) + coneAcc; stylePop(coneAcc > 1 ? `Cone smash ×${coneAcc}` : 'Cone smash', 15 * coneAcc); sound.crash(2); coneAcc = 0; } }
+  if (coinAcc) { coinT -= dt; if (coinT <= 0) { stylePop(coinAcc >= 8 ? 'Coin trail!' : `Coins ×${coinAcc}`, coinAcc * 10 + (coinAcc >= 8 ? 120 : 0)); coinAcc = 0; } }
+  const gs = $('#gscore');
+  if (gs && !gs.hidden) gs.innerHTML = `<b>${profile.stats.style.toLocaleString()}</b><span>${game.style.combo > 1 ? `×${game.style.combo.toFixed(1)}` : 'style'}</span>`;
+}
+
 // Stars to grab mid-jump, hoops to fly through, buoy gates to steer through.
 const crossSide = new Map();
 let stuntT = 0;
@@ -1466,6 +1582,7 @@ function tickStunts(dt) {
   stuntT += dt;
   const chunks = world.readyChunks();
   animateStars(chunks, stuntT);
+  tickGamer(dt, chunks);
   const v = game.v, vy = v.y + 1;
   for (const ch of chunks) {
     const st = ch.stunts;
@@ -1574,19 +1691,17 @@ function tickStyle(dt, inp) {
   if (!traffic.density) return;
   const st = traffic.style(v, dt);
   if (st.nearMiss) { profile.stats.nearMiss += st.nearMiss; stylePop('Near miss', 100); input.rumble(0.1, 0.6, 90); }
-  if (st.overtakes) { profile.stats.overtakes += st.overtakes; stylePop('Overtake', 40); }
-  if (st.draft) { s.draftT += dt; if (s.draftT > 1.5 && !s.draftOn) { s.draftOn = true; sound.whoosh(); } }
-  else { if (s.draftOn && s.draftT > 3) stylePop('Slipstream', Math.round(s.draftT * 15)); s.draftT = 0; s.draftOn = false; }
-  // clean driving: every km without a crash
-  s.cleanM += speed * dt;
-  if (s.cleanM > 1000) { s.cleanM = 0; stylePop('Clean km', 80); }
+  if (st.overtakes) profile.stats.overtakes += st.overtakes; // counted, but points are for stunts only
 }
 
 const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences).';
 
 // ---------- boot ----------
-if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input };
+if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
 pruneRaces();
+world.stuntMode = profile.settings.mode || 'explorer';
+document.body.dataset.mode = world.stuntMode;
+$('#gscore').hidden = world.stuntMode !== 'gamer';
 resize();
 requestAnimationFrame(frame);
 if (DEV && params.get('at')) {

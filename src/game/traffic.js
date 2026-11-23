@@ -28,6 +28,7 @@ export class Traffic {
   clear() { this.cars = []; this.mesh.count = 0; }
 
   update(dt, player, world) {
+    this.world = world;
     // spawn / despawn
     const urban = world.isUrban(player.x, player.z);
     const want = Math.round((urban ? 22 : 12) * this.density);
@@ -78,7 +79,8 @@ export class Traffic {
     const off = this.side === 'left' ? -lane : lane;
     // right of travel = (-uz, ux)
     const x = c.chunk.ox + (s.ax + dx * c.t + -uz * off) * c.chunk.sx, z = s.az + dz * c.t + ux * off + c.chunk.oz;
-    c.x = x; c.z = z; c.y = s.ay + (s.by - s.ay) * c.t - 0.02;
+    const ramp = this.world?.rampAt(x, z); // in gamer mode there are ramps on roads: traffic rides over them
+    c.x = x; c.z = z; c.y = Math.max(s.ay + (s.by - s.ay) * c.t - 0.02, ramp ? ramp.y : -1e9);
     const h = Math.atan2(ux, -uz);
     let dh = h - c.h; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
     c.h += dh * Math.min(1, c.init ? 0.25 : 1); c.init = true;

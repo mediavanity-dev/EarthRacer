@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
-export const SPEED_CAP = 25; // m/s = 90 km/h (see TODO.md: raise once loading is smarter)
+export const SPEED_CAP = 22.2; // m/s = 80 km/h (see TODO.md: raise once loading is smarter)
 
 // top: real top speed (m/s). accel: m/s² at low speed. grip: how quickly sideways slip dies away.
 // fuel: tank (litres), use: litres per km. terrain: where it can go.
@@ -15,14 +15,14 @@ export const VEHICLES = {
     about: 'Real speed: about 25-40 km/h. Quiet, nimble, goes down paths.',
   },
   car: {
-    name: 'Car', icon: '🚗', top: 50, accel: 3.4, brake: 8.5, grip: 8.5, wheelbase: 2.7, steer: 0.55, radius: 1.6,
+    name: 'Car', icon: '🚗', top: 50, accel: 3.0, brake: 8.5, grip: 8.5, wheelbase: 2.7, steer: 0.55, radius: 1.6,
     fuel: 50, use: 0.07, terrain: 'land', offroadTop: 9, sound: 'car', camDist: 8, camH: 3.2, mass: 1,
-    about: 'Real top speed 180 km/h (held to 90 km/h for now). 50 L tank, about 700 km.',
+    about: 'Real top speed 180 km/h (held to 80 km/h for now). 50 L tank, about 700 km.',
   },
   truck: {
     name: 'Delivery truck', icon: '🚚', top: 25, accel: 1.15, brake: 5.5, grip: 6, wheelbase: 4.6, steer: 0.5, radius: 2.4,
     fuel: 300, use: 0.3, terrain: 'land', offroadTop: 6, sound: 'truck', camDist: 13, camH: 5, mass: 4,
-    about: 'Governed to 90 km/h like real trucks. Deliveries pay double.',
+    about: 'Governed to 90 km/h like real trucks (80 for now). Deliveries pay double.',
     unlock: { what: 'Complete 3 deliveries', key: 'deliveries', n: 3 },
   },
   para: {
@@ -62,6 +62,7 @@ export function buildModel(kind, color = '#d23a2e') {
   const wheels = [];
   const paint = lam(color), glass = lam('#25313b'), dark = lam('#1d1f22'), tyre = lam('#18191b');
   const headM = new THREE.MeshBasicMaterial({ color: '#fff6d8' }), tailM = new THREE.MeshBasicMaterial({ color: '#7a1010' });
+  const revM = new THREE.MeshBasicMaterial({ color: '#55585c' }); // reversing lights
   if (kind === 'car') {
     body.add(box(1.82, 0.62, 4.3, paint, 0, 0.62, 0));
     body.add(box(1.6, 0.56, 2.2, glass, 0, 1.2, 0.25));
@@ -69,6 +70,7 @@ export function buildModel(kind, color = '#d23a2e') {
     body.add(box(1.84, 0.18, 0.1, dark, 0, 0.42, -2.16));
     body.add(box(0.4, 0.14, 0.06, headM, -0.62, 0.72, -2.16), box(0.4, 0.14, 0.06, headM, 0.62, 0.72, -2.16));
     body.add(box(0.36, 0.14, 0.06, tailM, -0.66, 0.75, 2.16), box(0.36, 0.14, 0.06, tailM, 0.66, 0.75, 2.16));
+    body.add(box(0.14, 0.12, 0.06, revM, -0.36, 0.75, 2.16), box(0.14, 0.12, 0.06, revM, 0.36, 0.75, 2.16));
     for (const [x, z, front] of [[-0.86, -1.35, true], [0.86, -1.35, true], [-0.86, 1.35, false], [0.86, 1.35, false]]) {
       const w = wheel(0.34, 0.26, tyre); w.position.set(x, 0.34, z); group.add(w); wheels.push({ mesh: w, front, r: 0.34 });
     }
@@ -79,6 +81,7 @@ export function buildModel(kind, color = '#d23a2e') {
     body.add(box(2.42, 0.35, 9.2, dark, 0, 0.62, 0.2));
     body.add(box(0.4, 0.2, 0.06, headM, -0.85, 1.0, -4.31), box(0.4, 0.2, 0.06, headM, 0.85, 1.0, -4.31));
     body.add(box(0.3, 0.2, 0.06, tailM, -1.0, 0.9, 4.81), box(0.3, 0.2, 0.06, tailM, 1.0, 0.9, 4.81));
+    body.add(box(0.2, 0.2, 0.06, revM, -0.65, 0.9, 4.81), box(0.2, 0.2, 0.06, revM, 0.65, 0.9, 4.81));
     for (const [x, z, front] of [[-1.1, -3.2, true], [1.1, -3.2, true], [-1.1, 2.4, false], [1.1, 2.4, false], [-1.1, 3.7, false], [1.1, 3.7, false]]) {
       const w = wheel(0.5, 0.36, tyre); w.position.set(x, 0.5, z); group.add(w); wheels.push({ mesh: w, front, r: 0.5 });
     }
@@ -143,7 +146,7 @@ export function buildModel(kind, color = '#d23a2e') {
   }
   const tailLights = [];
   body.traverse((o) => { if (o.material === tailM) tailLights.push(o); });
-  return { group, body, wheels, tailM, headM };
+  return { group, body, wheels, tailM, headM, revM };
 }
 
 // One merged geometry for all traffic cars (one draw call; per-car colour via instance colour).

@@ -82,16 +82,17 @@ export class VehicleState {
     if (this.damage >= 100) { top = Math.min(top, 4); why = 'wrecked: summon a fresh one'; }
     else if (this.damage > 70) { top *= 0.75; why = why || 'damaged'; }
     if (s.fuel && this.fuel <= 0) { top = Math.min(top, 2.5); why = 'out of fuel'; }
-    if (ctx.draft) top *= 1.05;
+    // boost pads (gamer mode): a short surge past the usual limit, but never past the map loading
+    if (this.boost > 0) { this.boost -= dt; if (!(ctx.loadLimit < SPEED_CAP)) top = Math.max(top, Math.min(s.top, SPEED_CAP) * 1.3); }
     this.limit = top; this.limitWhy = why;
 
     // ---------- forward ----------
     const grip = s.grip * surfGrip * (ctx.grip ?? 1);
     const t = input.throttle, b = input.brake;
     if (this.grounded || s.terrain === 'water') {
-      if (t > 0 && vf > -0.5) {
+      if ((t > 0 || this.boost > 0) && vf > -0.5) {
         const k = Math.max(0, 1 - (vf / top) ** 2);
-        vf += s.accel * t * k * (0.55 + 0.45 * Math.min(1, grip / s.grip + 0.3)) * dt;
+        vf += s.accel * (this.boost > 0 ? 2.2 : 1) * Math.max(t, this.boost > 0 ? 1 : 0) * k * (0.55 + 0.45 * Math.min(1, grip / s.grip + 0.3)) * dt;
       }
       if (t > 0 && vf <= -0.5) vf = Math.min(0, vf + s.brake * t * dt);
       if (b > 0) {
