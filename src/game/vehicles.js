@@ -25,6 +25,36 @@ export const VEHICLES = {
     about: 'Governed to 90 km/h like real trucks (80 for now). Deliveries pay double.',
     unlock: { what: 'Complete 3 deliveries', key: 'deliveries', n: 3 },
   },
+  pickup: {
+    name: 'Pickup truck', icon: '🛻', top: 45, accel: 3.1, brake: 8, grip: 8, wheelbase: 3.2, steer: 0.52, radius: 1.8,
+    fuel: 80, use: 0.11, terrain: 'land', offroadK: 0.97, offroadTop: 15, sound: 'car', camDist: 9, camH: 3.6, mass: 1.6,
+    about: 'Four-wheel drive: barely slows down off-road. Real top speed about 170 km/h.',
+    unlock: { what: 'Complete 5 deliveries', key: 'deliveries', n: 5 },
+  },
+  moto: {
+    name: 'Motorcycle', icon: '🏍️', top: 55, accel: 5, brake: 9, grip: 9.5, wheelbase: 1.5, steer: 0.55, radius: 0.7,
+    fuel: 15, use: 0.045, terrain: 'land', offroadK: 0.8, offroadTop: 12, sound: 'moto', camDist: 6, camH: 2.4, mass: 0.3, lean: true,
+    about: 'Quick off the line and leans into corners. Real top speed about 200 km/h.',
+    unlock: { what: 'Land 10 jumps', key: 'jumps', n: 10 },
+  },
+  dog: {
+    name: 'Dog', icon: '🐕', top: 25, accel: 4, brake: 10, grip: 10, wheelbase: 1, steer: 0.85, radius: 0.6,
+    fuel: 0, use: 0, terrain: 'land', offroadK: 1, offroadTop: 25, sound: 'dog', camDist: 5, camH: 2, mass: 0.2, feat: true,
+    about: 'A very good dog that runs as fast as a car. Never needs fuel.',
+    unlock: { what: 'Drive 1,000 miles (1,609 km)', key: 'km', n: 1609 },
+  },
+  cart: {
+    name: 'Shopping cart', icon: '🛒', top: 18, accel: 2.6, brake: 6, grip: 7, wheelbase: 1, steer: 0.6, radius: 0.6,
+    fuel: 0, use: 0, terrain: 'land', offroadK: 0.7, offroadTop: 10, sound: 'cart', camDist: 5, camH: 2, mass: 0.2, feat: true,
+    about: 'One wheel always wants to go its own way. Rattles magnificently.',
+    unlock: { what: 'Grab 50 stunt stars', key: 'stars', n: 50 },
+  },
+  duck: {
+    name: 'Rubber duck', icon: '🦆', top: 12, accel: 1.8, brake: 2, grip: 2.5, wheelbase: 2, steer: 0.6, radius: 1.2,
+    fuel: 0, use: 0, terrain: 'water', offroadTop: 0, sound: 'duck', camDist: 7, camH: 3, mass: 0.5, feat: true,
+    about: 'A giant rubber duck. Squeaks when you sound the horn.',
+    unlock: { what: 'Steer through 20 buoy gates', key: 'gates', n: 20 },
+  },
   para: {
     name: 'Paramotor', icon: '🪂', top: 13, accel: 1.4, brake: 2, grip: 6, wheelbase: 2, steer: 0.5, radius: 1.2,
     fuel: 12, use: 0.11, terrain: 'air', offroadTop: 13, sound: 'para', camDist: 11, camH: 4.5, mass: 0.3,
@@ -38,7 +68,7 @@ export const VEHICLES = {
     unlock: { what: 'Reach the water\'s edge (river, lake or sea)', key: 'shore', n: 1 },
   },
 };
-export const VEHICLE_ORDER = ['bike', 'car', 'truck', 'boat', 'para'];
+export const VEHICLE_ORDER = ['bike', 'car', 'pickup', 'moto', 'truck', 'boat', 'para', 'dog', 'cart', 'duck'];
 
 const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
 const box = (w, h, l, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, l), mat); m.position.set(x, y, z); return m; };
@@ -120,7 +150,72 @@ export function buildModel(kind, color = '#d23a2e') {
     body.add(box(0.5, 0.7, 0.5, dark, 0, 0.8, 2.75)); // outboard motor
     body.add(box(0.3, 0.12, 0.06, headM, 0, 0.98, -3.2));
   }
-  if (kind === 'para') {
+  if (kind === 'pickup') {
+    body.add(box(1.95, 0.7, 5.2, paint, 0, 0.85, 0));
+    body.add(box(1.85, 0.75, 1.9, glass, 0, 1.55, -0.6));
+    body.add(box(1.88, 0.08, 1.8, paint, 0, 1.94, -0.6));
+    // open bed
+    body.add(box(1.95, 0.5, 0.08, paint, 0, 1.45, 2.56), box(0.08, 0.5, 2.1, paint, -0.94, 1.45, 1.5), box(0.08, 0.5, 2.1, paint, 0.94, 1.45, 1.5));
+    body.add(box(1.97, 0.18, 0.12, dark, 0, 0.62, -2.62), box(1.97, 0.18, 0.12, dark, 0, 0.62, 2.62));
+    body.add(box(0.42, 0.16, 0.06, headM, -0.66, 1.0, -2.62), box(0.42, 0.16, 0.06, headM, 0.66, 1.0, -2.62));
+    body.add(box(0.3, 0.2, 0.06, tailM, -0.8, 1.1, 2.62), box(0.3, 0.2, 0.06, tailM, 0.8, 1.1, 2.62));
+    body.add(box(0.16, 0.14, 0.06, revM, -0.45, 1.1, 2.62), box(0.16, 0.14, 0.06, revM, 0.45, 1.1, 2.62));
+    for (const [x, z, front] of [[-0.95, -1.65, true], [0.95, -1.65, true], [-0.95, 1.65, false], [0.95, 1.65, false]]) {
+      const w = wheel(0.44, 0.32, tyre); w.position.set(x, 0.44, z); group.add(w); wheels.push({ mesh: w, front, r: 0.44 });
+    }
+  } else if (kind === 'moto') {
+    const frame = lam(color);
+    body.add(box(0.3, 0.32, 0.9, frame, 0, 0.72, -0.05));    // tank and body
+    body.add(box(0.26, 0.14, 0.7, dark, 0, 0.92, 0.35));      // seat
+    body.add(box(0.2, 0.3, 0.5, lam('#8a9096'), 0, 0.45, 0)); // engine
+    body.add(box(0.7, 0.05, 0.05, dark, 0, 1.12, -0.55));     // bars
+    body.add(box(0.2, 0.16, 0.08, headM, 0, 0.98, -0.72));
+    body.add(box(0.16, 0.1, 0.06, tailM, 0, 0.9, 0.78));
+    const jacket = lam('#202428'), skin = lam('#d7a985');
+    const torso = box(0.42, 0.62, 0.3, jacket, 0, 1.38, 0.15); torso.rotation.x = -0.6; body.add(torso);
+    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), lam(color)); helmet.position.set(0, 1.78, -0.08); body.add(helmet);
+    body.add(box(0.14, 0.5, 0.16, jacket, -0.17, 0.85, 0.2), box(0.14, 0.5, 0.16, jacket, 0.17, 0.85, 0.2));
+    void skin;
+    for (const [z, front] of [[-0.75, true], [0.75, false]]) {
+      const w = wheel(0.33, 0.14, tyre); w.position.set(0, 0.33, z); group.add(w); wheels.push({ mesh: w, front, r: 0.33 });
+    }
+  } else if (kind === 'dog') {
+    const fur = lam('#b07a44'), furD = lam('#8a5a2e'), nose = lam('#1d1f22');
+    body.add(box(0.42, 0.42, 1.05, fur, 0, 0.78, 0));         // body
+    const head = new THREE.Group(); head.position.set(0, 1.08, -0.62); body.add(head);
+    head.add(box(0.36, 0.34, 0.38, fur, 0, 0, 0), box(0.22, 0.18, 0.26, furD, 0, -0.06, -0.28), box(0.08, 0.07, 0.06, nose, 0, -0.02, -0.42));
+    head.add(box(0.1, 0.22, 0.06, furD, -0.14, 0.2, 0.02), box(0.1, 0.22, 0.06, furD, 0.14, 0.2, 0.02)); // ears
+    const legs = [];
+    for (const [x, z, ph] of [[-0.14, -0.38, 0], [0.14, -0.38, Math.PI], [-0.14, 0.38, Math.PI], [0.14, 0.38, 0]]) {
+      const hip = new THREE.Group(); hip.position.set(x, 0.62, z);
+      hip.add(box(0.12, 0.6, 0.12, furD, 0, -0.3, 0));
+      body.add(hip); legs.push({ hip, ph });
+    }
+    const tail = new THREE.Group(); tail.position.set(0, 0.92, 0.52);
+    const t1 = box(0.08, 0.08, 0.42, fur, 0, 0.1, 0.18); t1.rotation.x = 0.6; tail.add(t1);
+    body.add(tail);
+    group.userData.legs = legs; group.userData.tail = tail; group.userData.head = head;
+  } else if (kind === 'cart') {
+    const wire = new THREE.MeshLambertMaterial({ color: '#c9ced3', wireframe: true });
+    body.add(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.5, 0.95, 3, 2, 4), wire).translateY(0.8));
+    body.add(box(0.64, 0.04, 0.97, lam('#9aa0a6'), 0, 0.56, 0));
+    body.add(box(0.66, 0.06, 0.06, lam('#d23a2e'), 0, 1.12, 0.52)); // handle
+    // a passenger in the basket
+    const shirt = lam('#2f6fb0'), skin = lam('#d7a985');
+    body.add(box(0.36, 0.4, 0.3, shirt, 0, 1.15, 0.05));
+    const hd = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), skin); hd.position.set(0, 1.5, 0.02); body.add(hd);
+    for (const [x, z, front] of [[-0.26, -0.4, true], [0.26, -0.4, true], [-0.26, 0.4, false], [0.26, 0.4, false]]) {
+      const w = wheel(0.09, 0.05, tyre); w.position.set(x, 0.09, z); group.add(w); wheels.push({ mesh: w, front, r: 0.09 });
+    }
+    body.add(box(0.05, 0.5, 0.05, lam('#9aa0a6'), -0.28, 0.33, -0.4), box(0.05, 0.5, 0.05, lam('#9aa0a6'), 0.28, 0.33, -0.4), box(0.05, 0.5, 0.05, lam('#9aa0a6'), -0.28, 0.33, 0.4), box(0.05, 0.5, 0.05, lam('#9aa0a6'), 0.28, 0.33, 0.4));
+  } else if (kind === 'duck') {
+    const yellow = lam('#ffd21f'), orange = lam('#ff8a1a'), eye = lam('#111111');
+    const bodyM = new THREE.Mesh(new THREE.SphereGeometry(1.4, 18, 14), yellow); bodyM.scale.set(1, 0.7, 1.35); bodyM.position.y = 0.6; body.add(bodyM);
+    const tailM2 = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.9, 10), yellow); tailM2.rotation.x = -2.2; tailM2.position.set(0, 1.1, 1.7); body.add(tailM2);
+    const headM2 = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 12), yellow); headM2.position.set(0, 2.0, -1.0); body.add(headM2);
+    const beak = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.22, 0.7), orange); beak.position.set(0, 1.85, -1.85); body.add(beak);
+    for (const sx of [-0.4, 0.4]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), eye); e.position.set(sx, 2.2, -1.65); body.add(e); }
+  } else if (kind === 'para') {
     // the wing: an arc of cells above the pilot, lines down to a harness, a caged propeller behind
     const wingM = lam(color, { side: THREE.DoubleSide }), wingB = lam('#f4f1ea', { side: THREE.DoubleSide });
     const cells = 9, span = 10, arc = 0.9;

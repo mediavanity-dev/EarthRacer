@@ -41,6 +41,10 @@ low-detail side view that doesn't claim to be the exact track.
 
 ## Also later
 
+- Tractor-trailer (16 m: needs its own camera and turning rules).
+- At scale (public launch): an on-demand caching proxy in front of Overpass (building detail) and
+  Nominatim, keyed by tile, as OpenWorld's runbook describes.
+
 - Raise the speed cap (90 km/h for now so map tiles can keep up) once loading is smarter:
   prefetching along the route, lower-detail tiles for motorways, a wider loaded area.
 - Mountain passes, opening hours for deliveries (via Overpass, as in OpenWorld).

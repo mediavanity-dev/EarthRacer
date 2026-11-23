@@ -8,6 +8,7 @@
 
 import earcut from 'earcut';
 import { loadBaseTile } from '../data/tiles.js';
+import { loadBuildingDetail } from '../data/osm.js';
 import { ensureTerrain, heightOr } from '../data/terrain.js';
 import { hsl, treeInstance, packTrees } from './trees.js';
 import { ROAD_CLASSES } from './roadClasses.js';
@@ -30,6 +31,11 @@ const MAJOR = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary'])
 self.onmessage = async (e) => {
   const msg = e.data;
   try {
+    if (msg.type === 'detail') { // OSM building detail for a tile (roof shapes, colours, materials, types)
+      const d = await loadBuildingDetail(`${CHUNK_Z}/${msg.x}/${msg.y}`, chunkBounds(msg.x, msg.y));
+      self.postMessage({ id: msg.id, ok: true, payload: d });
+      return;
+    }
     const { payload, transfer } = await build(msg);
     self.postMessage({ id: msg.id, ok: true, payload }, transfer);
   } catch (err) {
@@ -45,6 +51,21 @@ function hexRgb(hex) {
   const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
   return [lin(n >> 16), lin((n >> 8) & 255), lin(n & 255)];
 }
+const namedCtx = new OffscreenCanvas(1, 1).getContext('2d');
+function colourOf(v) {
+  if (!v) return null;
+  const h = hexRgb(v);
+  if (h) return h;
+  namedCtx.fillStyle = '#010203';
+  namedCtx.fillStyle = String(v).trim().toLowerCase().replace(/[\s_-]/g, '');
+  return namedCtx.fillStyle === '#010203' ? null : hexRgb(namedCtx.fillStyle);
+}
+const MATERIAL = { brick: '#9c5a43', stone: '#b3a68f', concrete: '#bdbab2', glass: '#8fb1c9', wood: '#a5774f', timber_framing: '#ead9bb', plaster: '#ece3d0', render: '#ece3d0', metal: '#a2a8ae', steel: '#a2a8ae', sandstone: '#d7bf8f', limestone: '#e2d8c0', cement_block: '#c6c2b8', marble: '#eeeae4', adobe: '#c9a27a', mud: '#b08a62', clay: '#c98a64' };
+const ROOF_MATERIAL = { roof_tiles: '#a3402c', tile: '#a3402c', tiles: '#a3402c', slate: '#4d5258', metal: '#7f8a93', concrete: '#9a9893', asphalt_shingle: '#555a5e', asphalt: '#4a4c4f', tar_paper: '#3c3e40', thatch: '#b59a5c', glass: '#9fbccc', copper: '#5f9e86', wood: '#7a5a3e', stone: '#8c8880', grass: '#6e8f4e', gravel: '#9a968e', eternit: '#8a8c8e' };
+const PITCHED = new Set(['gabled', 'hipped', 'pyramidal', 'half-hipped', 'gambrel', 'mansard', 'skillion', 'side_hipped', 'saltbox', 'dome', 'onion', 'cone', 'round']);
+const HOUSE_T = new Set(['house', 'detached', 'semidetached_house', 'terrace', 'bungalow', 'cabin', 'farm', 'barn', 'farm_auxiliary', 'hut', 'garage', 'shed']);
+const FLAT_T = new Set(['apartments', 'commercial', 'retail', 'office', 'industrial', 'warehouse', 'hospital', 'school', 'hotel', 'train_station', 'stadium', 'garages']);
+const CHURCH_T = new Set(['church', 'cathedral', 'chapel', 'mosque', 'temple', 'synagogue', 'shrine']);
 const shade = (c, f) => [Math.min(1, c[0] * f), Math.min(1, c[1] * f), Math.min(1, c[2] * f)];
 
 function inside(x, y, ring) {
@@ -197,14 +218,22 @@ async function build({ x, y, opts }) {
     const rr = rng(seed ^ hashStr(`${Math.round(cx)},${Math.round(cy)}`));
     const r = rr();
     const areaM = ringArea(outer) * mPerPx * mPerPx;
+    // real OSM detail when we have it (roof shape, colours, materials, type), else regional guesses
+    const det = opts.detail && bd.way ? opts.detail[bd.way] : null;
+    const ty = det?.t || null;
     const tall = bd.height > 30;
-    const industrial = !tall && areaM > 1500 && bd.height < 16 && (maskAt(cx, cy) & 4) !== 0;
-    const house = !tall && !industrial && bd.height <= 12 && areaM < 450;
-    const base = hexRgb(bd.colour) || (tall ? pal(TALL_WALLS, rr()) : industrial ? pal(['#c9c6be', '#b8bcbf', '#d4cfc4', '#a9b0b3'], rr()) : pal(style.walls, rr()));
+    const industrial = ty ? ty === 'industrial' || ty === 'warehouse' : !tall && areaM > 1500 && bd.height < 16 && (maskAt(cx, cy) & 4) !== 0;
+    const church = ty ? CHURCH_T.has(ty) : false;
+    const house = ty ? HOUSE_T.has(ty) && areaM < 1200 : !tall && !industrial && bd.height <= 12 && areaM < 450;
+    const realWall = colourOf(det?.c) || hexRgb(MATERIAL[det?.m]) || hexRgb(bd.colour);
+    const base = realWall || (church ? pal(['#c9bfae', '#d8cfbd', '#b9ae9a'], rr()) : ty === 'barn' ? hexRgb('#8b2e22') : tall ? pal(TALL_WALLS, rr()) : industrial ? pal(['#c9c6be', '#b8bcbf', '#d4cfc4', '#a9b0b3'], rr()) : pal(style.walls, rr()));
     const wallC = shade(base, 0.92 + r * 0.12), lowC = shade(wallC, 0.86);
-    const ws = (tall ? 3 : industrial ? 4 : house ? 1 : 2) + (tall || industrial ? 0 : style.tint * 10);
-    const pitched = house && outer.length >= 4 && outer.length <= 10 && bd.rings.length === 1 && !(bd.minHeight > 0) && rr() < style.pitched;
-    const roofC = pitched ? shade(pal(style.roofs, rr()), 0.95 + r * 0.1) : tall ? shade(base, 0.8) : shade([0.62, 0.62, 0.6], 0.9 + r * 0.2);
+    const ws = church ? 1 : (tall ? 3 : industrial ? 4 : house ? 1 : 2) + (tall || industrial ? 0 : style.tint * 10);
+    const shape = det?.s || null;
+    const shapeOk = outer.length >= 4 && outer.length <= 24 && bd.rings.length === 1 && !(bd.minHeight > 0);
+    const pitched = shapeOk && shape !== 'flat' && (PITCHED.has(shape) || church || (!shape && house && outer.length <= 10 && rr() < style.pitched) || (!shape && ty && HOUSE_T.has(ty) && outer.length <= 12));
+    const realRoof = colourOf(det?.rc) || hexRgb(ROOF_MATERIAL[det?.rm]);
+    const roofC = realRoof || (pitched ? shade(pal(style.roofs, rr()), 0.95 + r * 0.1) : tall ? shade(base, 0.8) : shade([0.62, 0.62, 0.6], 0.9 + r * 0.2));
     const top = ground + bd.height;
     const bottom = bd.minHeight > 0 ? ground + bd.minHeight : ground - 1.5;
     // local corner points
@@ -213,7 +242,7 @@ async function build({ x, y, opts }) {
     if (pitched) {
       let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
       for (const [x, z] of P) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
-      rh = Math.max(1.2, Math.min(4, Math.min(x1 - x0, z1 - z0) * 0.32));
+      rh = det?.rh || Math.max(1.2, Math.min(church ? 9 : 4, Math.min(x1 - x0, z1 - z0) * (church ? 0.6 : 0.32)));
     }
     const wallTop = pitched ? Math.max(ground + 2.6, top - rh) : top;
     const roofTop = wallTop + rh;

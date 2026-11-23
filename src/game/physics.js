@@ -11,8 +11,14 @@ const HITBOX = {
   car: [[-1.35, 0.95], [0, 0.95], [1.35, 0.95]],
   truck: [[-3.2, 1.3], [-1, 1.3], [1.4, 1.3], [3.6, 1.3]],
   boat: [[-2.2, 0.9], [0, 1.15], [1.8, 1.15]],
+  pickup: [[-1.7, 1.0], [0, 1.0], [1.7, 1.0]],
+  moto: [[0, 0.5]],
+  dog: [[0, 0.45]],
+  cart: [[0, 0.45]],
+  duck: [[-0.8, 1.2], [0.8, 1.2]],
+  para: [[0, 1.0]],
 };
-const LENGTH = { bike: 1.7, car: 4.3, truck: 9.4, boat: 6 };
+const LENGTH = { bike: 1.7, car: 4.3, truck: 9.4, boat: 6, pickup: 5.3, moto: 2.1, dog: 1.3, cart: 1, duck: 3.4, para: 2 };
 
 export class VehicleState {
   constructor(kind, x, z, heading) {
@@ -65,16 +71,18 @@ export class VehicleState {
       this.road = on;
       if (on) {
         const c = on.road.c, unpaved = (on.road.f & 1) || c === 7;
-        if (c === 8 || c === 9) { this.surface = 'path'; surfGrip = this.kind === 'bike' ? 0.95 : 0.7; surfTop = this.kind === 'bike' ? s.top : s.offroadTop * 1.4; }
-        else if (unpaved) { this.surface = 'unpaved'; surfGrip = 0.72; surfTop = this.kind === 'bike' ? s.top * 0.75 : Math.min(s.top, 16); drag = 0.15; }
+        // off the tarmac you're nearly as fast (the grip is what changes)
+        const roadTop = Math.min(s.top, SPEED_CAP);
+        if (c === 8 || c === 9) { this.surface = 'path'; surfGrip = this.kind === 'bike' ? 0.95 : 0.75; surfTop = roadTop * (this.kind === 'bike' ? 1 : 0.88); }
+        else if (unpaved) { this.surface = 'unpaved'; surfGrip = 0.75; surfTop = roadTop * 0.92; drag = 0.04; }
         else this.surface = 'road';
       } else {
-        this.surface = 'offroad'; surfGrip = 0.6; surfTop = s.offroadTop; drag = 0.35;
+        this.surface = 'offroad'; surfGrip = 0.65; surfTop = Math.min(s.top, SPEED_CAP) * (s.offroadK ?? 0.86); drag = 0.06;
       }
     }
     // wind: a headwind slows bikes and boats noticeably; cars barely notice
     const windAlong = ctx.wind ? ctx.wind[0] * fx + ctx.wind[1] * -fz : 0; // + = tailwind
-    const windK = this.kind === 'bike' ? 0.3 : this.kind === 'boat' ? 0.15 : 0.02;
+    const windK = this.kind === 'bike' ? 0.3 : s.terrain === 'water' ? 0.15 : 0.02;
     let top = Math.min(surfTop + windAlong * windK, SPEED_CAP);
     let why = top < SPEED_CAP - 0.5 ? (this.surface === 'offroad' ? 'off-road' : this.surface === 'unpaved' ? 'gravel' : null) : 'speed cap';
     if (top >= s.top - 0.1 && s.top < SPEED_CAP) why = 'top speed';
@@ -102,7 +110,7 @@ export class VehicleState {
       if (vf > top) vf -= Math.min(vf - top, (vf - top) * 1.5 * dt + 2 * dt);
       if (t === 0 && b === 0) vf -= Math.sign(vf) * Math.min(Math.abs(vf), (0.35 + Math.abs(vf) * 0.012) * dt);
       vf -= vf * drag * dt;
-      if (input.handbrake && this.kind !== 'boat') vf -= Math.sign(vf) * Math.min(Math.abs(vf), 3 * dt);
+      if (input.handbrake && s.terrain !== 'water') vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.drifting ? 0.8 : 3) * dt);
     }
 
     // ---------- steering ----------
@@ -110,20 +118,27 @@ export class VehicleState {
     this.steer += (input.steer - this.steer) * k8;
     const maxAngle = s.steer / (1 + Math.abs(vf) / (this.kind === 'bike' ? 9 : 14));
     let yaw = (vf / s.wheelbase) * Math.tan(this.steer * maxAngle);
-    if (this.kind === 'boat') yaw = this.steer * (0.25 + 0.35 * Math.min(1, Math.abs(vf) / 4)) * (vf < -0.5 ? -1 : 1); // boats can turn on the spot, slowly
-    if (input.handbrake && Math.abs(vf) > 5 && this.kind !== 'boat') yaw *= 1.45;
+    if (s.terrain === 'water') yaw = this.steer * (0.25 + 0.35 * Math.min(1, Math.abs(vf) / 4)) * (vf < -0.5 ? -1 : 1); // boats can turn on the spot, slowly
+    // drifting: a flick of the handbrake while turning at speed kicks the rear out, and the slide
+    // holds (steer to set the angle, counter-steer to straighten) until you straighten up or slow down
+    const canDrift = s.terrain === 'land' && this.grounded && this.kind !== 'cart';
+    if (canDrift && !this.drifting && input.handbrake && Math.abs(vf) > 8 && Math.abs(this.steer) > 0.25) this.drifting = true;
+    if (this.drifting && (!canDrift || Math.abs(vf) < 4 || input.brake > 0.6 || (!input.handbrake && this.slip < 1.0 && Math.abs(this.steer) < 0.2))) this.drifting = false;
+    if (this.drifting) yaw *= input.handbrake ? 1.55 : 1.2;
+    else if (input.handbrake && Math.abs(vf) > 5 && s.terrain !== 'water') yaw *= 1.45;
     if (!this.grounded && s.terrain !== 'water') yaw *= 0.2;
+    // the velocity in the world before turning: the body turns, the motion lags behind (that's slip)
+    const vx0 = fx * vf + rx * vr, vz0 = fz * vf + rz * vr;
     this.heading += yaw * dt;
 
     // ---------- sideways grip (slip dies away; less grip = more slide) ----------
     [fx, fz] = this.fwd(); rx = -fz; rz = fx;
-    const vx0 = fx * vf + rx * vr, vz0 = fz * vf + rz * vr;
     let nvf = vx0 * fx + vz0 * fz, nvr = vx0 * rx + vz0 * rz;
     if (this.grounded || s.terrain === 'water') {
-      const g2 = grip * (input.handbrake && this.kind !== 'boat' ? 0.22 : 1);
+      const g2 = grip * (this.drifting ? (input.handbrake ? 0.16 : 0.3) : input.handbrake && s.terrain !== 'water' ? 0.22 : 1);
       const before = nvr;
       nvr *= Math.exp(-g2 * dt);
-      nvf += Math.sign(nvf) * Math.abs(before - nvr) * 0.35; // some sideways speed carries on forward
+      nvf += Math.sign(nvf) * Math.abs(before - nvr) * (this.drifting ? 0.65 : 0.35); // sideways speed carries on forward (more of it in a drift)
     }
     this.slip = Math.abs(nvr);
     this.vf = nvf;
@@ -150,7 +165,7 @@ export class VehicleState {
       const vn = this.vx * h.nx + this.vz * h.nz;
       if (vn < 0) {
         this.vx -= h.nx * vn * 1.35; this.vz -= h.nz * vn * 1.35;
-        if (-vn > 2) this.hurt(-vn, ev);
+        if (-vn > 2) { this.hurt(-vn, ev, 'wall'); ev[ev.length - 1].at = { x: cx - h.nx * r, z: cz - h.nz * r, nx: h.nx, nz: h.nz, y: this.y }; }
         // glancing hits twist the vehicle a little
         this.heading += Math.sign(fx * h.nz - fz * h.nx) * Math.min(0.25, -vn * 0.01);
       }
@@ -215,7 +230,7 @@ export class VehicleState {
     const tp = s.terrain === 'water' ? -Math.min(0.15, Math.max(0, nvf - 8) * 0.012) : Math.atan2(hf - hb, L * 0.8);
     const accelPitch = (nvf - (this.prevVf ?? nvf)) / Math.max(dt, 1e-3) * -0.006;
     this.pitch += (tp + accelPitch * 0.5 - this.pitch) * Math.min(1, dt * 8);
-    const lean = this.kind === 'bike' ? Math.max(-0.6, Math.min(0.6, -yaw * nvf * 0.08)) : Math.max(-0.08, Math.min(0.08, yaw * nvf * 0.012));
+    const lean = this.kind === 'bike' || s.lean ? Math.max(-0.6, Math.min(0.6, -yaw * nvf * (s.lean ? 0.05 : 0.08))) : Math.max(-0.08, Math.min(0.08, yaw * nvf * 0.012));
     this.roll += (lean - this.roll) * Math.min(1, dt * 6);
     this.prevVf = nvf;
     this.spin += (nvf / 0.34) * dt;
@@ -223,7 +238,7 @@ export class VehicleState {
     this.odo = (this.odo || 0) + dist;
     if (s.fuel && this.fuel > 0) this.fuel = Math.max(0, this.fuel - (dist / 1000) * s.use * (t > 0 ? 1.15 : 0.5));
     // engine note: gears by speed band
-    const bands = this.kind === 'truck' ? [0, 4, 8, 13, 18, 23, 30] : this.kind === 'car' ? [0, 7, 13, 19, 26, 34, 60] : [0, 60];
+    const bands = this.kind === 'truck' ? [0, 4, 8, 13, 18, 23, 30] : this.kind === 'car' || this.kind === 'pickup' ? [0, 7, 13, 19, 26, 34, 60] : this.kind === 'moto' ? [0, 9, 16, 23, 30, 60] : [0, 60];
     const v = Math.abs(nvf);
     let gi = 0; while (gi < bands.length - 2 && v > bands[gi + 1]) gi++;
     this.gear = gi + 1;

@@ -28,7 +28,7 @@ export class Input {
       this.keys.add(e.code);
       this.source = 'keyboard';
       if (!e.repeat) {
-        const a = { KeyC: 'camera', KeyH: 'horn', KeyR: 'reset', Escape: 'menu', KeyM: 'mute', KeyJ: 'jobs', KeyG: 'guess', KeyT: 'trip' }[e.code];
+        const a = { KeyC: 'camera', KeyH: 'horn', KeyR: 'reset', Escape: 'menu', KeyM: 'mute', KeyJ: 'jobs', KeyG: 'guess', KeyT: 'trip', KeyV: 'radio' }[e.code];
         if (a) this.onAction(a);
       }
       if (KEYS.hand.includes(e.code) || e.code.startsWith('Arrow')) e.preventDefault();
@@ -73,7 +73,7 @@ export class Input {
   }
   orientation() { return String(screen.orientation?.angle ?? window.orientation ?? 0); }
   /** Has the motion sensor reported in the last second? */
-  tiltAlive() { return this.tilt.on && this.tilt.raw != null && performance.now() - this.tilt.at < 1000; }
+  tiltAlive() { return this.tilt.on && performance.now() - this.tilt.at < 1500; }
   calibrated() { return !!this.tilt.cal[this.orientation()]; }
   tiltCenter() { if (this.tilt.raw != null) this.tilt.center = this.tilt.raw; }
   /** Second calibration step: the player has turned the "wheel" to the right. */
@@ -120,7 +120,7 @@ export class Input {
     const t = this.touch;
     if (this.source === 'touch') {
       throttle = Math.max(throttle, t.gas); brake = Math.max(brake, t.brake); hand = hand || t.hand;
-      if (this.mode === 'tilt' && this.tiltAlive()) {
+      if (this.mode === 'tilt' && this.tiltAlive() && this.tilt.raw != null) {
         let a = wrap(this.tilt.raw - this.tilt.center) * this.tilt.sign;
         a = Math.abs(a) < 2 ? 0 : a - Math.sign(a) * 2;
         steer = Math.max(-1, Math.min(1, a / this.tilt.range)); analog = true;
@@ -157,7 +157,7 @@ export class Input {
       const set = (e) => {
         const r = pad.getBoundingClientRect();
         const v = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1));
-        this.touch.steer = Math.sign(v) * Math.min(1, Math.abs(v) * 1.15);
+        this.touch.steer = Math.sign(v) * Math.min(1, Math.abs(v) * 1.15 * (this.sliderSens || 1));
         knob.style.left = `${((v + 1) / 2) * 100}%`;
       };
       hold(pad, set, () => { this.touch.steer = 0; knob.style.left = '50%'; });
@@ -167,7 +167,7 @@ export class Input {
       hold(l, () => { this.touch.left = true; }, () => { this.touch.left = false; });
       hold(r, () => { this.touch.right = true; }, () => { this.touch.right = false; });
     } else if (this.mode === 'tilt') {
-      const c = el('tbtn recenter', 'Re-centre');
+      const c = el('tbtn recenter', this.words?.recentre || 'Re-centre');
       c.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         if (!this.tiltAlive()) { this.enableTilt(); return; }

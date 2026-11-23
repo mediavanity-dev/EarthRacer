@@ -11,7 +11,9 @@ import { jobsFor, jobTime, jobReward, raceFor, isLandmark, isFuel, pruneRaces } 
 import { RANDOM_PLACES } from './game/places.js';
 import { MODES, BOARD_RADIUS, estimate, newTrip, progress, positionAt, fmtDuration } from './game/trips.js';
 import { TripMap } from './ui/tripmap.js';
+import { BADGES, count as featCount } from './game/feats.js';
 import { PlaneView } from './world/planeView.js';
+import { startGame } from './ui/minigames.js';
 import { profile, save, flush, resetProfile, randomLeft, nextWeekReset, RANDOM_PER_WEEK } from './game/profile.js';
 import { fetchWeather, whereIs, searchPlace, waveHeight, postcard, drivingSide, usesMph, flag } from './data/services.js';
 import { haversine, offsetGeo } from './geo.js';
@@ -20,12 +22,18 @@ import { Sound } from './audio.js';
 import { drawMinimap } from './ui/minimap.js';
 import { regionOf, regionStyle } from './world/region.js';
 import { Signs } from './world/signs.js';
+import { Smoke } from './world/smoke.js';
+import { Debris } from './world/debris.js';
+import { Radio } from './data/radio.js';
 import { animateStars, starAvailable, animateGamer, coinAvailable, collected as starsCollected } from './world/stunts.js';
 
 const $ = (s) => document.querySelector(s);
 const params = new URLSearchParams(location.search);
 const DEV = params.has('dev');
 const isTouch = (DEV && params.has('touch')) || matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+// Spelling follows the device's language: "center" in American English, "centre" elsewhere.
+const US = /^en-(US|CA|PH)/i.test(navigator.language || '') || /^en$/i.test(navigator.language || '') && /America/.test(Intl.DateTimeFormat().resolvedOptions().timeZone || '');
+const CENTRE = US ? 'center' : 'centre', RECENTRE = US ? 'Recenter' : 'Re-centre';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ---------- renderer / scene ----------
@@ -50,6 +58,24 @@ const world = new World(scene, {
 });
 const sky = new Sky(scene);
 const signs = new Signs(scene);
+const smoke = new Smoke(scene);
+const debris = new Debris(scene);
+// a tile refined with OSM building detail replaces the old one: same roads, so traffic carries on
+world.on((ev) => { if (ev.type === 'chunk' && ev.old) for (const c of traffic.cars) if (c.chunk === ev.old) c.chunk = ev.chunk; });
+// local radio for the country you're in; the car's own sounds duck under it
+const radio = new Radio((msg) => {
+  const st = radio.station, el = $('#radio');
+  sound.setDuck(!!st);
+  el.hidden = !st;
+  if (st) el.innerHTML = `📻 <span>${esc(st.name)}</span> <button id="r-off" title="Radio off">✕</button>`;
+  if (msg) toast(`📻 ${esc(msg)}`);
+  const off = el.querySelector('#r-off'); if (off) off.onclick = () => radio.stop();
+});
+function radioNext() {
+  if (profile.random.active) { toast("📻 No radio until you've guessed: it would give the game away."); return; }
+  userGesture();
+  radio.next(game.country || 'US');
+}
 const traffic = new Traffic(scene);
 traffic.density = profile.settings.traffic ?? 1;
 const sound = new Sound();
@@ -65,6 +91,8 @@ const game = {
 
 const input = new Input($('#controls'), { onAction });
 input.tilt.cal = { ...(profile.settings.tiltCal || {}) }; // remembered per screen orientation
+input.sliderSens = profile.settings.sens ?? 1;
+input.words = { recentre: RECENTRE };
 const ctrlMode = profile.settings.controls || (isTouch ? 'slider' : 'slider');
 input.setMode(ctrlMode);
 if (!isTouch) $('#controls').classList.add('touch-off');
@@ -219,7 +247,7 @@ function calibrateTilt() {
   input.enabled = false;
   const o = overlay(`<div class="card"><h2>📱 Set up tilt steering</h2>
     <p><b>1.</b> Hold your phone sideways and upright in front of you, like a steering wheel, thumbs on the screen edges.</p>
-    <button class="btn primary" id="c1">It's level: set centre</button>
+    <button class="btn primary" id="c1">It's level: set ${CENTRE}</button>
     <p id="s2" hidden><b>2.</b> Now turn the "wheel" a little to the <b>right</b> and hold it there.</p>
     <button class="btn primary" id="c2" hidden>Turned right: done</button>
     <p class="note" id="live">Motion sensor: waiting…</p>
@@ -238,12 +266,12 @@ function calibrateTilt() {
       for (let k = 0; k < 15 && !input.tiltAlive(); k++) await new Promise((r) => setTimeout(r, 100));
       if (!input.tiltAlive()) { o.querySelector('#msg').textContent = "The motion sensor isn't responding. Check Settings → EarthRacer → Motion & Fitness, or use the slider."; return; }
     }
-    input.tiltCenter(); o.querySelector('#s2').hidden = false; o.querySelector('#c2').hidden = false; o.querySelector('#c1').textContent = 'Set centre again';
+    input.tiltCenter(); o.querySelector('#s2').hidden = false; o.querySelector('#c2').hidden = false; o.querySelector('#c1').textContent = `Set ${CENTRE} again`;
   };
   o.querySelector('#c2').onclick = () => {
     if (!input.tiltRight()) { o.querySelector('#msg').textContent = 'Turn it a bit further to the right, then tap again.'; return; }
     profile.settings.tiltCal = { ...input.tilt.cal }; save();
-    done(); toast('Tilt steering ready. Re-centre any time with the button at the bottom.');
+    done(); toast(`Tilt steering ready. ${RECENTRE} any time with the button at the bottom.`);
   };
   o.querySelector('#cx').onclick = () => { done(); setControls('slider'); };
 }
@@ -281,7 +309,7 @@ function startRandom() {
   const g = offsetGeo(la, lo, Math.sin(a) * d, Math.cos(a) * d);
   profile.random.uses.push(Date.now());
   profile.random.active = { lat: g.lat, lon: g.lon, start: Date.now(), km0: profile.stats.km };
-  profile.pos = { lat: g.lat, lon: g.lon, heading: Math.random() * Math.PI * 2, kind: game.v?.kind === 'boat' ? 'car' : (game.v?.kind || profile.pos?.kind || 'car'), at: Date.now() };
+  profile.pos = { lat: g.lat, lon: g.lon, heading: Math.random() * Math.PI * 2, kind: VEHICLES[game.v?.kind]?.terrain === 'water' ? 'car' : (game.v?.kind || profile.pos?.kind || 'car'), at: Date.now() };
   if (game.activity) endActivity(null);
   save(true);
   game.country = null;
@@ -382,14 +410,16 @@ function onAction(a, extra) {
   if (a === 'menu') { if ($('#panel').hidden) openPanel(); else closePanel(); }
   else if (!$('#panel').hidden) return;
   else if (a === 'camera') { game.cam = (game.cam + 1) % 4; profile.settings.cam = game.cam; save(); }
-  else if (a === 'horn') game.v.kind === 'bike' ? sound.bell() : sound.horn();
+  else if (a === 'horn') ({ bike: () => sound.bell(), dog: () => sound.bark(), duck: () => sound.squeak(), cart: () => sound.bell() }[game.v.kind] || (() => sound.horn()))();
   else if (a === 'reset') resetToRoad();
   else if (a === 'jobs') openPanel('jobs');
   else if (a === 'guess' && profile.random.active) openGuess();
   else if (a === 'trip' && game.nearStop) openTripPlanner(game.nearStop);
+  else if (a === 'radio') radioNext();
 }
 $('#b-menu').onclick = () => openPanel();
 $('#b-cam').onclick = () => onAction('camera');
+$('#b-radio').onclick = () => radioNext();
 $('#b-guess').onclick = () => openGuess();
 $('#b-trip').onclick = () => { if (game.nearStop) openTripPlanner(game.nearStop); };
 
@@ -573,8 +603,13 @@ function checkUnlocks() {
   for (const k of VEHICLE_ORDER) {
     const u = VEHICLES[k].unlock;
     if (!u || profile.unlocked[k]) continue;
-    const got = u.key === 'deliveries' ? profile.stats.deliveries >= u.n : u.key === 'shore' ? profile.shore : u.key === 'races' ? profile.stats.races >= u.n : false;
-    if (got) { profile.unlocked[k] = true; save(); sound.chime(); toast(`🔓 New vehicle: <b>${VEHICLES[k].icon} ${VEHICLES[k].name}</b>. Summon it from the menu.`, { ms: 6000 }); }
+    if (featCount(u.key, profile) >= u.n) { profile.unlocked[k] = true; save(); sound.chime(); toast(`🔓 ${VEHICLES[k].feat ? 'Unlocked something odd' : 'New vehicle'}: <b>${VEHICLES[k].icon} ${VEHICLES[k].name}</b>. Summon it from the Garage.`, { ms: 7000 }); }
+  }
+  profile.feats ||= {};
+  for (const b of BADGES) {
+    if (profile.feats[b.id] || featCount(b.key, profile) < b.n) continue;
+    profile.feats[b.id] = Date.now(); save();
+    sound.chime(); toast(`🏆 Feat: <b>${b.icon} ${b.name}</b> · ${esc(b.what)}`, { ms: 5000 });
   }
 }
 
@@ -713,7 +748,7 @@ async function updateWeather(force = false) {
   refreshHud(true);
 }
 async function updateWaves() {
-  if (game.v?.kind !== 'boat') { game.waves = null; return; }
+  if (game.v?.spec.terrain !== 'water') { game.waves = null; return; }
   game.waves = await waveHeight(game.lat, game.lon).catch(() => null);
 }
 
@@ -743,7 +778,7 @@ function hudFrame() {
 }
 
 // ---------- menu panel ----------
-const TABS = [['garage', '🚗 Garage'], ['jobs', '📦 Jobs'], ['race', '🏁 Race'], ['atlas', '📒 Atlas'], ['random', '🎲 Random'], ['settings', '⚙️ Settings'], ['help', '❓ Help']];
+const TABS = [['garage', '🚗 Garage'], ['feats', '🏆 Feats'], ['jobs', '📦 Jobs'], ['race', '🏁 Race'], ['atlas', '📒 Atlas'], ['random', '🎲 Random'], ['settings', '⚙️ Settings'], ['help', '❓ Help']];
 let panelTab = 'garage';
 function openPanel(tab = panelTab) {
   panelTab = tab;
@@ -815,6 +850,17 @@ function renderTab(tab, body) {
     <h3>Countries</h3><div style="font-size:26px">${at.countries.map(flag).join(' ') || '<span class="note">None yet</span>'}</div>
     <h3>Street atlas</h3><div class="list">${Object.entries(at.streets).slice(-12).reverse().map(([area, l]) => `<div class="item"><div class="ic">🛣️</div><div class="tx"><b>${esc(/^\d+\//.test(area) ? 'Unnamed area' : area)}</b><small>${l.length} streets: ${esc(l.slice(-6).join(', '))}${l.length > 6 ? '…' : ''}</small></div></div>`).join('') || '<p class="note">Drive along named streets to fill your atlas.</p>'}</div>
     <h3>Postcards</h3><div class="cards">${at.postcards.slice().reverse().map((c) => `<div class="pc">${c.img ? `<img src="${esc(c.img)}" alt="" loading="lazy">` : '<img alt="">'}<b>${esc(c.title || c.name)}</b>${esc(c.date)}${c.url ? ` · <a href="${esc(c.url)}" target="_blank" rel="noopener">Wikipedia</a>` : ''}</div>`).join('') || '<p class="note">Drive past landmarks (monuments, museums, castles, viewpoints) to collect postcards.</p>'}</div>`;
+  } else if (tab === 'feats') {
+    const bar = (c, n) => `<div class="fbar"><i style="width:${Math.min(100, (c / n) * 100).toFixed(0)}%"></i></div>`;
+    const vs = VEHICLE_ORDER.filter((k) => VEHICLES[k].unlock).map((k) => {
+      const s = VEHICLES[k], c = featCount(s.unlock.key, profile), done = profile.unlocked[k];
+      return `<div class="item${done ? '' : ' locked'}"><div class="ic">${done ? s.icon : '🔒'}</div><div class="tx"><b>${done ? s.name : s.feat ? '???' : s.name}</b><small>${esc(s.unlock.what)}${done ? ' · unlocked' : ` · ${Math.min(c, s.unlock.n).toLocaleString()} / ${s.unlock.n.toLocaleString()}`}</small>${done ? '' : bar(c, s.unlock.n)}</div></div>`;
+    }).join('');
+    const bs = BADGES.map((b) => {
+      const c = featCount(b.key, profile), done = profile.feats?.[b.id];
+      return `<div class="item${done ? '' : ' locked'}"><div class="ic">${done ? b.icon : '▫️'}</div><div class="tx"><b>${b.name}</b><small>${esc(b.what)}${done ? ` · ${new Date(done).toLocaleDateString()}` : ` · ${Math.min(c, b.n).toLocaleString()} / ${b.n.toLocaleString()}`}</small>${done ? '' : bar(c, b.n)}</div></div>`;
+    }).join('');
+    body.innerHTML = `<h3>Vehicles to earn</h3><div class="list">${vs}</div><h3>Feats</h3><div class="list">${bs}</div>`;
   } else if (tab === 'random') {
     const act = profile.random.active;
     body.innerHTML = `<h3>🎲 Random placement</h3>
@@ -826,12 +872,14 @@ function renderTab(tab, body) {
   } else if (tab === 'settings') {
     body.innerHTML = `${isTouch ? `<h3>Steering</h3><div class="seg" id="ctl">${['tilt', 'slider', 'buttons'].map((m) => `<button data-m="${m}" class="${input.mode === m ? 'on' : ''}">${{ tilt: '📱 Tilt (wheel)', slider: '👍 Slider', buttons: '◀ ▶ Buttons' }[m]}</button>`).join('')}</div>${input.mode === 'tilt' ? '<button class="btn" id="cal">Recalibrate tilt</button>' : ''}` : ''}
       <h3>Play mode</h3><div class="seg" id="modeseg">${[['explorer', '🧭 Explorer', 'The real world, with a few stunts to find'], ['gamer', '🎮 Gamer', 'Ramps, coins, boosts and cones everywhere']].map(([k, n, d]) => `<button data-m="${k}" class="${(profile.settings.mode || 'explorer') === k ? 'on' : ''}">${n}<br><small>${d}</small></button>`).join('')}</div>
+      ${isTouch && input.mode === 'slider' ? `<h3>Slider sensitivity</h3><div class="seg" id="sensseg">${[['Gentle', 0.7], ['Normal', 1], ['Sharp', 1.4]].map(([n, k]) => `<button data-k="${k}" class="${(profile.settings.sens ?? 1) === k ? 'on' : ''}">${n}</button>`).join('')}</div>` : ''}
       <h3>Camera</h3><div class="seg" id="camseg">${['Chase', 'Far', 'Bumper', 'Top down'].map((n, i) => `<button data-c="${i}" class="${game.cam === i ? 'on' : ''}">${n}</button>`).join('')}</div>
       <h3>Traffic</h3><div class="seg" id="trf">${[['None', 0], ['Light', 0.5], ['Normal', 1], ['Busy', 1.5]].map(([n, d]) => `<button data-d="${d}" class="${traffic.density === d ? 'on' : ''}">${n}</button>`).join('')}</div>
       <h3>Sound</h3><div class="seg"><button id="snd" class="${profile.settings.mute ? '' : 'on'}">${profile.settings.mute ? '🔇 Off' : '🔊 On'}</button></div>
       <h3>Start over</h3><p class="note">Begins the whole game again from nothing.</p><button class="btn" id="wipe">Start over…</button>`;
     body.querySelectorAll('#ctl button').forEach((b) => b.onclick = async () => { await setControls(b.dataset.m); openPanel('settings'); });
     const cal = body.querySelector('#cal'); if (cal) cal.onclick = () => { closePanel(); calibrateTilt(); };
+    body.querySelectorAll('#sensseg button').forEach((b) => b.onclick = () => { profile.settings.sens = +b.dataset.k; input.sliderSens = +b.dataset.k; save(); openPanel('settings'); });
     body.querySelectorAll('#modeseg button').forEach((b) => b.onclick = () => { setMode(b.dataset.m); openPanel('settings'); });
     body.querySelectorAll('#camseg button').forEach((b) => b.onclick = () => { game.cam = +b.dataset.c; profile.settings.cam = game.cam; save(); openPanel('settings'); });
     body.querySelectorAll('#trf button').forEach((b) => b.onclick = () => { traffic.density = +b.dataset.d; profile.settings.traffic = traffic.density; if (!traffic.density) traffic.clear(); save(); openPanel('settings'); });
@@ -900,7 +948,7 @@ function summon(kind) {
   closePanel();
   game.v.init = false;
   toast(`${s.icon} ${s.name} summoned.`);
-  if (kind === 'boat') updateWaves();
+  if (VEHICLES[kind].terrain === 'water') updateWaves();
   if (kind === 'para') toast(isTouch ? 'Hold GAS to run and take off. GAS climbs, BRAKE sinks, steer to bank. Ease off to land.' : 'Hold W to run and take off. W climbs, S sinks, A/D bank. Ease off to land.', { ms: 8000 });
 }
 function searchAround(x, z, maxR, ok) {
@@ -959,7 +1007,7 @@ function openTripPlanner(stop) {
       <p class="note">${m.canStopEarly === true ? 'You can get off before the end: you\'ll be dropped where you\'d have got to by then.' : m.canStopEarly === 'boat' ? 'You can only leave the ferry early if you have a boat to carry on in.' : 'You can\'t get off a plane mid-flight.'}</p>`;
     box.querySelector('#tb').onclick = () => {
       storeVehicle();
-      if (game.v) profile.pos = { ...profile.pos, kind: game.v.kind === 'boat' ? 'car' : game.v.kind };
+      if (game.v) profile.pos = { ...profile.pos, kind: game.v.spec.terrain === 'water' ? 'car' : game.v.kind };
       profile.trip = newTrip(stop.kind, from, to, est);
       save(true);
       sound.chime();
@@ -988,6 +1036,7 @@ function tripScreen() {
     <p class="note">From ${esc(t.from.name)} · about ${fmtDist(t.km * 1000)} · arrives ${arrive.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}. You can close the app: the trip carries on without it.</p>
     ${watch ? `<button class="btn primary" id="twatch">${watch[0]}<small id="twatchs">${watch[1]}</small></button>` : ''}
     ${early ? `<button class="btn" id="toff">Get off here<small id="toffs">Be dropped where the ${m.name.toLowerCase()} has got to by now</small></button>` : ''}
+    <h3 class="tg-h">🕹️ Seatback games</h3><div class="row" id="tgame"><button class="btn" data-g="pong">🏓 Pong<small>Best ${profile.stats.pongBest || 0}</small></button><button class="btn" data-g="snake">🐍 Snake<small>Best ${profile.stats.snakeBest || 0}</small></button></div>
     ${t.mode === 'plane' ? '<button class="quiet-link" id="tbail">Bail out…</button>' : ''}
     <div class="attrib">${ATTRIB}</div></div>`);
   const map = new TripMap(o.querySelector('#tmap'), t, m.icon);
@@ -1026,6 +1075,7 @@ function tripScreen() {
   };
   const wbtn = o.querySelector('#twatch');
   if (wbtn) wbtn.onclick = () => { userGesture(); startWatch(t.mode); };
+  o.querySelectorAll('#tgame button').forEach((b) => b.onclick = () => playSeatback(b.dataset.g));
   // leaving a flight: walk off before take-off, or (quietly, with a second tap) jump
   const bail = o.querySelector('#tbail');
   if (bail) {
@@ -1047,8 +1097,9 @@ function tripScreen() {
       if (!below?.cc) { bail.disabled = false; armed = 0; bail.classList.remove('armed'); bail.textContent = 'Only open water below. Best stay in your seat.'; setTimeout(label, 4000); return; }
       const now = Date.now(), wait = MODES.plane.wait * 60000, after = (MODES.plane.after || 0) * 60000;
       const alt = Math.round(PlaneView.altitude(Math.max(0, now - t.start - wait), t.duration - wait - after));
-      const kind = profile.pos?.kind && profile.pos.kind !== 'boat' ? profile.pos.kind : 'car';
+      const kind = profile.pos?.kind && VEHICLES[profile.pos.kind]?.terrain === 'land' ? profile.pos.kind : 'car';
       const where = below.place ? `near ${esc(below.place)}` : `in ${esc(below.country || 'the countryside')}`;
+      profile.stats.bailouts = (profile.stats.bailouts || 0) + 1;
       finishTrip(p.lat, p.lon, null, `🪂 You jumped from ${alt.toLocaleString()} m and floated down ${where}. Your ${VEHICLES[kind].name.toLowerCase()} was somehow waiting.`, Math.round(t.km * p.f), '🪂 Floating down…');
     };
   }
@@ -1065,6 +1116,32 @@ function tripScreen() {
   };
 }
 
+// Pong or Snake on the seatback screen; the trip carries on (and arrives) while you play.
+function playSeatback(kind) {
+  const t = profile.trip;
+  if (!t) return;
+  clearInterval(tripTimer);
+  const o = overlay(`<div class="card seatback"><div id="mghost"></div><p class="note" id="mgleft"></p></div>`, 'dim');
+  const best = profile.stats[`${kind}Best`] || 0;
+  let stop = null;
+  const left = setInterval(() => {
+    if (!profile.trip) { clearInterval(left); stop?.(); return; }
+    const ms = t.start + t.duration - Date.now();
+    const el = o.querySelector('#mgleft');
+    if (el) el.textContent = `${MODES[t.mode].icon} ${fmtDuration(ms)} to ${t.to.name}`;
+    if (ms <= 0) { clearInterval(left); stop?.(); arriveTrip(); }
+  }, 1000);
+  stop = startGame(o.querySelector('#mghost'), kind, {
+    best,
+    onScore: (k, sc) => {
+      if (sc > (profile.stats[`${k}Best`] || 0)) { profile.stats[`${k}Best`] = sc; toast(`🕹️ New best at ${k === 'pong' ? 'Pong' : 'Snake'}: ${sc}`); }
+      if (sc > 0) profile.coins += Math.round(sc / 5);
+      save();
+    },
+    onExit: () => { clearInterval(left); tripScreen(); },
+  });
+}
+
 function arriveTrip() {
   const t = profile.trip;
   if (!t) return;
@@ -1077,12 +1154,12 @@ function finishTrip(lat, lon, kindOverride, msg, km, loading = null) {
   profile.trip = null;
   profile.stats.trips = (profile.stats.trips || 0) + 1;
   profile.stats.transitKm = (profile.stats.transitKm || 0) + (km || 0);
-  const kind = kindOverride || (profile.pos?.kind && profile.pos.kind !== 'boat' ? profile.pos.kind : 'car');
+  const kind = kindOverride || (profile.pos?.kind && VEHICLES[profile.pos.kind]?.terrain === 'land' ? profile.pos.kind : 'car');
   profile.pos = { lat, lon, heading: 0, kind, at: Date.now() };
   save(true);
   game.country = null; game.lastTile = null;
   input.enabled = true;
-  begin(lat, lon, 0, kind, { snap: kind !== 'boat', teleport: true, loading }).then(() => toast(msg, { ms: 7000 }));
+  begin(lat, lon, 0, kind, { snap: VEHICLES[kind].terrain !== 'water', teleport: true, loading }).then(() => toast(msg, { ms: 7000 }));
 }
 
 // ---------- watching a trip: the window seat (plane) and the deck (ferry) ----------
@@ -1268,10 +1345,11 @@ function openGuess() {
   if (!act) return;
   input.enabled = false;
   const o = overlay(`<div class="card"><h2>🎲 Where are you?</h2>
-    <p>Type a city, town or country. The closer you are, the more you score. Guessing sooner scores more.</p>
+    <p>Type a city, town or country. You'll hear how far off you are, not the answer. Closer and sooner scores more.</p>
     <input type="search" id="gq" placeholder="e.g. Lisbon, or Portugal" autofocus />
     <div class="results" id="gr"></div>
-    <div class="row"><button class="btn" id="back">Keep exploring</button><button class="btn" id="give">Give up and reveal</button></div></div>`, 'dim');
+    ${act.guesses?.length ? `<p class="note">Guesses so far: ${act.guesses.map((x) => `${esc(x.name)} (${Math.round(x.km)} km)`).join(' · ')}</p>` : ''}
+    <div class="row"><button class="btn" id="back">Keep exploring</button><button class="btn" id="give">Reveal where I am</button></div></div>`, 'dim');
   const back = () => { hideOverlay(); input.enabled = true; };
   o.querySelector('#back').onclick = back;
   o.querySelector('#give').onclick = () => finishGuess(null);
@@ -1293,13 +1371,43 @@ function openGuess() {
     }, 650);
   };
 }
-async function finishGuess(g) {
+// A guess tells you how far off you are, but not where you are: keep exploring, guess again, or
+// reveal. Each guess is worth less the longer you've taken, the further you've driven and the
+// more guesses you've made; you keep your best.
+function finishGuess(g) {
   const act = profile.random.active;
+  if (!g) { revealPlacement(); return; }
+  act.guesses ||= [];
+  const km = haversine(g.lat, g.lon, game.lat, game.lon) / 1000;
+  const drove = Math.max(0, profile.stats.km - act.km0), mins = (Date.now() - act.start) / 60000;
+  const factor = Math.max(0.25, 1 - drove / 30 - mins / 90) * 0.85 ** act.guesses.length;
+  const pts = Math.round(5000 * Math.exp(-km / 800) * factor);
+  const prev = act.guesses[act.guesses.length - 1];
+  act.guesses.push({ name: g.name.split(',').slice(0, 2).join(','), km, pts });
+  save(true);
+  const best = Math.max(...act.guesses.map((x) => x.pts));
+  const temp = !prev ? '' : km < prev.km * 0.8 ? ' 🔥 Warmer!' : km > prev.km * 1.25 ? ' 🧊 Colder.' : '';
+  const close = km < 25 ? 'Spot on, or very nearly!' : km < 150 ? 'Close!' : km < 600 ? 'Right part of the world.' : 'A long way off.';
+  const o = overlay(`<div class="card"><h2>🎯 ${km < 1 ? 'Less than a km' : `${Math.round(km).toLocaleString()} km`} away</h2>
+    <p>${esc(close)}${temp} That guess is worth <b>${pts.toLocaleString()}</b> points (your best so far: ${best.toLocaleString()}). The longer you take and the more you guess, the less each guess is worth.</p>
+    <button class="btn primary" id="gk">Keep exploring<small>Your best guess is kept; guess again any time</small></button>
+    <button class="btn" id="ga">Guess again now</button>
+    <button class="btn purple" id="gr2">Reveal where I am<small>Ends this placement with ${best.toLocaleString()} points</small></button></div>`, 'dim');
+  o.querySelector('#gk').onclick = () => { hideOverlay(); input.enabled = true; };
+  o.querySelector('#ga').onclick = () => openGuess();
+  o.querySelector('#gr2').onclick = () => revealPlacement();
+}
+
+async function revealPlacement() {
+  const act = profile.random.active;
+  if (!act) return;
   const truth = await whereIs(game.lat, game.lon);
-  const km = g ? haversine(g.lat, g.lon, game.lat, game.lon) / 1000 : Infinity;
+  const gs = act.guesses || [];
+  const bestG = gs.reduce((b, x) => (!b || x.pts > b.pts ? x : b), null);
+  const g = bestG ? { name: bestG.name } : null;
+  const km = bestG ? bestG.km : Infinity;
   const drove = Math.max(0, profile.stats.km - act.km0);
-  const base = g ? Math.round(5000 * Math.exp(-km / 800)) : 0;
-  const points = Math.round(base * Math.max(0.35, 1 - drove / 25));
+  const points = bestG ? bestG.pts : 0;
   const where = [truth?.place, truth?.region, truth?.country].filter(Boolean).join(', ') || `${game.lat.toFixed(3)}, ${game.lon.toFixed(3)}`;
   profile.random.history.push({ at: Date.now(), where, cc: truth?.cc || '', guess: g ? g.name.split(',').slice(0, 2).join(',') : 'gave up', km: Number.isFinite(km) ? km : 0, points, drove });
   if (profile.random.history.length > 50) profile.random.history.shift();
@@ -1310,7 +1418,7 @@ async function finishGuess(g) {
   game.lastTile = null;
   sound.chime();
   const o = overlay(`<div class="card"><h2>${flag(truth?.cc)} You're in ${esc(where)}</h2>
-    <p>${g ? `Your guess was <b>${Math.round(km)} km</b> away.` : 'No guess.'} You drove ${drove.toFixed(1)} km before guessing.</p>
+    <p>${g ? `Your best guess, ${esc(g.name)}, was <b>${Math.round(km).toLocaleString()} km</b> away (${gs.length} guess${gs.length === 1 ? '' : 'es'}).` : 'No guess.'} You drove ${drove.toFixed(1)} km.</p>
     <h1 style="color:var(--accent)">${points} points</h1><p>+${Math.round(points / 20)} coins. This is your new spot: carry on exploring from here.</p>
     <button class="btn primary" id="ok">Drive on</button></div>`, 'dim');
   o.querySelector('#ok').onclick = () => { hideOverlay(); input.enabled = true; refreshHud(true); };
@@ -1324,7 +1432,9 @@ function updateCamera(dt) {
   const [fx, fz] = v.fwd();
   const speed = Math.hypot(v.vx, v.vz);
   // look slightly towards where we're sliding
-  const mvx = speed > 2 ? v.vx / speed : fx, mvz = speed > 2 ? v.vz / speed : fz;
+  // look slightly towards where we're sliding (but not when reversing: then just stay behind)
+  const fwdMove = v.vx * fx + v.vz * fz > 0;
+  const mvx = speed > 2 && fwdMove ? v.vx / speed : fx, mvz = speed > 2 && fwdMove ? v.vz / speed : fz;
   const bx = fx * 0.7 + mvx * 0.3, bz = fz * 0.7 + mvz * 0.3;
   let dist = s.camDist, h = s.camH;
   if (game.cam === 1) { dist *= 1.7; h *= 1.8; }
@@ -1382,7 +1492,7 @@ function updateModel(dt) {
   const waves = game.waves || 0;
   const t = performance.now() / 1000;
   let bob = 0, wavePitch = 0, waveRoll = 0;
-  if (v.kind === 'boat') {
+  if (v.spec.terrain === 'water') {
     const amp = 0.08 + Math.min(1.2, waves) * 0.35;
     bob = Math.sin(t * 1.7) * amp; wavePitch = Math.sin(t * 1.3 + 1) * amp * 0.08; waveRoll = Math.sin(t * 1.1) * amp * 0.1;
   }
@@ -1397,6 +1507,17 @@ function updateModel(dt) {
     w.mesh.rotation.x = -v.spin * (0.34 / w.r);
     if (w.front) w.mesh.rotation.y = -v.steer * v.spec.steer * 0.8;
   }
+  // the dog: a running gait (legs swing faster the faster it goes) and a wagging tail
+  const ud = m.group.userData;
+  if (ud.legs) {
+    const sp = Math.abs(v.vf), amp = Math.min(0.9, sp / 6);
+    game.gait = (game.gait || 0) + dt * (4 + sp * 1.2);
+    for (const l of ud.legs) l.hip.rotation.x = Math.sin(game.gait + l.ph) * amp;
+    ud.tail.rotation.y = Math.sin(t * (sp > 1 ? 14 : 8)) * 0.6;
+    ud.head.position.y = 1.08 + Math.abs(Math.sin(game.gait)) * 0.05 * amp;
+    m.body.position.y = Math.abs(Math.sin(game.gait)) * 0.06 * amp;
+  }
+  if (v.kind === 'cart' && Math.abs(v.vf) > 1) m.body.rotation.z = Math.sin(t * 22) * 0.02; // that one wobbly wheel
   // brake lights
   if (m.tailM) m.tailM.color.set(game.braking ? '#ff2a1a' : sky.night > 0.5 ? '#c02020' : '#7a1010');
   if (m.revM) m.revM.color.set(game.reversing ? '#ffffff' : '#55585c');
@@ -1441,7 +1562,7 @@ function frame(now) {
     else if (!world.isReady(v.x + ux * 550, v.z + uz * 550)) loadLimit = 14;
   }
   const ctx = { world, grip: sky.grip(), wind: windVec(), loadLimit, traffic: traffic.density ? traffic : null, draft: game.style.draftOn };
-  if (v.kind === 'boat' && game.waves) ctx.grip *= Math.max(0.6, 1 - game.waves * 0.12);
+  if (v.spec.terrain === 'water' && game.waves) ctx.grip *= Math.max(0.6, 1 - game.waves * 0.12);
   let acc = dt, moved = 0;
   const x0 = v.x, z0 = v.z;
   while (acc > 1e-4) {
@@ -1480,6 +1601,7 @@ function frame(now) {
     profile.pos = { lat: +game.lat.toFixed(6), lon: +game.lon.toFixed(6), heading: +v.heading.toFixed(3), kind: v.kind, at: Date.now() };
     storeVehicle(); save();
     updateWeather();
+    if ((game.featT = (game.featT || 0) + 1) % 3 === 0) checkUnlocks();
   }
   waveT += dt;
   if (waveT > 120) { waveT = 0; updateWaves(); }
@@ -1568,6 +1690,19 @@ function tickGamer(dt, chunks) {
       }
     }
   }
+  // street signs go down when you hit them
+  const spd = Math.hypot(v.vx, v.vz);
+  if (spd > 3 && world.stuntMode === 'gamer') for (const p of signs.posts) {
+    if (!p.group.visible || p.down) continue;
+    const px = p.group.position.x, pz = p.group.position.z;
+    if (Math.abs(px - v.x) < 3 && Math.abs(pz - v.z) < 3 && Math.hypot(px - v.x, pz - v.z) < v.spec.radius + 0.35) {
+      signs.knock(p, v.heading); sound.crash(3); input.rumble(0.3, 0.3, 120);
+      profile.stats.signs = (profile.stats.signs || 0) + 1;
+      stylePop('Sign down', 25);
+    }
+  }
+  signs.animate(dt);
+  debris.update(dt, (x, z) => world.groundAt(x, z));
   // one pop per burst, not one per cone or coin
   if (coneAcc) { coneT -= dt; if (coneT <= 0) { profile.stats.cones = (profile.stats.cones || 0) + coneAcc; stylePop(coneAcc > 1 ? `Cone smash ×${coneAcc}` : 'Cone smash', 15 * coneAcc); sound.crash(2); coneAcc = 0; } }
   if (coinAcc) { coinT -= dt; if (coinT <= 0) { stylePop(coinAcc >= 8 ? 'Coin trail!' : `Coins ×${coinAcc}`, coinAcc * 10 + (coinAcc >= 8 ? 120 : 0)); coinAcc = 0; } }
@@ -1612,7 +1747,7 @@ function tickStunts(dt) {
       }
     };
     for (const o of st.hoops) cross(o, 4.1, true, 'Through the hoop', 200, 'hoops');
-    if (v.kind === 'boat') for (const o of st.gates) cross(o, o.half - 0.8, false, 'Buoy gate', 80, 'gates');
+    if (v.spec.terrain === 'water') for (const o of st.gates) cross(o, o.half - 0.8, false, 'Buoy gate', 80, 'gates');
   }
 }
 
@@ -1649,7 +1784,8 @@ function handleEvent(e) {
   const v = game.v;
   if (e.type === 'crash') {
     if (e.impact > 2) { sound.crash(e.impact); game.shake = Math.min(1.2, e.impact * 0.06); input.rumble(Math.min(1, e.impact / 12), 0.3, 200); }
-    if (e.impact > 3) breakCombo();
+    if (e.impact > 3) { breakCombo(); game.style.driftT = 0; game.style.drift = 0; }
+    if (e.at && e.impact > 3 && world.stuntMode === 'gamer') debris.burst(e.at.x, e.at.y, e.at.z, e.at.nx, e.at.nz, e.impact, '#c9bfae');
     if (v.damage >= 100 && !game.wreckWarned) { game.wreckWarned = true; toast('💥 Wrecked. Open ☰ Garage to repair it.', { ms: 5000 }); }
   } else if (e.type === 'land') {
     sound.burst(0.25, 250, 0.2); game.shake = 0.25;
@@ -1682,10 +1818,15 @@ function tickStyle(dt, inp) {
   s.comboT -= dt;
   if (s.comboT <= 0 && s.combo > 1) s.combo = 1;
   const speed = Math.hypot(v.vx, v.vz);
-  // drift
-  if (v.grounded && v.slip > 3 && speed > 9 && v.kind !== 'boat') { s.driftT += dt; s.drift += v.slip * dt * 12; }
-  else {
+  // drift: points build while you hold it, shown live; a crash ends it with nothing
+  const sliding = v.grounded && v.spec.terrain === 'land' && speed > 7 && (v.drifting || v.slip > 4.5);
+  smoke.update(dt, v, sliding && v.surface !== 'offroad', v.drifting ? 34 : 18);
+  if (sliding) {
+    s.driftT += dt; s.drift += (v.slip + 1) * dt * 14;
+    if (s.driftT > 0.6) $('#style').innerHTML = `<div class="live">Drift ${s.driftT.toFixed(1)}s · ${Math.round(s.drift * s.combo)}</div>`;
+  } else {
     if (s.driftT > 1.2) { profile.stats.drift += s.driftT; stylePop(`Drift ${s.driftT.toFixed(1)}s`, Math.round(s.drift)); }
+    else if ($('#style .live')) $('#style').innerHTML = ''; // a drift that ended short (or in a crash) leaves no stale score
     s.driftT = 0; s.drift = 0;
   }
   if (!traffic.density) return;
@@ -1697,7 +1838,7 @@ function tickStyle(dt, inp) {
 const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences).';
 
 // ---------- boot ----------
-if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
+if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, radio, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
 pruneRaces();
 world.stuntMode = profile.settings.mode || 'explorer';
 document.body.dataset.mode = world.stuntMode;

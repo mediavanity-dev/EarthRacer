@@ -12,7 +12,11 @@ export class Sound {
     const ctx = (this.ctx = new AC());
     // iOS suspends or "interrupts" audio after a lock, a call or switching apps, and doesn't bring it
     // back by itself: resume on the next touch and whenever the app comes back to the front
-    const wake = () => { if (ctx.state !== 'running' && !document.hidden) ctx.resume?.().catch(() => {}); };
+    const wake = () => {
+      if (document.hidden || this.ctx !== ctx) return;
+      if (ctx.state === 'closed') { this.ctx = null; this.start(); return; } // iOS closed it: build a fresh one
+      if (ctx.state !== 'running') ctx.resume?.().catch(() => {});
+    };
     addEventListener('pointerdown', wake, true);
     addEventListener('touchend', wake, true);
     addEventListener('keydown', wake, true);
@@ -32,15 +36,24 @@ export class Sound {
       src.connect(flt).connect(g).connect(this.master); src.start();
       return { flt, g };
     };
-    // engine: two detuned oscillators through a low-pass, plus a rumble
+    // engine: a sawtooth and a detuned twin (chorus), a sub-octave square for body, pulsed by the
+    // cylinders firing (amplitude modulation gives the "chug"), soft-clipped and low-passed
     this.eng = ctx.createGain(); this.eng.gain.value = 0;
-    this.engFilter = ctx.createBiquadFilter(); this.engFilter.type = 'lowpass'; this.engFilter.frequency.value = 900;
+    this.engFilter = ctx.createBiquadFilter(); this.engFilter.type = 'lowpass'; this.engFilter.frequency.value = 900; this.engFilter.Q.value = 2.5;
+    const shaper = ctx.createWaveShaper(), curve = new Float32Array(256);
+    for (let k = 0; k < 256; k++) { const x = (k / 255) * 2 - 1; curve[k] = Math.tanh(x * 2.2); }
+    shaper.curve = curve;
+    const am = ctx.createGain(); am.gain.value = 0.75;
     this.o1 = ctx.createOscillator(); this.o1.type = 'sawtooth';
-    this.o2 = ctx.createOscillator(); this.o2.type = 'square';
-    const g2 = ctx.createGain(); g2.gain.value = 0.35;
-    this.o1.connect(this.engFilter); this.o2.connect(g2).connect(this.engFilter);
-    this.engFilter.connect(this.eng).connect(this.master);
-    this.o1.start(); this.o2.start();
+    this.o2 = ctx.createOscillator(); this.o2.type = 'sawtooth';
+    this.o3 = ctx.createOscillator(); this.o3.type = 'square';
+    this.lfo = ctx.createOscillator(); this.lfo.type = 'triangle';
+    const lfoDepth = ctx.createGain(); lfoDepth.gain.value = 0.28;
+    this.lfo.connect(lfoDepth).connect(am.gain);
+    const g2 = ctx.createGain(), g3 = ctx.createGain(); g2.gain.value = 0.5; g3.gain.value = 0.4;
+    this.o1.connect(am); this.o2.connect(g2).connect(am); this.o3.connect(g3).connect(am);
+    am.connect(shaper).connect(this.engFilter).connect(this.eng).connect(this.master);
+    for (const o of [this.o1, this.o2, this.o3, this.lfo]) o.start();
     this.tyre = loop('bandpass', 1400, 4);
     this.wind = loop('lowpass', 500, 0.7);
     this.road = loop('lowpass', 180, 0.8);
@@ -48,7 +61,10 @@ export class Sound {
     this.water = loop('bandpass', 600, 0.6);
   }
 
-  setMuted(m) { this.muted = m; if (this.master) this.master.gain.value = m ? 0 : 0.6; }
+  setMuted(m) { this.muted = m; this.applyLevel(); }
+  /** While the radio plays, the car's own sounds sit well underneath it. */
+  setDuck(on) { this.duck = on; this.applyLevel(); }
+  applyLevel() { if (this.master) this.master.gain.setTargetAtTime(this.muted ? 0 : this.duck ? 0.2 : 0.6, this.ctx.currentTime, 0.3); }
 
   update(v, { rain = 0 } = {}) {
     if (!this.ctx) return;
@@ -59,13 +75,17 @@ export class Sound {
     if (kind === 'car') { f = 38 + v.rpm * 120; eg = 0.11 + v.rpm * 0.07; cut = 500 + v.rpm * 1600; }
     else if (kind === 'truck') { f = 26 + v.rpm * 60; eg = 0.14 + v.rpm * 0.06; cut = 350 + v.rpm * 700; }
     else if (kind === 'boat') { f = 55 + v.rpm * 110; eg = 0.08 + v.rpm * 0.08; cut = 700 + v.rpm * 1400; }
+    else if (kind === 'moto') { f = 55 + v.rpm * 190; eg = 0.09 + v.rpm * 0.07; cut = 900 + v.rpm * 2600; }
+    else if (kind === 'pickup') { f = 34 + v.rpm * 105; eg = 0.12 + v.rpm * 0.07; cut = 450 + v.rpm * 1300; }
     else if (kind === 'para') { f = 70 + v.rpm * 150; eg = v.rpm > 0.05 ? 0.06 + v.rpm * 0.07 : 0; cut = 900 + v.rpm * 1800; }
     if (v.damage >= 100 || (v.spec.fuel && v.fuel <= 0)) eg *= 0.3;
     this.o1.frequency.setTargetAtTime(f || 30, t, sm);
-    this.o2.frequency.setTargetAtTime((f || 30) * 1.007, t, sm);
+    this.o2.frequency.setTargetAtTime((f || 30) * 1.012, t, sm);
+    this.o3.frequency.setTargetAtTime((f || 30) * 0.5, t, sm);
+    this.lfo.frequency.setTargetAtTime((f || 30) * (kind === 'moto' ? 0.5 : 0.25), t, sm);
     this.engFilter.frequency.setTargetAtTime(cut, t, sm);
     this.eng.gain.setTargetAtTime(eg, t, sm);
-    const skid = kind === 'boat' || !v.grounded ? 0 : Math.max(0, Math.min(1, (v.slip - 2.2) / 5)) * (v.surface === 'road' ? 1 : 0.4);
+    const skid = kind === 'boat' || !v.grounded ? 0 : Math.max(0, Math.min(1, (v.slip - 3.4) / 5)) * (v.surface === 'road' ? 1 : 0.4);
     this.tyre.g.gain.setTargetAtTime(skid * 0.22, t, 0.05);
     this.tyre.flt.frequency.setTargetAtTime(v.surface === 'road' ? 1400 : 600, t, 0.1);
     this.wind.g.gain.setTargetAtTime(Math.min(0.35, (speed / 25) ** 2 * 0.3), t, 0.2);
@@ -101,4 +121,6 @@ export class Sound {
   fail() { this.tone([330, 247], 0.18, 'sawtooth', 0.08); }
   horn() { this.tone([392, 494], 0.35, 'square', 0.08); }
   bell() { this.tone([1568, 1568], 0.12, 'sine', 0.12); }
+  bark() { this.tone([520, 380], 0.09, 'sawtooth', 0.12); setTimeout(() => this.tone([560, 400], 0.09, 'sawtooth', 0.1), 180); }
+  squeak() { this.tone([1900, 2400, 1700], 0.07, 'sine', 0.1); }
 }

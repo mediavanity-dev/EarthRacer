@@ -186,7 +186,8 @@ export function normalizeTile(vt) {
       const minHeight = Math.max(0, +p.render_min_height || 0);
       for (const poly of classifyRings(f.loadGeometry())) {
         const rings = poly.map((r) => stripClose(clipRing(stripClose(pts(r)), E))).filter((r) => r.length >= 3);
-        if (rings.length) out.buildings.push({ rings, height, minHeight, colour: p.colour || null });
+        // the tile's feature id for a building is its OSM way id x 10 (used to match OSM building detail)
+        if (rings.length) out.buildings.push({ rings, height, minHeight, colour: p.colour || null, way: f.id && f.id % 10 === 0 ? Math.floor(f.id / 10) : null });
       }
     }
   }

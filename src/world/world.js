@@ -95,15 +95,18 @@ export class World {
     entry.state = 'loading';
     this.building++;
     try {
-      const payload = await this.call({ type: 'build', x: entry.i, y: entry.j, opts: { ...this.quality, season: seasonAt(this.frame.lat0), region: this.region || regionOf(null, this.frame.lat0, this.frame.lon0) } });
+      const region = this.region || regionOf(null, this.frame.lat0, this.frame.lon0);
+      const payload = await this.call({ type: 'build', x: entry.i, y: entry.j, opts: { ...this.quality, season: seasonAt(this.frame.lat0), region } });
       if (this.chunks.get(key) !== entry) { payload.texture?.close?.(); return; }
       const chunk = makeChunk(payload, { anisotropy: this.anisotropy });
+      chunk.region = region;
       try { addStunts(chunk, this.stuntMode || 'explorer'); } catch (e) { console.warn('stunts', e); }
       entry.chunk = chunk;
       entry.state = 'ready';
       this.place(chunk);
       this.scene.add(chunk.group);
       this.emit({ type: 'chunk', chunk });
+      if (this.quality.detail !== false) this.refine(key, entry);
     } catch (err) {
       console.warn('map tile failed', key, err);
       entry.state = 'error';
@@ -117,6 +120,27 @@ export class World {
   // Each tile is built in its own tangent plane; east-west it's stretched by a tiny factor (~1.0005)
   // so its edges land exactly where the shared frame puts them. Without this, tiles away from the
   // origin leave gaps of up to a metre at their seams (cracks in the ground, invisible walls).
+  // Real building detail from OSM (in the background): when it arrives, rebuild the tile with it
+  // and swap it in. If it never arrives, the tile simply keeps its regional look.
+  async refine(key, entry) {
+    try {
+      const detail = await this.call({ type: 'detail', x: entry.i, y: entry.j });
+      if (!detail || !Object.keys(detail).length || this.chunks.get(key) !== entry || !entry.chunk) return;
+      const payload = await this.call({ type: 'build', x: entry.i, y: entry.j, opts: { ...this.quality, season: seasonAt(this.frame.lat0), region: entry.chunk.region || this.region || regionOf(null, this.frame.lat0, this.frame.lon0), detail } });
+      if (this.chunks.get(key) !== entry || !entry.chunk) { payload.texture?.close?.(); return; }
+      const old = entry.chunk;
+      const chunk = makeChunk(payload, { anisotropy: this.anisotropy });
+      chunk.region = old.region;
+      try { addStunts(chunk, this.stuntMode || 'explorer'); } catch (e) { console.warn('stunts', e); }
+      this.place(chunk);
+      this.scene.add(chunk.group);
+      this.scene.remove(old.group); old.dispose();
+      if (this.hint === old) this.hint = null;
+      entry.chunk = chunk;
+      this.emit({ type: 'chunk', chunk, refined: true, old });
+    } catch (err) { console.warn('building detail unavailable (tile keeps its look)', key, err.message); }
+  }
+
   place(chunk) {
     const o = this.frame.toLocal(chunk.latc, chunk.lonc);
     const sx = this.frame.cos0 / Math.cos((chunk.latc * Math.PI) / 180);

@@ -219,6 +219,7 @@ export class Signs {
     }
     if (!spot) { post.group.visible = false; post.key = c.key; return; }
     const { x, z } = spot;
+    post.down = null; post.group.rotation.set(0, 0, 0);
     post.group.position.set(x, world.groundAt(x, z) ?? 0, z);
     post.group.visible = true;
     post.key = c.key;
@@ -227,6 +228,18 @@ export class Signs {
       b.holder.rotation.y = Math.atan2(-d[1], d[0]);
       if (b.text !== name) { drawSign(b.canvas, name, this.style); b.tex.needsUpdate = true; b.text = name; }
     });
+  }
+
+  /** Gamer mode: knock a sign post over, falling away from `dir` (radians, the hitter's heading). */
+  knock(post, dir) { if (!post.down) post.down = { t: 0, dir }; }
+  animate(dt) {
+    for (const p of this.posts) {
+      if (!p.down || p.down.t > 1) continue;
+      p.down.t += dt;
+      const ang = Math.min(Math.PI / 2 - 0.08, (p.down.t * 3) ** 2);
+      p.group.rotation.order = 'YXZ';
+      p.group.rotation.set(-ang, -p.down.dir, 0);
+    }
   }
 
   label(t, c, world) {

@@ -27,7 +27,14 @@ real weather, real day and night.
 | ✨ Style | Near misses, drifts, overtakes, slipstreams, airtime and clean kilometres build a combo; crashes break it. |
 | ⛽ Fuel | Tanks run down at realistic rates; stop at real fuel stations (⛽ on the minimap) to refill. |
 
-Vehicles: 🚲 bicycle and 🚗 car to start; 🚚 delivery truck after 3 deliveries; 🚤 speedboat
+Play modes: **🧭 Explorer** (the real world with a few stunts to find) and **🎮 Gamer** (ramps on
+roads, coin trails, boost pads, cones and signs to smash, hoop courses, a running style score).
+
+Also: drifting (handbrake while turning), 📻 local internet radio for the country you're in
+(Radio Browser directory), 🏆 Feats with odd unlockable vehicles (a dog, a shopping cart, a rubber
+duck), and buildings refined with real OSM roof shapes, colours and materials where mapped.
+
+Vehicles: 🚲 bicycle and 🚗 car to start; 🛻 pickup after 5 deliveries; 🏍️ motorcycle after 10 jumps; 🚚 delivery truck after 3 deliveries; 🚤 speedboat
 after you reach the water's edge; 🪂 paramotor (powered paraglider, ~40 km/h, takes off from parks
 and open fields) after finishing 3 daily races. Cameras: chase, far, bumper and top-down.
 

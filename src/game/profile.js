@@ -17,7 +17,7 @@ function fresh() {
     races: {},              // raceKey -> { best, ghost: [lat,lon,h,...] }
     jobs: {},               // jobKey -> done (today's jobs)
     random: { uses: [], active: null, history: [] },
-    settings: { controls: null, cam: 0, mute: false, traffic: 1, invertTilt: false },
+    settings: { controls: null, cam: 0, mute: false, traffic: 1, invertTilt: false, mode: 'explorer' },
   };
 }
 
