@@ -1,4 +1,4 @@
-// App Store screenshots (iPhone 6.9" landscape, 2868×1320): each scene is staged in the real game
+// App Store screenshots (iPhone 6.3" "Dynamic Island" landscape, 2622×1206: the size App Store Connect asks for in 2026): each scene is staged in the real game
 // (dev server, headless Chrome, a 932×430 phone at 3× pixels), then framed with a caption.
 //   npx vite --port 5186   (in another terminal)
 //   node scripts/store-shots.mjs                 → fastlane/screenshots/en-US/*.png
@@ -44,7 +44,7 @@ const SCENES = [
 const want = (process.env.SHOTS || '').split(',').filter(Boolean);
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-const W = 2868, H = 1320, appW = 2280, appH = Math.round(appW * 430 / 932), top = H - appH - 54;
+const W = 2622, H = 1206, appW = 2084, appH = Math.round(appW * 430 / 932), top = H - appH - 54;
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 for (const [file, head, sub, params, profile, js] of SCENES) {
   if (want.length && !want.some((w) => file.includes(w))) continue;
