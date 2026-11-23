@@ -64,3 +64,12 @@ Wikimedia Commons (free licences only). Nothing about the player is sent anywher
 - Support and privacy pages: https://mediavanity-dev.github.io/earthracer-app/ (repo `earthracer-app`).
 - The tip jar is the app's own plugin (`ios/App/App/EarthRacerPlugin.swift`, registered in
   `SceneDelegate.swift`; JS side in `src/boot.js` and Settings in `src/main.js`). iPhone app only.
+
+## Status
+
+- 2026-11-23: version 1.0 (build 15) and the three tips submitted for review together. Price free,
+  174 regions (not China mainland), age rating 9+ (12+ in Vietnam, Brazil, Korea), App Privacy
+  "Data Not Collected" (published), manual release: after approval, App Store Connect → the version
+  → **Release This Version**.
+- App Review contact is typed in App Store Connect (not kept in the repo).
+
