@@ -65,6 +65,15 @@ export class Debris {
     }
   }
 
+  /** Sparks off a hit: small, bright, quick. */
+  sparks(x, y, z, nx, nz, speed) {
+    const n = Math.min(16, 4 + Math.floor(speed));
+    for (let k = 0; k < n; k++) {
+      const c = Math.random() < 0.5 ? [1.6, 1.1, 0.3] : [1.4, 0.6, 0.15];
+      this.add({ x, y, z, vx: nx * (1 + Math.random() * 3) + (Math.random() - 0.5) * 6, vy: 1.5 + Math.random() * 4, vz: nz * (1 + Math.random() * 3) + (Math.random() - 0.5) * 6, rx: 0, ry: 0, t: 0, g: y - 1, s: 0.18, r: c[0], gg: c[1], b: c[2], life: 0.5 + Math.random() * 0.4 });
+    }
+  }
+
   /** Gamer mode wall hit: masonry chips and a crack left on the wall facing (nx, nz). */
   burst(x, y, z, nx, nz, speed, color = '#c9bfae') {
     this.bits(x, y, z, nx, nz, speed, color, { n: Math.min(14, 5 + Math.floor(speed)) });

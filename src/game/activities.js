@@ -64,9 +64,14 @@ export function raceFor(chunk, world) {
   if (!chunk) return null;
   const day = today();
   const r = rng(hashStr(`${day}|race|${chunk.key}`));
-  const roads = chunk.roads.map((rd, ri) => ({ rd, ri })).filter(({ rd }) => rd.c <= 5 && rd.p.length >= 6);
-  if (!roads.length) return null;
-  for (let attempt = 0; attempt < 14; attempt++) {
+  // Try a proper street race first; where streets are sparse (villages, countryside), settle for a
+  // shorter route with fewer gates, then one that uses service roads and tracks too, so nearly
+  // anywhere with roads gets a race. Same seed, so everyone in the area still gets the same one.
+  const TIERS = [{ maxC: 5, gap: 350, cps: 5, len: 1400 }, { maxC: 6, gap: 260, cps: 4, len: 900 }, { maxC: 7, gap: 200, cps: 3, len: 550 }, { maxC: 8, gap: 150, cps: 3, len: 380 }];
+  for (const T of TIERS) {
+  const roads = chunk.roads.map((rd, ri) => ({ rd, ri })).filter(({ rd }) => rd.c <= T.maxC && rd.p.length >= 6);
+  if (!roads.length) continue;
+  for (let attempt = 0; attempt < 18; attempt++) {
     let { ri } = roads[Math.floor(r() * roads.length)];
     let rd = chunk.roads[ri];
     let i = Math.floor(r() * (rd.p.length / 3 - 1)), dir = rd.f & 4 ? 1 : r() < 0.5 ? 1 : -1;
@@ -81,7 +86,7 @@ export function raceFor(chunk, world) {
       const d = Math.hypot(x - px, z - pz);
       travelled += d; sinceCp += d; px = x; pz = z; i = j;
       pts.push([x, z]);
-      if (sinceCp > 350) { cps.push([x, z]); sinceCp = 0; }
+      if (sinceCp > T.gap) { cps.push([x, z]); sinceCp = 0; }
       // at a junction, sometimes turn (never back on ourselves); at the end of a road, always
       const atEnd = j + dir < 0 || j + dir >= n;
       const jn = atEnd ? chunk.linksAt(x, z, ri) : chunk.junctionAt(x, z);
@@ -91,7 +96,7 @@ export function raceFor(chunk, world) {
         for (const o of jn) {
           if (o.r === ri) continue;
           const q = chunk.roads[o.r];
-          if (q.c > 5) continue;
+          if (q.c > T.maxC) continue;
           for (const dd of [1, -1]) {
             const k = o.i + dd;
             if (k < 0 || k >= q.p.length / 3 || ((q.f & 4) && dd < 0)) continue;
@@ -103,12 +108,13 @@ export function raceFor(chunk, world) {
         if (opts.length) { const o = opts[Math.floor(r() * opts.length)]; ri = o.ri; rd = chunk.roads[ri]; i = o.i; dir = o.dir; }
       }
     }
-    if (cps.length < 5 || travelled < 1400) continue;
+    if (cps.length < T.cps || travelled < T.len) continue;
     // reject routes that loop back over themselves too tightly
     const [sx, sz] = cps[0], [ex, ez] = cps[cps.length - 1];
-    if (Math.hypot(ex - sx, ez - sz) < 250) continue;
+    if (Math.hypot(ex - sx, ez - sz) < Math.min(250, T.len * 0.3)) continue;
     const toGeo = ([x, z]) => world.toGeo(chunk.ox + x * chunk.sx, z + chunk.oz);
     return { key: `${day}|${chunk.key}`, cps: cps.map(toGeo), length: Math.round(travelled), area: chunk.areaName };
+  }
   }
   return null;
 }

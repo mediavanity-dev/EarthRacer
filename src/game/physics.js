@@ -112,7 +112,9 @@ export class VehicleState {
         if (vf > 0.3) vf = Math.max(0, vf - s.brake * b * Math.min(1, 0.5 + surfGrip * 0.5) * dt);
         else vf = Math.max(-Math.min(5, top * 0.3), vf - s.accel * 0.6 * b * dt);
       }
-      if (vf > top) vf -= Math.min(vf - top, (vf - top) * 1.5 * dt + 2 * dt);
+      // over the limit: only the map-loading governor brakes hard; a new, lower speed limit (or the
+      // vehicle's own top speed) just means gliding down to it, as if you'd lifted off the gas
+      if (vf > top) vf -= Math.min(vf - top, why === 'map loading ahead' ? (vf - top) * 1.5 * dt + 2 * dt : (0.6 + (vf - top) * 0.12) * dt);
       if (t === 0 && b === 0) vf -= Math.sign(vf) * Math.min(Math.abs(vf), (0.35 + Math.abs(vf) * 0.012) * dt);
       vf -= vf * drag * dt;
       if (input.handbrake && s.terrain !== 'water') vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.drifting ? 0.8 : 3) * dt);

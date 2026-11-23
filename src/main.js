@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { World } from './world/world.js';
 import { Sky } from './world/sky.js';
 import { VehicleState } from './game/physics.js';
-import { VEHICLES, VEHICLE_ORDER, SPEED_CAP, buildModel, ratings, prepDamage, dent, grime, repairLook } from './game/vehicles.js';
+import { VEHICLES, VEHICLE_ORDER, SPEED_CAP, buildModel, ratings, prepDamage, dent, grime, repairLook, flashHit, animateDamage } from './game/vehicles.js';
 import { Traffic } from './game/traffic.js';
 import { jobsFor, jobTime, jobReward, raceFor, isLandmark, isFuel, pruneRaces } from './game/activities.js';
 import { RANDOM_PLACES } from './game/places.js';
@@ -13,7 +13,7 @@ import { MODES, BOARD_RADIUS, estimate, newTrip, progress, positionAt, fmtDurati
 import { TripMap } from './ui/tripmap.js';
 import { BADGES, count as featCount } from './game/feats.js';
 import { PlaneView } from './world/planeView.js';
-import { startGame } from './ui/minigames.js';
+import { startGame, GAMES, rivalTarget } from './ui/minigames.js';
 import { profile, save, flush, resetProfile, randomLeft, nextWeekReset, RANDOM_PER_WEEK } from './game/profile.js';
 import { fetchWeather, whereIs, searchPlace, waveHeight, postcard, drivingSide, usesMph, flag } from './data/services.js';
 import { haversine, offsetGeo } from './geo.js';
@@ -82,7 +82,28 @@ const radio = new Radio((msg) => {
   if (st) el.innerHTML = `📻 <span>${esc(st.name)}</span> <button id="r-off" title="Radio off">✕</button>`;
   if (msg) toast(`📻 ${esc(msg)}`);
   const off = el.querySelector('#r-off'); if (off) off.onclick = () => radio.stop();
+  nowPlaying();
 });
+// The lock screen and Control Center show what's playing: name it (otherwise iOS shows the web
+// view's address, "localhost"), with pause and next-station controls for the radio.
+function nowPlaying() {
+  const ms = navigator.mediaSession;
+  if (!ms || typeof MediaMetadata === 'undefined') return;
+  const st = radio.station, hidden = !!profile.random.active;
+  try {
+    ms.metadata = new MediaMetadata({
+      title: st ? st.name : 'EarthRacer',
+      artist: hidden ? 'Somewhere on Earth' : [game.place, game.country].filter(Boolean).join(', ') || 'EarthRacer',
+      album: st ? 'EarthRacer radio' : 'EarthRacer',
+      artwork: [{ src: 'icon-512.png', sizes: '512x512', type: 'image/png' }],
+    });
+    ms.playbackState = st ? 'playing' : 'none';
+    ms.setActionHandler('pause', () => radio.stop());
+    ms.setActionHandler('stop', () => radio.stop());
+    ms.setActionHandler('play', () => radio.next(game.country || 'US'));
+    ms.setActionHandler('nexttrack', () => { if (!profile.random.active) radio.next(game.country || 'US'); });
+  } catch { /* older browsers */ }
+}
 function radioNext() {
   if (profile.random.active) { toast("📻 No radio until you've guessed: it would give the game away."); return; }
   userGesture();
@@ -138,6 +159,7 @@ function spawnVehicle(kind, x, z, heading) {
   prepDamage(game.model, kind);
   for (let k = 0; k < Math.floor(game.v.damage / 18); k++) dent(game.model, 8);
   grime(game.model, game.v.damage);
+  game.dmgShown = game.v.damage;
   game.fuelOut = false;
   const r = VEHICLES[kind].radius;
   shadow.scale.set(r * 1.4, 1, r * (kind === 'truck' ? 4.4 : kind === 'bike' ? 2.2 : 3));
@@ -325,6 +347,7 @@ function startRandom() {
   const d = 300 + Math.random() * 1700, a = Math.random() * Math.PI * 2;
   const g = offsetGeo(la, lo, Math.sin(a) * d, Math.cos(a) * d);
   profile.random.uses.push(Date.now());
+  if (radio.station) radio.stop("No radio until you've guessed: it would give the game away."); // the station would say where you are
   profile.random.active = { lat: g.lat, lon: g.lon, start: Date.now(), km0: profile.stats.km };
   profile.pos = { lat: g.lat, lon: g.lon, heading: Math.random() * Math.PI * 2, kind: VEHICLES[game.v?.kind]?.terrain === 'water' ? 'car' : (game.v?.kind || profile.pos?.kind || 'car'), at: Date.now() };
   if (game.activity) endActivity(null);
@@ -382,9 +405,12 @@ async function begin(lat, lon, heading, kind, { snap = false, teleport = false, 
 // Country -> traffic side, units and the local look (buildings, signs, markings, banners).
 function setCountry(w, lat, lon) {
   if (w?.cc) {
+    // the radio follows you: a new country means that country's stations
+    if (radio.station && radio.cc && radio.cc !== w.cc && !profile.random.active) radio.next(w.cc);
     game.country = w.cc; game.side = drivingSide(w.cc); game.mph = usesMph(w.cc); game.place = w.place;
     traffic.side = game.side;
   }
+  nowPlaying();
   world.region = regionOf(w?.cc || game.country, lat, lon);
   const sign = regionStyle(world.region).sign;
   signs.setStyle(sign);
@@ -440,6 +466,40 @@ $('#b-radio').onclick = () => radioNext();
 $('#b-guess').onclick = () => openGuess();
 $('#b-trip').onclick = () => { if (game.nearStop) openTripPlanner(game.nearStop); };
 $('#b-fuel').onclick = () => outOfFuel();
+
+// ---------- a hidden developer unlock ----------
+// Seven quick taps on the speed while stopped open an unlabelled box; the right phrase unlocks every
+// vehicle, tops up coins and resets the week's random placements. Only a hash of the phrase is in
+// the code (the repo is public).
+const UNLOCK_HASH = '36a467ffbedf1c409bd0581d4c5cb46a287bb127cc3b550c2f4ac9639954f898';
+async function sha256(text) {
+  if (crypto?.subtle) return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return ''; // no WebCrypto: no unlock
+}
+let devTaps = [];
+$('#speed').addEventListener('pointerdown', () => {
+  if (game.state !== 'driving' || Math.abs(game.v?.vf || 0) > 1) { devTaps = []; return; }
+  const now = Date.now();
+  devTaps = devTaps.filter((t) => now - t < 3000); devTaps.push(now);
+  if (devTaps.length < 7) return;
+  devTaps = [];
+  input.enabled = false;
+  const o = overlay(`<div class="card" style="width:min(320px,100%)"><input type="password" id="dv" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="…" /><div class="row" style="margin-top:8px"><button class="btn" id="dvx">✕</button><button class="btn primary" id="dvok">→</button></div></div>`, 'dim');
+  const close = () => { hideOverlay(); input.enabled = true; };
+  o.querySelector('#dvx').onclick = close;
+  const go = async () => {
+    const h = await sha256(o.querySelector('#dv').value.trim().toLowerCase().replace(/\s+/g, ' '));
+    close();
+    if (h !== UNLOCK_HASH) return; // a wrong phrase just closes the box
+    for (const k of VEHICLE_ORDER) profile.unlocked[k] = true;
+    profile.coins += 10000; profile.random.uses = []; profile.dev = true;
+    save(true); refreshHud(); sound.chime();
+    toast('🔓 Everything unlocked: all vehicles, +10,000 coins, random placements reset.', { ms: 6000 });
+  };
+  o.querySelector('#dvok').onclick = go;
+  o.querySelector('#dv').onkeydown = (e) => { if (e.key === 'Enter') go(); };
+  setTimeout(() => o.querySelector('#dv')?.focus(), 50);
+});
 $('#b-guess span').textContent = ` ${L.guess}`; $('#b-fuel span').textContent = ` ${L.help}`;
 
 function resetToRoad() {
@@ -844,7 +904,7 @@ function renderTab(tab, body) {
     const free = profile.coins < repairCost && v.damage >= 100;
     svc.innerHTML = `<div class="item"><div class="ic">🔧</div><div class="tx"><b>Roadside repair</b><small>Damage ${Math.round(v.damage)}% · ${free ? 'free tow-truck repair (you\'re short of coins)' : `${repairCost} coins`}</small></div><button id="rep" ${v.damage < 1 || (!free && profile.coins < repairCost) ? 'disabled' : ''}>Repair</button></div>
       ${v.spec.fuel ? `<div class="item"><div class="ic">⛽</div><div class="tx"><b>Fuel delivery</b><small>${Math.round(v.fuel)} / ${v.spec.fuel} L · ${fuelCost} coins. Fuel stations (⛽ on the map) are free: just stop at one.</small></div><button id="fuel" ${fuelNeed < 1 || profile.coins < fuelCost ? 'disabled' : ''}>Fill up</button></div>` : ''}`;
-    svc.querySelector('#rep').onclick = () => { if (!free) profile.coins -= repairCost; v.damage = 0; game.wreckWarned = false; repairLook(game.model); storeVehicle(); save(); toast('🔧 Repaired.'); openPanel('garage'); };
+    svc.querySelector('#rep').onclick = () => { if (!free) profile.coins -= repairCost; v.damage = 0; game.dmgShown = 0; game.wreckWarned = false; repairLook(game.model); storeVehicle(); save(); toast('🔧 Repaired.'); openPanel('garage'); };
     const fb = svc.querySelector('#fuel');
     if (fb) fb.onclick = () => { profile.coins -= fuelCost; v.fuel = v.spec.fuel; storeVehicle(); save(); toast('⛽ Filled up.'); openPanel('garage'); };
     if (v.spec.fuel && v.fuel <= 0) svc.insertAdjacentHTML('afterbegin', '<button class="btn" id="oof">⛽ Out of fuel: see your options</button>');
@@ -1265,7 +1325,7 @@ function tripScreen() {
     <p class="note">From ${esc(t.from.name)} · about ${fmtDist(t.km * 1000)} · arrives ${arrive.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}. You can close the app: the trip carries on without it.</p>
     ${watch ? `<button class="btn primary" id="twatch">${watch[0]}<small id="twatchs">${watch[1]}</small></button>` : ''}
     ${early ? `<button class="btn" id="toff">Get off here<small id="toffs">Be dropped where the ${m.name.toLowerCase()} has got to by now</small></button>` : ''}
-    <h3 class="tg-h">🕹️ Seatback games</h3><div class="row" id="tgame"><button class="btn" data-g="pong">🏓 Pong<small>Best ${profile.stats.pongBest || 0}</small></button><button class="btn" data-g="snake">🐍 Snake<small>Best ${profile.stats.snakeBest || 0}</small></button></div>
+    <h3 class="tg-h">🕹️ Seatback games</h3><div class="row" id="tgame">${Object.entries(GAMES).map(([k, g]) => `<button class="btn" data-g="${k}">${g.icon} ${g.name}<small>Best ${profile.stats[`${k}Best`] || 0}</small></button>`).join('')}</div><p class="note">Play a fellow passenger for fun, or for coins: the higher the stakes, the better they are.</p>
     ${t.mode === 'plane' ? '<button class="quiet-link" id="tbail">Bail out…</button>' : ''}
     <div class="attrib">${ATTRIB}</div></div>`);
   const map = new TripMap(o.querySelector('#tmap'), t, m.icon);
@@ -1346,28 +1406,57 @@ function tripScreen() {
 }
 
 // Pong or Snake on the seatback screen; the trip carries on (and arrives) while you play.
+// A seat-mate challenges you: pick the stakes (the higher, the better they play), then play.
+// Win and you get double your stake back; lose (or walk away) and it's gone.
+const SEATMATES = ['Marta', 'Kenji', 'Priya', 'Tomás', 'Aoife', 'Ravi', 'Lena', 'Kwame', 'Sofia', 'Jonas', 'Mei', 'Omar', 'Ingrid', 'Diego', 'Yusuf', 'Hana'];
+const STAKES = [[0, 'Just for fun', 1], [10, '10 coins', 2], [25, '25 coins', 2], [50, '50 coins', 3], [100, '100 coins', 4]];
+function seatmate(kind) {
+  const t = profile.trip, n = [...`${t.start}${kind}`].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+  return `${SEATMATES[n % SEATMATES.length]}, ${10 + (n % 24)}${'ABCDEF'[(n >>> 5) % 6]}`;
+}
 function playSeatback(kind) {
   const t = profile.trip;
   if (!t) return;
+  const g = GAMES[kind], rival = seatmate(kind);
+  const o = overlay(`<div class="card seatback"><div class="mg-top"><b>${g.icon} ${g.name.toUpperCase()}</b></div>
+    <p class="mg-help" style="font-size:14px;margin:6px 0 12px">${esc(rival)} leans over: "Fancy a game?"</p>
+    <div class="list" id="stk">${STAKES.map(([c, label, lv]) => `<button class="btn" data-c="${c}" data-l="${lv}" ${c > profile.coins ? 'disabled' : ''}>${c ? `🪙 ${label}` : '🙂 ' + label}<small>${esc(rival.split(',')[0])} plays ${['casually', 'properly', 'properly', 'hard', 'like a champion'][STAKES.findIndex((x) => x[0] === c)]} · ${g.goal(lv, rivalTarget(kind, lv))}${c ? ` · win ${c * 2}` : ''}</small></button>`).join('')}</div>
+    <button class="btn" id="stx">Not now</button></div>`, 'dim');
+  o.querySelector('#stx').onclick = () => tripScreen();
+  o.querySelectorAll('#stk button').forEach((b) => b.onclick = () => startSeatback(kind, rival, +b.dataset.c, +b.dataset.l));
+}
+function startSeatback(kind, rival, stake, level) {
+  const t = profile.trip;
+  if (!t || stake > profile.coins) return;
   clearInterval(tripTimer);
+  profile.coins -= stake; save(true); // on the table
   const o = overlay(`<div class="card seatback"><div id="mghost"></div><p class="note" id="mgleft"></p></div>`, 'dim');
   const best = profile.stats[`${kind}Best`] || 0;
-  let stop = null;
+  let stop = null, settled = false;
   const left = setInterval(() => {
     if (!profile.trip) { clearInterval(left); stop?.(); return; }
     const ms = t.start + t.duration - Date.now();
     const el = o.querySelector('#mgleft');
-    if (el) el.textContent = `${MODES[t.mode].icon} ${fmtDuration(ms)} to ${t.to.name}`;
+    if (el) el.textContent = `${MODES[t.mode].icon} ${fmtDuration(ms)} to ${t.to.name}${stake ? ` · 🪙 ${stake} on the table` : ''}`;
     if (ms <= 0) { clearInterval(left); stop?.(); arriveTrip(); }
   }, 1000);
   stop = startGame(o.querySelector('#mghost'), kind, {
-    best,
-    onScore: (k, sc) => {
-      if (sc > (profile.stats[`${k}Best`] || 0)) { profile.stats[`${k}Best`] = sc; toast(`🕹️ New best at ${k === 'pong' ? 'Pong' : 'Snake'}: ${sc}`); }
-      if (sc > 0) profile.coins += Math.round(sc / 5);
-      save();
+    best, level, rival: rival.split(',')[0],
+    onEnd: (k, sc, won) => {
+      settled = true;
+      if (sc > (profile.stats[`${k}Best`] || 0)) profile.stats[`${k}Best`] = sc;
+      if (won) {
+        const pay = stake * 2 + (stake ? 0 : 5);
+        profile.coins += pay; profile.stats.rivalsBeaten = (profile.stats.rivalsBeaten || 0) + 1;
+        sound.chime(); toast(`🕹️ You beat ${esc(rival.split(',')[0])}! +${pay} coins`);
+      } else toast(stake ? `🕹️ ${esc(rival.split(',')[0])} wins the ${stake} coins.` : `🕹️ ${esc(rival.split(',')[0])} wins this one.`);
+      save(true);
     },
-    onExit: () => { clearInterval(left); tripScreen(); },
+    onExit: () => {
+      clearInterval(left);
+      if (!settled && stake) toast(`🕹️ You walked away: ${esc(rival.split(',')[0])} keeps the ${stake} coins.`);
+      tripScreen();
+    },
   });
 }
 
@@ -1734,6 +1823,7 @@ function updateModel(dt) {
   m.group.rotation.y = -v.heading;
   m.group.rotation.x = v.pitch + wavePitch;
   m.group.rotation.z = -v.roll + waveRoll;
+  animateDamage(m, dt);
   // rough ground: the vehicle jiggles on its suspension (the camera stays steady)
   if (v.grounded && v.spec.terrain === 'land' && v.surface !== 'road') {
     const k = Math.min(1, Math.abs(v.vf) / 12) * (v.surface === 'offroad' ? 1 : 0.5);
@@ -2040,7 +2130,18 @@ function handleEvent(e) {
   if (e.type === 'crash') {
     if (e.impact > 2) { sound.crash(e.impact); game.shake = Math.min(1.2, e.impact * 0.06); input.rumble(Math.min(1, e.impact / 12), 0.3, 200); }
     if (e.impact > 3) { breakCombo(); game.style.driftT = 0; game.style.drift = 0; }
-    if (e.impact > 3 && game.model) { dent(game.model, e.impact); if (e.impact > 9) dent(game.model, e.impact * 0.6); grime(game.model, v.damage); }
+    if (e.impact > 3 && game.model) {
+      dent(game.model, e.impact); if (e.impact > 7) dent(game.model, e.impact * 0.7); if (e.impact > 12) dent(game.model, e.impact * 0.5);
+      flashHit(game.model, Math.min(1, e.impact / 10));
+      const [fx, fz] = v.fwd(), at = e.at || { x: v.x + fx * v.spec.radius, z: v.z + fz * v.spec.radius, nx: -fx, nz: -fz, y: v.y };
+      if (v.spec.terrain === 'land' && v.kind !== 'dog') debris.sparks(at.x, (at.y ?? v.y) + 0.5, at.z, at.nx, at.nz, e.impact);
+      const lost = grime(game.model, v.damage);
+      if (lost) { debris.bits(v.x + fx * 2, v.y + 0.4, v.z + fz * 2, fx, fz, 6, lost === 'bumper' ? '#1d1f22' : '#fff6d8', { n: 7, size: 0.7, lift: 0.3 }); toast(lost === 'bumper' ? '💥 There goes the bumper.' : '💥 A headlight is out.', { ms: 2500 }); }
+      // the damage bar: a pulse and how much that cost
+      const before = game.dmgShown ?? 0, lostPct = Math.round(v.damage - before);
+      game.dmgShown = v.damage;
+      if (lostPct >= 1) { const b = $('#dmgbar'); b.classList.remove('hit'); void b.offsetWidth; b.classList.add('hit'); b.dataset.lost = `-${lostPct}%`; }
+    }
     if (e.at && e.impact > 3) wallHit(e.at, e.impact);
     if (v.damage >= 100 && !game.wreckWarned) { game.wreckWarned = true; toast('💥 Wrecked. Open ☰ Garage to repair it.', { ms: 5000 }); }
   } else if (e.type === 'land') {

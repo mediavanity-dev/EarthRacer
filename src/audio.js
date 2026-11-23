@@ -23,6 +23,9 @@ export class Sound {
     addEventListener('touchend', wake, true);
     addEventListener('keydown', wake, true);
     document.addEventListener('visibilitychange', wake);
+    // in the background (or with the phone locked) the game itself goes quiet; the radio, a separate
+    // audio element, can carry on playing
+    document.addEventListener('visibilitychange', () => { if (document.hidden && this.ctx === ctx && ctx.state === 'running') ctx.suspend?.().catch(() => {}); });
     addEventListener('pageshow', wake);
     ctx.onstatechange = () => { if (ctx.state !== 'running') setTimeout(wake, 500); };
     this.wake = wake;

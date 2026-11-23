@@ -279,7 +279,7 @@ export function buildModel(kind, color = '#d23a2e') {
   }
   const tailLights = [];
   body.traverse((o) => { if (o.material === tailM) tailLights.push(o); });
-  return { group, body, wheels, tailM, headM, revM };
+  return { group, body, wheels, tailM, headM, revM, paint, glass, dark };
 }
 
 // ---------- how damage looks: knocked panels and grime, put right by a repair ----------
@@ -288,34 +288,56 @@ const DENTS = new Set(['car', 'truck', 'pickup', 'moto', 'boat', 'solar', 'cart'
 export function prepDamage(m, kind) {
   const mats = new Set(), panels = [];
   m.body.traverse((o) => { if (o.isMesh && o.material?.isMeshLambertMaterial) { mats.add(o.material); if (o.geometry.type === 'BoxGeometry') panels.push(o); } });
-  m.dmg = { mats: [...mats].map((mt) => [mt, mt.color.clone()]), panels: DENTS.has(kind) ? panels : [], level: -1 };
+  // the bumper: the dark box lowest at the front; the lights: the head-light meshes
+  let bumper = null;
+  for (const o of panels) if (o.material === m.dark && (!bumper || o.position.z < bumper.position.z)) bumper = o;
+  const heads = []; m.body.traverse((o) => { if (o.isMesh && o.material === m.headM) heads.push(o); });
+  m.dmg = { mats: [...mats].filter((mt) => mt !== m.glass).map((mt) => [mt, mt.color.clone()]), panels: DENTS.has(kind) ? panels : [], level: -1,
+    glass: m.glass && DENTS.has(kind) ? [m.glass, m.glass.color.clone()] : null, bumper: DENTS.has(kind) ? bumper : null, head: DENTS.has(kind) ? heads[0] : null, flash: 0 };
 }
-/** A knock: one panel gets bent out of true (a little more each time, within reason). */
+/** A knock: one or two panels get bent out of true (more each time, within reason). */
 export function dent(m, amount) {
   const d = m.dmg;
   if (!d?.panels.length || amount < 3) return;
   const o = d.panels[Math.floor(Math.random() * d.panels.length)];
   const u = (o.userData.orig ||= { p: o.position.clone(), r: o.rotation.clone() });
-  const k = Math.min(0.1, amount * 0.007), lim = 0.16;
-  const clamp = (x, c) => Math.max(c - lim, Math.min(c + lim, x));
+  const k = Math.min(0.2, amount * 0.012), lim = 0.3;
+  const clamp = (x, c, l = lim) => Math.max(c - l, Math.min(c + l, x));
   o.rotation.x = clamp(o.rotation.x + (Math.random() - 0.5) * 2 * k, u.r.x);
   o.rotation.z = clamp(o.rotation.z + (Math.random() - 0.5) * 2 * k, u.r.z);
-  o.position.y = Math.max(u.p.y - 0.06, o.position.y - k * 0.2);
+  o.position.x = clamp(o.position.x + (Math.random() - 0.5) * k * 0.3, u.p.x, 0.08);
+  o.position.y = Math.max(u.p.y - 0.1, o.position.y - k * 0.3);
 }
-/** Grime and scorch build up with damage (0..100). */
+/** Hit flash: the body glows red for a moment (strength 0..1). */
+export function flashHit(m, k) { if (m.dmg) m.dmg.flash = Math.max(m.dmg.flash, k); }
+export function animateDamage(m, dt) {
+  const d = m.dmg;
+  if (!d || d.flash <= 0) return;
+  d.flash = Math.max(0, d.flash - dt * 5);
+  for (const [mt] of d.mats) mt.emissive?.setRGB(d.flash * 0.6, 0, 0);
+}
+/** Grime and scorch build up with damage (0..100), the windscreen cracks, then parts come off. */
 export function grime(m, damage) {
   const d = m.dmg, lv = Math.round(damage / 5);
-  if (!d || lv === d.level) return;
+  if (!d || lv === d.level) return null;
   d.level = lv;
   const f = Math.min(0.55, (damage / 100) * 0.55);
   for (const [mt, base] of d.mats) mt.color.copy(base).lerp(SOOT, f);
+  if (d.glass) d.glass[0].color.copy(d.glass[1]).lerp(CRACKED, damage >= 40 ? 0.6 : 0);
+  let lost = null;
+  if (d.bumper && damage >= 60 && d.bumper.visible) { d.bumper.visible = false; lost = 'bumper'; }
+  if (d.head && damage >= 85 && d.head.material === m.headM) { d.head.material = DEADLIGHT; lost = lost || 'light'; }
+  return lost; // a part that just came off (the caller throws bits of it about)
 }
 export function repairLook(m) {
   const d = m.dmg;
   if (!d) return;
   for (const o of d.panels) { const u = o.userData.orig; if (u) { o.position.copy(u.p); o.rotation.copy(u.r); } }
+  if (d.bumper) d.bumper.visible = true;
+  if (d.head) d.head.material = m.headM;
   d.level = -1; grime(m, 0);
 }
+const CRACKED = new THREE.Color('#c9d3da'), DEADLIGHT = new THREE.MeshBasicMaterial({ color: '#2a2a2a' });
 
 // One merged geometry for all traffic cars (one draw call; per-car colour via instance colour).
 export function trafficGeometry() {
