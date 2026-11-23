@@ -24,6 +24,11 @@ skill and OpenWorld's (OpenEarth's) working setup.
 | `icons/icon.svg`, `scripts/make-icons.mjs` | App icon and launch screen (`npm run icons`) |
 | `.github/workflows/ios-testflight.yml` | Builds on the `xcode-27` runner (iOS 27 SDK, required from April 2027), signs with Apple's cloud certificate, uploads to TestFlight |
 
+**Runner:** the workflow asks which Mac to use. `xcode-27` (default) builds with the iOS 27 SDK that
+Apple requires from April 2027. When Apple-silicon Macs are short (jobs sit queued, then get
+cancelled after ~15 min with "not acquired by Runner … capacity constraints"), run it with
+`gh workflow run ios-testflight.yml -f runner=macos-26-intel` (Xcode 26; fine until April 2027).
+
 After changing web code: `npm run ios:sync`, commit, push, then **Actions → iOS → TestFlight →
 Run workflow** (or `gh workflow run ios-testflight.yml`). The run number is the build number.
 
