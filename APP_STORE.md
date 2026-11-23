@@ -10,6 +10,8 @@ skill and OpenWorld's (OpenEarth's) working setup.
 - Bundle ID: `com.mediavanity.earthracer`
 - App Store name: **EarthRacer** (App Store Connect app ID 6836800392, SKU `earthracer-ios`)
 - iPhone only (`TARGETED_DEVICE_FAMILY = 1`); landscape and portrait
+- Tip products (consumable): `com.mediavanity.earthracer.tip.small` ($0.99), `.tip.medium` ($2.99), `.tip.large` ($4.99)
+- Age rating 12+ (live radio may have mild language); categories Games › Racing, Simulation
 
 ## What's in the repo
 
@@ -50,8 +52,15 @@ terrain tiles, Open-Meteo weather and marine (free tier: non-commercial; fine fo
 Nominatim (1 request/second for the whole app; switch off remotely if asked), Wikipedia /
 Wikimedia Commons (free licences only). Nothing about the player is sent anywhere.
 
-## Still to do before App Store submission
+## Store listing, screenshots and site
 
-Listing text and screenshots, support and privacy pages, App Privacy ("no data collected"), age
-rating, price (free), review notes (how to play without travelling: pick any start, or a random
-placement).
+- Text, URLs, copyright and categories: `fastlane/metadata/`. Review notes:
+  `fastlane/metadata/review_information/notes.txt` (entered in App Store Connect with the contact;
+  the upload workflow leaves them out).
+- Screenshots (iPhone 6.9" landscape, 2868×1320): start the dev server (`npx vite --port 5186`), then
+  `node scripts/store-shots.mjs` → `fastlane/screenshots/en-US/`. Look at every one before uploading.
+- Tip jar review screenshot: `fastlane/iap/tip-jar-review.png`.
+- Upload: Actions → **App Store listing** → Run workflow (version 1.0).
+- Support and privacy pages: https://mediavanity-dev.github.io/earthracer-app/ (repo `earthracer-app`).
+- The tip jar is the app's own plugin (`ios/App/App/EarthRacerPlugin.swift`, registered in
+  `SceneDelegate.swift`; JS side in `src/boot.js` and Settings in `src/main.js`). iPhone app only.

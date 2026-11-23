@@ -16,6 +16,8 @@ export async function stationsFor(cc) {
     const name = (s.name || '').trim();
     if (!u.startsWith('https://') || !name || seen.has(name.toLowerCase())) return false;
     if (s.codec && !/mp3|aac/i.test(s.codec)) return false;
+    // no adult stations (the app is rated 12+ for the odd swear word on live radio, not for these)
+    if (/\b(adult|erotic|sex|xxx|porn|nsfw|explicit|18\+)\b/i.test(`${name} ${s.tags || ''}`)) return false;
     seen.add(name.toLowerCase());
     return true;
   }).slice(0, 25).map((s) => ({ name: s.name.trim(), url: s.url_resolved || s.url, tags: s.tags || '', homepage: s.homepage || '' }));

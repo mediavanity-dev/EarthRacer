@@ -1,0 +1,16 @@
+EarthRacer is an open-world driving game built live from open map data. No account or sign-in is needed, and no travel is needed to review it.
+
+To try it:
+1. On the start screen, tap one of the suggested places (for example "Paris" or "Manhattan"). The map loads and you're in a car.
+2. Steering: choose Slider (drag the knob) or Buttons on the start screen; Tilt uses the motion sensor like a steering wheel. Hold GAS to drive.
+3. Open the ☰ menu for the Garage (other vehicles, repairs), today's delivery Jobs and Race, the Atlas, Feats and Settings.
+4. In Settings, "Play mode" switches between Explorer and Gamer (ramps, coins, boost arrows, cones).
+5. Portals open once an hour for ten minutes in each town; a star on the edge of the minimap points the way.
+
+"Start where I am" asks for location once, only to choose the starting point. Motion is used only for tilt steering. Only the area around the vehicle is sent to public data services (OpenFreeMap, OpenStreetMap/Overpass, Nominatim, Open-Meteo, Wikipedia, Radio Browser) to load the map, weather, postcards and radio stations. Nothing is collected by us.
+
+The in-game radio plays real live internet radio stations of the country you're driving in (listed by Radio Browser; adult-tagged stations are excluded). This is why the age rating allows for occasional mild language.
+
+In-app purchases: three optional consumable tips (com.mediavanity.earthracer.tip.small, .tip.medium, .tip.large). They unlock nothing. Find them at the bottom of ☰ → Settings → "Support EarthRacer". No restore is needed for consumables.
+
+Content: map data © OpenStreetMap contributors (ODbL); text and images from Wikipedia and Wikimedia Commons under free licences, credited.

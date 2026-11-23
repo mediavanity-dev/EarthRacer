@@ -829,7 +829,7 @@ function renderTab(tab, body) {
   const v = game.v;
   const ch = world.chunkAt(v.x, v.z);
   if (tab === 'garage') {
-    body.innerHTML = `<h3>Summon a vehicle</h3><p class="note">It turns up right where you are. Better vehicles are earned. Speeds are real-world, held to ${Math.round(SPEED_CAP * 3.6)} km/h for now.</p><div class="list" id="vl"></div>
+    body.innerHTML = `<h3>Summon a vehicle</h3><p class="note">It turns up right where you are. Better vehicles are earned. Speeds are real-world: up to the posted limit plus 10 mph where the map knows it, otherwise ${game.mph ? `${Math.round(SPEED_CAP * 3.6 / 1.609)} mph` : `${Math.round(SPEED_CAP * 3.6)} km/h`}.</p><div class="list" id="vl"></div>
       <h3>Service</h3><div class="list" id="svc"></div>`;
     const vl = body.querySelector('#vl');
     for (const k of VEHICLE_ORDER) {
@@ -923,7 +923,7 @@ function renderTab(tab, body) {
     const wipe = body.querySelector('#wipe');
     wipe.onclick = () => confirmStartOver();
   } else if (tab === 'help') {
-    body.innerHTML = `<h3>The rules</h3><p class="note">The world is the real one, built live from OpenStreetMap. You can only carry on from where you last stopped. To go somewhere new, drive there, take a bus, train, ferry or plane from a real stop (in real time), or use a random placement (${RANDOM_PER_WEEK} a week). Vehicles go at real-world speeds, held to ${Math.round(SPEED_CAP * 3.6)} km/h for now so the map can keep up.</p>
+    body.innerHTML = `<h3>The rules</h3><p class="note">The world is the real one, built live from OpenStreetMap. You can only carry on from where you last stopped. To go somewhere new, drive there, take a bus, train, ferry or plane from a real stop (in real time), or use a random placement (${RANDOM_PER_WEEK} a week). Vehicles go at real-world speeds: up to the posted speed limit plus 10 mph where OpenStreetMap knows it, otherwise ${Math.round(SPEED_CAP * 3.6)} km/h, and never faster than the map can load.</p>
       <h3>Things to do</h3><p class="note">📦 <b>Jobs</b>: deliveries between real shops. 🏁 <b>Races</b>: a daily route in each area, with your ghost. 🛣️ <b>Street atlas</b>: every named street you drive. 🌉 <b>Bridges</b>. 📮 <b>Postcards</b>: drive past landmarks. ${flag('UN')} <b>Countries</b>. ✨ <b>Style</b>: near misses, drifts, overtakes, slipstreams and airtime build a combo; crashes break it.</p>
       <h3>Real conditions</h3><p class="note">Weather is live where you are: rain and snow cut grip, fog shortens the view, headwinds slow bikes and boats. Day and night follow the real sun. Traffic drives on the correct side for the country. Fuel runs out, so stop at real fuel stations.</p>
       <h3>Controls</h3><table class="keys">
@@ -943,7 +943,7 @@ function renderTab(tab, body) {
 function vstats(k) {
   const r = ratings(k), s = VEHICLES[k];
   const kmh = Math.round(Math.min(s.top, SPEED_CAP) * 3.6);
-  const rows = [[`Speed ${game.mph ? Math.round(kmh / 1.609) + ' mph' : kmh + ' km/h'}`, r.speed], ['Acceleration', r.accel], ['Handling', r.handling], ['Toughness', r.tough]];
+  const rows = [[`Top speed ${game.mph ? Math.round(kmh / 1.609) + ' mph' : kmh + ' km/h'}`, r.speed], ['Acceleration', r.accel], ['Handling', r.handling], ['Toughness', r.tough]];
   if (r.offroad != null) rows.push(['Off-road', r.offroad]);
   return `<div class="vst">${rows.map(([n, x]) => `<div><span>${n}</span><i><b style="width:${Math.round(x * 100)}%"></b></i></div>`).join('')}<div><span>${r.range ? `⛽ ${game.mph ? Math.round(r.range / 1.609) + ' mi' : r.range + ' km'} a tank` : '⛽ no fuel needed'}</span></div></div>`;
 }

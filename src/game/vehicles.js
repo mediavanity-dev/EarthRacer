@@ -1,5 +1,5 @@
 // Vehicles: real-world performance (top speeds, acceleration, fuel) and their low-poly models.
-// Every vehicle is also held to SPEED_CAP for now, so the map can always load ahead in time.
+// Every vehicle is also held to the road's speed limit + 10 mph, or SPEED_CAP where it isn't known.
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -17,12 +17,12 @@ export const VEHICLES = {
   car: {
     name: 'Car', icon: '🚗', top: 50, accel: 3.0, brake: 8.5, grip: 8.5, wheelbase: 2.7, steer: 0.55, radius: 1.6,
     fuel: 50, use: 0.07, terrain: 'land', offroadTop: 9, sound: 'car', camDist: 8, camH: 3.2, mass: 1, tough: 1,
-    about: 'Real top speed 180 km/h (held to 80 km/h for now). 50 L tank, about 700 km.',
+    about: 'Real top speed 180 km/h, within the speed limit plus 10 mph. 50 L tank, about 700 km.',
   },
   truck: {
     name: 'Delivery truck', icon: '🚚', top: 25, accel: 1.15, brake: 5.5, grip: 6, wheelbase: 4.6, steer: 0.5, radius: 2.4,
     fuel: 300, use: 0.3, terrain: 'land', offroadTop: 6, sound: 'truck', camDist: 13, camH: 5, mass: 4, tough: 0.45,
-    about: 'Governed to 90 km/h like real trucks (80 for now). Deliveries pay double.',
+    about: 'Governed to 90 km/h like real trucks. Slow to get going, very hard to damage. Deliveries pay double.',
     unlock: { what: 'Complete 3 deliveries', key: 'deliveries', n: 3 },
   },
   pickup: {
