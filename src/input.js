@@ -168,15 +168,17 @@ export class Input {
       hold(l, () => { this.touch.left = true; }, () => { this.touch.left = false; });
       hold(r, () => { this.touch.right = true; }, () => { this.touch.right = false; });
     } else if (this.mode === 'tilt') {
-      const c = el('tbtn recenter', this.words?.recentre || 'Re-centre');
-      c.addEventListener('pointerdown', (e) => {
+      // the wheel dial shows your steering; tap it to re-centre (a hint under it fades after a few seconds)
+      this.wheelEl = el('wheel-ind', `<div class="wheel-dial"></div><span class="wtip">${this.words?.recentre || 'Re-centre'}</span>`);
+      setTimeout(() => this.wheelEl?.classList.add('quiet'), 5000);
+      this.wheelEl.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         if (!this.tiltAlive()) { this.enableTilt(); return; }
         this.tiltCenter();
         const k = this.orientation();
         if (this.tilt.cal[k]) this.tilt.cal[k].center = this.tilt.center;
+        this.wheelEl.classList.remove('flash'); void this.wheelEl.offsetWidth; this.wheelEl.classList.add('flash');
       });
-      this.wheelEl = el('wheel-ind', '<div class="wheel-dial"></div>');
       this.wakeEl = el('tbtn tilt-wake', W.wake || '📱 Tap to turn on tilt steering');
       this.wakeEl.hidden = true;
       this.wakeEl.addEventListener('pointerdown', (e) => {

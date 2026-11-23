@@ -9,6 +9,8 @@ export class Sound {
     if (this.ctx) { this.ctx.resume?.(); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
+    // play through the silent switch, like a video app (Safari 17+; the iPhone app also sets this natively)
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* older browser */ }
     const ctx = (this.ctx = new AC());
     // iOS suspends or "interrupts" audio after a lock, a call or switching apps, and doesn't bring it
     // back by itself: resume on the next touch and whenever the app comes back to the front

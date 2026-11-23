@@ -332,3 +332,10 @@ body[data-sign="au"] #sidepops .nm { --bg: #fff; --fg: #16357a; --bd: #16357a; }
 }
 @media (max-width: 600px) { #midcol { top: calc(204px + var(--safe-t)); } }
 .touch .pedal { text-align: center; } .touch .pedal span { overflow-wrap: anywhere; }
+
+/* tilt: the wheel dial is the re-centre button */
+.touch.mode-tilt .wheel-ind { bottom: calc(16px + var(--safe-b)); pointer-events: auto; cursor: pointer; touch-action: none; }
+.wheel-ind .wtip { position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); margin-bottom: 3px; font-size: 11px; white-space: nowrap; color: #fff; text-shadow: 0 1px 3px #000; transition: opacity 0.8s; }
+.wheel-ind.quiet .wtip { opacity: 0; }
+.wheel-ind.flash .wheel-dial { animation: wflash 0.5s ease-out; }
+@keyframes wflash { 0% { border-color: var(--accent); transform: scale(1.12); } 100% { border-color: #ffffffaa; transform: scale(1); } }

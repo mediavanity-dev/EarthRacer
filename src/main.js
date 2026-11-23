@@ -285,7 +285,7 @@ function calibrateTilt() {
   o.querySelector('#c2').onclick = () => {
     if (!input.tiltRight()) { o.querySelector('#msg').textContent = 'Turn it a bit further to the right, then tap again.'; return; }
     profile.settings.tiltCal = { ...input.tilt.cal }; save();
-    done(); toast(`Tilt steering ready. ${RECENTRE} any time with the button at the bottom.`);
+    done(); toast(`Tilt steering ready. ${RECENTRE} any time: tap the wheel at the bottom.`);
   };
   o.querySelector('#cx').onclick = () => { done(); setControls('slider'); };
 }
@@ -1589,7 +1589,6 @@ function updateCamera(dt) {
     game.shake *= Math.exp(-dt * 8);
   }
   // speed feel: tiny rumble at speed on rough ground
-  if (v.grounded && v.surface !== 'road' && v.surface !== 'water') camera.position.y += (Math.random() - 0.5) * Math.min(0.12, speed * 0.006);
   if (game.cam === 3) camera.up.copy(topUp); else camera.up.set(0, 1, 0);
   camera.lookAt(camLook);
   const fov = game.cam === 3 ? 50 : 60 + Math.min(18, speed * 0.55) + (game.cam === 2 ? 6 : 0);
@@ -1612,6 +1611,13 @@ function updateModel(dt) {
   m.group.rotation.y = -v.heading;
   m.group.rotation.x = v.pitch + wavePitch;
   m.group.rotation.z = -v.roll + waveRoll;
+  // rough ground: the vehicle jiggles on its suspension (the camera stays steady)
+  if (v.grounded && v.spec.terrain === 'land' && v.surface !== 'road') {
+    const k = Math.min(1, Math.abs(v.vf) / 12) * (v.surface === 'offroad' ? 1 : 0.5);
+    m.group.position.y += (Math.sin(t * 37) * 0.5 + Math.sin(t * 23.3 + 1) * 0.5) * 0.035 * k;
+    m.group.rotation.x += Math.sin(t * 29 + 2) * 0.012 * k;
+    m.group.rotation.z += Math.sin(t * 31.7) * 0.014 * k;
+  }
   for (const w of m.wheels) {
     if (w.prop) { w.mesh.rotation.z = v.spin; continue; }
     w.mesh.rotation.x = -v.spin * (0.34 / w.r);
