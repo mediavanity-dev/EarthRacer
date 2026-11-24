@@ -19,6 +19,19 @@ async function startNative() {
   const { registerPlugin } = await import('@capacitor/core');
   const raw = registerPlugin('EarthRacer');
   window.__tipJar = new Proxy({}, { get: (_, k) => (k === 'then' ? undefined : raw[k]) });
+  // Android back button/gesture: press a visible Back/close button, else act like Escape (the game
+  // menu). Without a handler, Android closes the game from any screen.
+  if (window.Capacitor?.getPlatform?.() === 'android') {
+    const App = registerPlugin('App'); // @capacitor/app
+    App.addListener('backButton', () => {
+      for (const s of ['#back', '#wback', '.close']) {
+        const el = document.querySelector(s);
+        if (el && el.offsetParent !== null) { el.click(); return; }
+      }
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape' }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape' }));
+    }).catch(() => {});
+  }
 }
 
 (native ? startNative().catch((e) => console.warn('native start', e)) : Promise.resolve()).then(() => import('./main.js'));

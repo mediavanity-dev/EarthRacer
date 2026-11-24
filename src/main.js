@@ -1018,7 +1018,7 @@ async function tipJar(body) {
   if (!list.length) { box.innerHTML = '<span class="note">The tip jar isn’t available right now.</span>'; return; }
   box.innerHTML = list.map((p) => `<button class="btn" data-tip="${esc(p.id)}" style="text-align:center">${esc(TIP_NAMES[p.id] || p.name)}<small>${esc(p.price)}</small></button>`).join('');
   box.querySelectorAll('[data-tip]').forEach((b) => b.onclick = async () => {
-    b.disabled = true; msg.textContent = 'Opening the App Store…';
+    b.disabled = true; msg.textContent = `Opening ${globalThis.Capacitor?.getPlatform?.() === 'android' ? 'Google Play' : 'the App Store'}…`;
     let res;
     try { res = await window.__tipJar.tip({ id: b.dataset.tip }); } catch (err) { res = { error: String(err?.message || err) }; }
     b.disabled = false;
