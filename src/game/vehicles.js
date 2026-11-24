@@ -67,13 +67,19 @@ export const VEHICLES = {
     about: 'Real top speed about 70 km/h. Water only. Summon it at a shore.',
     unlock: { what: 'Reach the water\'s edge (river, lake or sea)', key: 'shore', n: 1 },
   },
+  jetski: {
+    name: 'Jet ski', icon: '🌊', top: 18, accel: 3.6, brake: 3, grip: 3.4, wheelbase: 2.2, steer: 0.75, radius: 1.0,
+    fuel: 60, use: 0.35, terrain: 'water', offroadTop: 0, sound: 'jetski', camDist: 7, camH: 2.8, mass: 0.4, tough: 1.4,
+    about: 'Quick and nimble on the water, about 65 km/h, and it flies off kickers. Small tank, and it doesn\'t take knocks well.',
+    unlock: { what: 'Steer through 8 buoy gates', key: 'gates', n: 8 },
+  },
   solar: {
     name: 'Solar buggy', icon: '☀️', top: 9.7, accel: 1.6, brake: 6, grip: 8, wheelbase: 1.9, steer: 0.6, radius: 1.1,
     fuel: 0, use: 0, terrain: 'land', offroadK: 0.8, offroadTop: 8, sound: 'solar', camDist: 6.5, camH: 2.6, mass: 0.4, tough: 1.2, solar: true, always: true,
     about: 'Emergency only: never needs fuel, but 35 km/h at best, and it crawls once the sun is down.',
   },
 };
-export const VEHICLE_ORDER = ['bike', 'car', 'pickup', 'moto', 'truck', 'boat', 'para', 'solar', 'dog', 'cart', 'duck'];
+export const VEHICLE_ORDER = ['bike', 'car', 'pickup', 'moto', 'truck', 'boat', 'jetski', 'para', 'solar', 'dog', 'cart', 'duck'];
 
 // How each vehicle compares, 0..1, for the Garage (what you actually get in the game, under the cap).
 export function ratings(k) {
@@ -257,6 +263,25 @@ export function buildModel(kind, color = '#d23a2e') {
     cage.position.set(0, 1.15, 0.55); body.add(cage);
     const prop = box(1.3, 0.12, 0.04, dark, 0, 1.15, 0.5); body.add(prop);
     wheels.push({ mesh: prop, front: false, r: 0.05, prop: true });
+  } else if (kind === 'jetski') {
+    // a short, chunky hull with a seat, handlebars and a rider standing up a little
+    const hull = new THREE.BufferGeometry();
+    const v = [[0, 0.62, -1.6], [-0.55, 0.62, -0.7], [-0.6, 0.62, 1.3], [0.6, 0.62, 1.3], [0.55, 0.62, -0.7], [0, 0.08, -1.3], [0, 0.0, 1.3]];
+    const f = [[0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [4, 5, 6], [4, 6, 3], [2, 3, 6], [0, 4, 3], [0, 3, 2], [0, 2, 1]];
+    const pos = []; for (const t of f) for (const k of t) pos.push(...v[k]);
+    hull.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); hull.computeVertexNormals();
+    body.add(new THREE.Mesh(hull, lam(color, { side: THREE.DoubleSide })));
+    body.add(box(1.1, 0.16, 2.2, lam('#f3f1ec'), 0, 0.68, 0.15));      // deck
+    body.add(box(0.42, 0.22, 0.9, dark, 0, 0.86, 0.45));                 // seat
+    body.add(box(0.5, 0.3, 0.35, paint, 0, 0.92, -0.55));                // the nose cowl
+    body.add(box(0.8, 0.05, 0.05, dark, 0, 1.18, -0.45));                // handlebars
+    body.add(box(0.3, 0.12, 0.06, headM, 0, 0.95, -0.74));
+    body.add(box(0.3, 0.1, 0.06, tailM, 0, 0.78, 1.26), box(0.12, 0.1, 0.06, revM, 0.22, 0.78, 1.26));
+    const suit = lam('#2f6fb0'), skin = lam('#d7a985');
+    const torso = box(0.38, 0.6, 0.26, suit, 0, 1.3, 0.15); torso.rotation.x = -0.3; body.add(torso);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), skin); head.position.set(0, 1.72, 0.0); body.add(head);
+    body.add(box(0.14, 0.5, 0.16, lam('#2c2f36'), -0.13, 0.98, 0.35), box(0.14, 0.5, 0.16, lam('#2c2f36'), 0.13, 0.98, 0.35));
+    body.add(box(0.3, 0.1, 0.18, lam('#f4c430'), 0, 1.36, 0.04));       // life jacket collar
   } else if (kind === 'solar') {
     // a little open buggy under a big solar panel roof
     const frame = lam('#e9e6df'), cell = lam('#1d3a6b'), rim = lam('#b8bec4');
@@ -284,7 +309,7 @@ export function buildModel(kind, color = '#d23a2e') {
 
 // ---------- how damage looks: knocked panels and grime, put right by a repair ----------
 const SOOT = new THREE.Color('#3a3631');
-const DENTS = new Set(['car', 'truck', 'pickup', 'moto', 'boat', 'solar', 'cart', 'para']);
+const DENTS = new Set(['car', 'truck', 'pickup', 'moto', 'boat', 'jetski', 'solar', 'cart', 'para']);
 export function prepDamage(m, kind) {
   const mats = new Set(), panels = [];
   m.body.traverse((o) => { if (o.isMesh && o.material?.isMeshLambertMaterial) { mats.add(o.material); if (o.geometry.type === 'BoxGeometry') panels.push(o); } });

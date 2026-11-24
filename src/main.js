@@ -769,7 +769,7 @@ function tickPassive(dt, moved) {
   if (ch) {
     for (const p of ch.pois) {
       const d = Math.hypot(ch.ox + p.x * ch.sx - v.x, p.z + ch.oz - v.z);
-      if (isFuel(p) && d < (v.kind === 'boat' ? 150 : 30)) nearFuel = p;
+      if (isFuel(p) && d < (v.spec.terrain === 'water' ? 150 : 30)) nearFuel = p;
       if (d < 45 && isLandmark(p) && !game.collectedNear.has(p.ref) && !profile.atlas.postcards.some((c) => c.ref === p.ref || (c.name === p.name && haversine(c.lat, c.lon, p.lat, p.lon) < 1000))) {
         game.collectedNear.add(p.ref);
         collectPostcard(p);
@@ -1692,11 +1692,18 @@ function openGuess() {
 // A guess tells you how far off you are, but not where you are: keep exploring, guess again, or
 // reveal. Each guess is worth less the longer you've taken, the further you've driven and the
 // more guesses you've made; you keep your best.
-function finishGuess(g) {
+async function finishGuess(g) {
   const act = profile.random.active;
   if (!g) { revealPlacement(); return; }
   act.guesses ||= [];
-  const km = haversine(g.lat, g.lon, game.lat, game.lon) / 1000;
+  let km = haversine(g.lat, g.lon, game.lat, game.lon) / 1000;
+  // Guessing the area you're in is right, even if its middle is far away ("England" from Manchester):
+  // it scores as if you were that close, so naming the town still pays more.
+  const norm = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/^(the|city of|county of)\s+/, '').trim();
+  const truth = await whereIs(game.lat, game.lon).catch(() => null);
+  const gn = norm(g.name.split(',')[0]);
+  const level = !truth || !gn ? null : gn === norm(truth.place) ? 'place' : gn === norm(truth.region) ? 'region' : gn === norm(truth.country) ? 'country' : null;
+  if (level) km = level === 'place' ? Math.min(km, 3) : { region: 300, country: 600 }[level]; // a fixed score, so the town always beats the region
   const drove = Math.max(0, profile.stats.km - act.km0), mins = (Date.now() - act.start) / 60000;
   const factor = Math.max(0.25, 1 - drove / 30 - mins / 90) * 0.85 ** act.guesses.length;
   const pts = Math.round(5000 * Math.exp(-km / 800) * factor);
@@ -1705,8 +1712,9 @@ function finishGuess(g) {
   save(true);
   const best = Math.max(...act.guesses.map((x) => x.pts));
   const temp = !prev ? '' : km < prev.km * 0.8 ? ' 🔥 Warmer!' : km > prev.km * 1.25 ? ' 🧊 Colder.' : '';
-  const close = km < 25 ? 'Spot on, or very nearly!' : km < 150 ? 'Close!' : km < 600 ? 'Right part of the world.' : 'A long way off.';
-  const o = overlay(`<div class="card"><h2>🎯 ${km < 1 ? 'Less than a km' : `${Math.round(km).toLocaleString()} km`} away</h2>
+  const gname = g.name.split(',')[0].trim();
+  const close = level === 'place' ? `Yes, you're in ${gname}!` : level ? `Yes, you're in ${gname}! Narrow it down for more points.` : km < 25 ? 'Spot on, or very nearly!' : km < 150 ? 'Close!' : km < 600 ? 'Right part of the world.' : 'A long way off.';
+  const o = overlay(`<div class="card"><h2>${level ? `✅ Right: ${esc(gname)}` : `🎯 ${km < 1 ? 'Less than a km' : `${Math.round(km).toLocaleString()} km`} away`}</h2>
     <p>${esc(close)}${temp} That guess is worth <b>${pts.toLocaleString()}</b> points (your best so far: ${best.toLocaleString()}). The longer you take and the more you guess, the less each guess is worth.</p>
     <button class="btn primary" id="gk">Keep exploring<small>Your best guess is kept; guess again any time</small></button>
     <button class="btn" id="ga">Guess again now</button>
@@ -2174,14 +2182,17 @@ function handleEvent(e) {
 // of it and cracks it.
 function wallHit(at, impact) {
   const gamer = world.stuntMode === 'gamer';
+  // marks only at full size where the wall carries on either side (not hanging off a corner)
+  const tx = -at.nz, tz = at.nx, ix = at.x - at.nx * 0.4, iz = at.z - at.nz * 0.4;
+  const fit = world.collide(ix + tx * 1.1, iz + tz * 1.1, 0.1) && world.collide(ix - tx * 1.1, iz - tz * 1.1, 0.1) ? 1 : 0.5;
   for (let k = 0; k < (impact > 8 ? 4 : 2); k++) smoke.puff(at.x + at.nx * 0.6, at.y + 0.5 + Math.random(), at.z + at.nz * 0.6, { color: '#c8bca8', size: 1.2 + impact * 0.04, rise: 0.5, life: 1.6, opacity: 0.45, spread: 2 });
-  if (gamer) debris.burst(at.x, at.y, at.z, at.nx, at.nz, impact, '#c9bfae');
+  if (gamer) debris.burst(at.x, at.y, at.z, at.nx, at.nz, impact, '#c9bfae', fit);
   else if (impact > 5) debris.bits(at.x, at.y, at.z, at.nx, at.nz, impact * 0.5, '#bfb4a2', { n: 3, size: 0.6, lift: 0.8 });
-  debris.scuff(at.x, at.y, at.z, at.nx, at.nz, impact);
+  debris.scuff(at.x, at.y, at.z, at.nx, at.nz, impact, fit);
 }
 
 // Smoke from a damaged engine: wisps past half damage, thick and dark once it's wrecked.
-const ENGINE = { car: [1.6, 0.9], pickup: [1.9, 1.0], truck: [4.2, 1.3], moto: [0, 0.8], boat: [-2.8, 1.0] };
+const ENGINE = { car: [1.6, 0.9], pickup: [1.9, 1.0], truck: [4.2, 1.3], moto: [0, 0.8], boat: [-2.8, 1.0], jetski: [1.1, 0.9] };
 function tickEngineSmoke(dt) {
   const v = game.v, at = ENGINE[v.kind];
   if (!at || v.damage < 55) return;
@@ -2247,7 +2258,7 @@ function tickStyle(dt, inp) {
 const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences).';
 
 // ---------- boot ----------
-if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, radio, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
+if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, radio, sound, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
 pruneRaces();
 world.stuntMode = profile.settings.mode || 'explorer';
 document.body.dataset.mode = world.stuntMode;

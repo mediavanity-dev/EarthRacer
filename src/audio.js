@@ -12,23 +12,8 @@ export class Sound {
     // play through the silent switch, like a video app (Safari 17+; the iPhone app also sets this natively)
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* older browser */ }
     const ctx = (this.ctx = new AC());
-    // iOS suspends or "interrupts" audio after a lock, a call or switching apps, and doesn't bring it
-    // back by itself: resume on the next touch and whenever the app comes back to the front
-    const wake = () => {
-      if (document.hidden || this.ctx !== ctx) return;
-      if (ctx.state === 'closed') { this.ctx = null; this.start(); return; } // iOS closed it: build a fresh one
-      if (ctx.state !== 'running') ctx.resume?.().catch(() => {});
-    };
-    addEventListener('pointerdown', wake, true);
-    addEventListener('touchend', wake, true);
-    addEventListener('keydown', wake, true);
-    document.addEventListener('visibilitychange', wake);
-    // in the background (or with the phone locked) the game itself goes quiet; the radio, a separate
-    // audio element, can carry on playing
-    document.addEventListener('visibilitychange', () => { if (document.hidden && this.ctx === ctx && ctx.state === 'running') ctx.suspend?.().catch(() => {}); });
-    addEventListener('pageshow', wake);
-    ctx.onstatechange = () => { if (ctx.state !== 'running') setTimeout(wake, 500); };
-    this.wake = wake;
+    this.listen();
+    ctx.onstatechange = () => { if (ctx.state !== 'running' && this.ctx === ctx) setTimeout(() => this.wake(false), 500); };
     this.master = ctx.createGain(); this.master.gain.value = this.muted ? 0 : 0.6; this.master.connect(ctx.destination);
     const noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const d = noise.getChannelData(0);
@@ -66,6 +51,40 @@ export class Sound {
     this.water = loop('bandpass', 600, 0.6);
   }
 
+  // iOS suspends or "interrupts" audio after a lock, a call or another app taking the sound, and
+  // sometimes leaves the context saying "running" while nothing comes out until the app restarts.
+  // So: going to the background marks the sound as suspect, and the next touch rebuilds it from
+  // scratch (it must be a touch: iOS only starts sound inside one). A clock that stops moving while
+  // "running" is caught the same way.
+  listen() {
+    if (this.listening) return;
+    this.listening = true;
+    const touch = () => this.wake(true);
+    addEventListener('pointerdown', touch, true);
+    addEventListener('touchend', touch, true);
+    addEventListener('keydown', touch, true);
+    addEventListener('pageshow', () => this.wake(false));
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        // in the background (or locked) the game goes quiet; the radio, a separate audio element, plays on
+        this.stale = true;
+        if (this.ctx?.state === 'running') this.ctx.suspend?.().catch(() => {});
+      } else this.wake(false);
+    });
+  }
+  wake(gesture) {
+    const ctx = this.ctx;
+    if (!ctx || document.hidden) return;
+    if (gesture && (this.stale || ctx.state === 'closed' || ctx.state === 'interrupted')) { this.rebuild(); return; }
+    if (ctx.state !== 'running') ctx.resume?.().catch(() => {});
+  }
+  rebuild() {
+    const old = this.ctx;
+    this.ctx = null; this.stale = false;
+    try { old?.close?.(); } catch { /* already closed */ }
+    this.start();
+    this.applyLevel();
+  }
   setMuted(m) { this.muted = m; this.applyLevel(); }
   /** While the radio plays, the car's own sounds sit well underneath it. */
   setDuck(on) { this.duck = on; this.applyLevel(); }
@@ -73,12 +92,17 @@ export class Sound {
 
   update(v, { rain = 0 } = {}) {
     if (!this.ctx) return;
-    if (this.ctx.state !== 'running' && performance.now() - (this.wokeAt || 0) > 2000) { this.wokeAt = performance.now(); this.wake?.(); }
+    if (this.ctx.state !== 'running' && performance.now() - (this.wokeAt || 0) > 2000) { this.wokeAt = performance.now(); this.wake(false); }
+    // "running" but the clock has stopped: the silent iOS state. Rebuild on the next touch.
+    const now = performance.now(), ct = this.ctx.currentTime;
+    if (this.ctx.state === 'running' && this.lastCt === ct && now - (this.lastCtAt || now) > 800) this.stale = true;
+    if (this.lastCt !== ct) { this.lastCt = ct; this.lastCtAt = now; }
     const t = this.ctx.currentTime, sm = 0.06;
     const speed = Math.hypot(v.vx, v.vz), kind = v.kind;
     let f = 0, eg = 0, cut = 900;
     if (kind === 'car') { f = 38 + v.rpm * 120; eg = 0.11 + v.rpm * 0.07; cut = 500 + v.rpm * 1600; }
     else if (kind === 'truck') { f = 26 + v.rpm * 60; eg = 0.14 + v.rpm * 0.06; cut = 350 + v.rpm * 700; }
+    else if (kind === 'jetski') { f = 80 + v.rpm * 230; eg = 0.07 + v.rpm * 0.08; cut = 1100 + v.rpm * 2600; } // a buzzier two-stroke
     else if (kind === 'boat') { f = 55 + v.rpm * 110; eg = 0.08 + v.rpm * 0.08; cut = 700 + v.rpm * 1400; }
     else if (kind === 'moto') { f = 55 + v.rpm * 190; eg = 0.09 + v.rpm * 0.07; cut = 900 + v.rpm * 2600; }
     else if (kind === 'pickup') { f = 34 + v.rpm * 105; eg = 0.12 + v.rpm * 0.07; cut = 450 + v.rpm * 1300; }
@@ -91,7 +115,8 @@ export class Sound {
     this.lfo.frequency.setTargetAtTime((f || 30) * (kind === 'moto' ? 0.5 : 0.25), t, sm);
     this.engFilter.frequency.setTargetAtTime(cut, t, sm);
     this.eng.gain.setTargetAtTime(eg, t, sm);
-    const skid = kind === 'boat' || !v.grounded ? 0 : Math.max(0, Math.min(1, (v.slip - 3.4) / 5)) * (v.surface === 'road' ? 1 : 0.4);
+    const onWater = kind === 'boat' || kind === 'jetski';
+    const skid = onWater || !v.grounded ? 0 : Math.max(0, Math.min(1, (v.slip - 3.4) / 5)) * (v.surface === 'road' ? 1 : 0.4);
     this.tyre.g.gain.setTargetAtTime(skid * 0.22, t, 0.05);
     this.tyre.flt.frequency.setTargetAtTime(v.surface === 'road' ? 1400 : 600, t, 0.1);
     this.wind.g.gain.setTargetAtTime(Math.min(0.35, (speed / 25) ** 2 * 0.3), t, 0.2);
@@ -99,7 +124,7 @@ export class Sound {
     const rough = v.surface === 'road' ? 0.25 : v.surface === 'water' ? 0 : 0.8;
     this.road.g.gain.setTargetAtTime(v.grounded ? Math.min(0.3, speed / 25 * (0.08 + rough * 0.25)) * (kind === 'bike' ? 1.6 : 1) : 0, t, 0.1);
     this.rain.g.gain.setTargetAtTime(rain * 0.12, t, 0.5);
-    this.water.g.gain.setTargetAtTime(kind === 'boat' ? Math.min(0.3, 0.05 + speed / 20 * 0.25) : 0, t, 0.2);
+    this.water.g.gain.setTargetAtTime(onWater ? Math.min(0.3, 0.05 + speed / 20 * 0.25) : 0, t, 0.2);
   }
 
   burst(gain, f = 400, dur = 0.35) {

@@ -75,14 +75,14 @@ export class Debris {
   }
 
   /** Gamer mode wall hit: masonry chips and a crack left on the wall facing (nx, nz). */
-  burst(x, y, z, nx, nz, speed, color = '#c9bfae') {
+  burst(x, y, z, nx, nz, speed, color = '#c9bfae', fit = 1) {
     this.bits(x, y, z, nx, nz, speed, color, { n: Math.min(14, 5 + Math.floor(speed)) });
-    this.decal(this.cracks[this.ci++ % CRACKS], x, y + 1.3, z, nx, nz, 0.7 + Math.min(1.2, speed / 12), Math.random() * Math.PI);
+    this.decal(this.cracks[this.ci++ % CRACKS], x, y + 1.1, z, nx, nz, (0.5 + Math.min(0.6, speed / 20)) * fit, Math.random() * Math.PI);
   }
 
   /** Any wall hit: a scrape of rubber and paint along the wall, as long as the hit was hard. */
-  scuff(x, y, z, nx, nz, speed) {
-    const s = 0.6 + Math.min(1, speed / 14);
+  scuff(x, y, z, nx, nz, speed, fit = 1) {
+    const s = (0.5 + Math.min(0.5, speed / 20)) * fit;
     this.decal(this.scuffs[this.si++ % SCUFFS], x, y + 0.55, z, nx, nz, s, (Math.random() - 0.5) * 0.25);
   }
 

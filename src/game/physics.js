@@ -18,8 +18,9 @@ const HITBOX = {
   duck: [[-0.8, 1.2], [0.8, 1.2]],
   para: [[0, 1.0]],
   solar: [[-0.7, 0.75], [0.7, 0.75]],
+  jetski: [[-0.6, 0.6], [0.6, 0.6]],
 };
-const LENGTH = { bike: 1.7, car: 4.3, truck: 9.4, boat: 6, pickup: 5.3, moto: 2.1, dog: 1.3, cart: 1, duck: 3.4, para: 2, solar: 2.6 };
+const LENGTH = { bike: 1.7, car: 4.3, truck: 9.4, boat: 6, pickup: 5.3, moto: 2.1, dog: 1.3, cart: 1, duck: 3.4, para: 2, solar: 2.6, jetski: 3 };
 
 export class VehicleState {
   constructor(kind, x, z, heading) {
@@ -334,7 +335,9 @@ export class VehicleState {
     this.damage = Math.min(100, this.damage + add);
     ev.push({ type: 'crash', impact: amount, cause });
   }
-  onBridge(w, x, z) { const r = w.roadAt(x, z, 2); return !!(r && r.d < 1 && (r.road.f & 2)); }
+  // Water under a road you can drive over: bridges, and also the culverts and small rivers that pass
+  // under ordinary roads (OpenStreetMap rarely tags those roads as bridges).
+  onBridge(w, x, z) { const r = w.roadAt(x, z, 4); return !!(r && r.d < (this.road ? 3 : 1.5)); } // more leeway while you're on a road // d: metres beyond the road edge
   rawGround(w, x, z) {
     if (this.spec.terrain === 'water' || this.spec.terrain === 'air') return this.y;
     const r = this.road ? w.roadAt(x, z, 2) : null;
