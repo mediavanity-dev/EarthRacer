@@ -67,9 +67,9 @@ Wikimedia Commons (free licences only). Nothing about the player is sent anywher
 
 ## Status
 
-- 2026-11-23: version 1.0 (build 15) and the three tips submitted for review together. Price free,
+- 2026-11-23: version 1.0 submitted with build 15, then withdrawn and resubmitted the same day with
+  build 17 (the latest) and the three tips. Release: **automatic** after approval. Price free,
   174 regions (not China mainland), age rating 9+ (12+ in Vietnam, Brazil, Korea), App Privacy
-  "Data Not Collected" (published), manual release: after approval, App Store Connect → the version
-  → **Release This Version**.
+  "Data Not Collected" (published).
 - App Review contact is typed in App Store Connect (not kept in the repo).
 
