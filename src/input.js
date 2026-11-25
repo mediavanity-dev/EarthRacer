@@ -149,7 +149,7 @@ export class Input {
     const hold = (node, on, off) => {
       const start = (e) => { e.preventDefault(); this.source = 'touch'; node.classList.add('down'); on(e); };
       const end = (e) => { e.preventDefault(); node.classList.remove('down'); off(e); };
-      node.addEventListener('pointerdown', (e) => { node.setPointerCapture(e.pointerId); start(e); });
+      node.addEventListener('pointerdown', (e) => { try { node.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ } start(e); });
       node.addEventListener('pointerup', end);
       node.addEventListener('pointercancel', end);
     };
@@ -158,7 +158,7 @@ export class Input {
     const brake = el('pedal brake', `<span>${W.brake || 'BRAKE<br>/ REV'}</span>`);
     hold(gas, () => { this.touch.gas = 1; }, () => { this.touch.gas = 0; });
     hold(brake, () => { this.touch.brake = 1; }, () => { this.touch.brake = 0; });
-    const hb = el('tbtn hand', W.hand || 'Handbrake');
+    const hb = el('tbtn hand', W.hand || 'Handbrake<br>/ drift');
     hold(hb, () => { this.touch.hand = true; }, () => { this.touch.hand = false; });
     if (this.mode === 'slider') {
       const pad = el('slider', '<div class="track"></div><div class="knob"></div>');

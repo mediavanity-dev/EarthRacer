@@ -543,9 +543,34 @@ async function build({ x, y, opts }) {
   const pxOfLon = (lon) => (((lon + 180) / 360) * tiles - x) * E;
   const pyOfLat = (lat) => { const r = (lat * Math.PI) / 180; return (((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * tiles - y) * E; };
   const rrT = rng(seed ^ 0x7a11);
+  // A mapped tree is where it really is, usually right at the kerb or between the kerb and a mapped
+  // pavement: test it against the actual width of the carriageway (the coarse props grid around
+  // roads and paths would wrongly sweep away most street trees). Paths and pavements don't count.
+  const inCarriageway = (() => {
+    if (!realT.length) return () => false;
+    const G = 64, gc = E / G, grid = new Map();
+    for (const rd of fabric.roads) {
+      if (rd.cls === 'path' || rd.cls === 'pedestrian' || rd.cls === 'track') continue;
+      const half = rd.width / 2 / mPerPx;
+      for (let k = 1; k < rd.pts.length; k++) {
+        const [ax, ay] = rd.pts[k - 1], [bx, by] = rd.pts[k], seg = [ax, ay, bx, by, half];
+        const c0 = Math.floor((Math.min(ax, bx) - half) / gc), c1 = Math.floor((Math.max(ax, bx) + half) / gc);
+        const r0 = Math.floor((Math.min(ay, by) - half) / gc), r1 = Math.floor((Math.max(ay, by) + half) / gc);
+        for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { const key = r * 1000 + c; (grid.get(key) || grid.set(key, []).get(key)).push(seg); }
+      }
+    }
+    return (px, py) => {
+      for (const [ax, ay, bx, by, half] of grid.get(Math.floor(py / gc) * 1000 + Math.floor(px / gc)) || []) {
+        const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+        const t = L ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L)) : 0;
+        if (Math.hypot(px - ax - dx * t, py - ay - dy * t) < half) return true;
+      }
+      return false;
+    };
+  })();
   for (let i = 0; i < realT.length && blobs.length + cones.length < maxTrees; i += 3) {
     const px = pxOfLon(realT[i + 1]), py = pyOfLat(realT[i]);
-    if (px < 0 || py < 0 || px >= E || py >= E || (maskAt(px, py) & 1) || onWay(px, py) || inBuilding(px, py)) continue; // never in the roadway
+    if (px < 0 || py < 0 || px >= E || py >= E || (maskAt(px, py) & 1) || inCarriageway(px, py) || inBuilding(px, py)) continue; // never in the roadway
     const needle = realT[i + 2] === 1;
     (needle ? cones : blobs).push(treeInstance(X(px), H(px, py), Z(py), 1.8 + rrT() * 2.2, needle ? 'evergreen-needle' : 'deciduous', season, rrT));
     realCells.add(`${Math.floor(px / cellPx)},${Math.floor(py / cellPx)}`);

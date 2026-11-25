@@ -264,7 +264,8 @@ export class VehicleState {
     const tp = wet ? -Math.min(0.15, Math.max(0, nvf - 8) * 0.012) : Math.atan2(hf - hb, L * 0.8);
     const accelPitch = (nvf - (this.prevVf ?? nvf)) / Math.max(dt, 1e-3) * -0.006;
     this.pitch += (tp + accelPitch * 0.5 - this.pitch) * Math.min(1, dt * 5);
-    const lean = this.kind === 'bike' || s.lean ? Math.max(-0.6, Math.min(0.6, -yaw * nvf * (s.lean ? 0.05 : 0.08))) : Math.max(-0.08, Math.min(0.08, yaw * nvf * 0.012));
+    // two wheels lean into the turn (a motorbike well over, a bicycle a little); a car's body rolls slightly outwards
+    const lean = this.kind === 'bike' ? Math.max(-0.3, Math.min(0.3, yaw * nvf * 0.05)) : s.lean ? Math.max(-0.6, Math.min(0.6, yaw * nvf * 0.05)) : Math.max(-0.08, Math.min(0.08, -yaw * nvf * 0.012));
     this.roll += (lean - this.roll) * Math.min(1, dt * 6);
     this.prevVf = nvf;
     this.spin += (nvf / 0.34) * dt;

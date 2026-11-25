@@ -1,8 +1,15 @@
 // Sound, synthesised with Web Audio (nothing to download): an engine note that climbs through the
 // gears, tyre squeal when sliding, wind that rises with speed, rain, crashes and reward chimes.
 
+const fetchClip = (base, name) => fetch(`${base}sounds/${name}.mp3`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(name))));
+
 export class Sound {
-  constructor() { this.ctx = null; this.muted = false; this.kind = 'car'; }
+  constructor() {
+    this.ctx = null; this.muted = false; this.kind = 'car'; this.samples = {}; this.loading = {};
+    // fetch the recordings straight away, so they're ready the moment sound starts
+    const base = import.meta.env.BASE_URL || './';
+    this.raw = {}; for (const n of ['horn', 'bark']) { this.raw[n] = fetchClip(base, n); this.raw[n].catch(() => {}); }
+  }
 
   /** Must be called from a user gesture. */
   start() {
@@ -88,11 +95,13 @@ export class Sound {
   }
   // Real recordings for the horn, the bark and the quack (short clips bundled with the game; see
   // Help for credits). Until they've loaded, or if they can't, the synthesised versions play.
+  // Loaded once: a decoded clip isn't tied to one audio engine, so it survives a rebuild.
   loadSamples(ctx) {
-    this.samples = {};
     const base = import.meta.env.BASE_URL || './';
     for (const name of ['horn', 'bark']) {
-      fetch(`${base}sounds/${name}.mp3`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject())).then((b) => ctx.decodeAudioData(b)).then((buf) => { if (this.ctx === ctx) this.samples[name] = buf; }).catch(() => {});
+      if (this.samples[name] || this.loading[name]) continue;
+      this.loading[name] = true;
+      (this.raw?.[name] || fetchClip(base, name)).then((b) => ctx.decodeAudioData(b.slice(0))).then((buf) => { this.samples[name] = buf; }).catch(() => { this.loading[name] = false; if (this.raw) delete this.raw[name]; });
     }
   }
   sample(name, gain = 0.8, rate = 1) {
@@ -113,8 +122,10 @@ export class Sound {
     if (!this.ctx) return;
     if (this.ctx.state !== 'running' && performance.now() - (this.wokeAt || 0) > 2000) { this.wokeAt = performance.now(); this.wake(false); }
     // "running" but the clock has stopped: the silent iOS state. Rebuild on the next touch.
+    // (not in its first seconds, and only if the clock has really stopped for a couple of seconds)
     const now = performance.now(), ct = this.ctx.currentTime;
-    if (this.ctx.state === 'running' && this.lastCt === ct && now - (this.lastCtAt || now) > 800) this.stale = true;
+    if (this.ctx !== this.clockCtx) { this.clockCtx = this.ctx; this.clockFrom = now; this.lastCt = ct; this.lastCtAt = now; }
+    if (this.ctx.state === 'running' && now - this.clockFrom > 4000 && this.lastCt === ct && now - this.lastCtAt > 2000) this.stale = true;
     if (this.lastCt !== ct) { this.lastCt = ct; this.lastCtAt = now; }
     const t = this.ctx.currentTime, sm = 0.06;
     const speed = Math.hypot(v.vx, v.vz), kind = v.kind;

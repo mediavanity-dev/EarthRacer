@@ -5,20 +5,24 @@
 import { cacheGet, cachePut } from './cache.js';
 import { request, backoff } from './net.js';
 
-const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
+const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.openstreetmap.fr/api/interpreter'];
 const VERSION = 2; // 2: plus the real, individually mapped trees
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+let good = 0;
 async function overpass(query, attempts = 4) {
   const body = 'data=' + encodeURIComponent(query);
   let lastErr;
   for (let a = 0; a < attempts; a++) {
+    const ep = (good + a) % ENDPOINTS.length;
     try {
-      const res = await request(ENDPOINTS[a % ENDPOINTS.length], {
+      const res = await request(ENDPOINTS[ep], {
         init: { method: 'POST', body, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
         timeout: 70000, service: 'building detail',
       });
-      return await res.json();
+      const json = await res.json();
+      good = ep; // start with the server that answered last time
+      return json;
     } catch (err) {
       lastErr = err;
       if (a < attempts - 1) await sleep(backoff(a, 2500));
