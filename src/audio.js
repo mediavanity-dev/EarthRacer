@@ -1,14 +1,15 @@
 // Sound, synthesised with Web Audio (nothing to download): an engine note that climbs through the
 // gears, tyre squeal when sliding, wind that rises with speed, rain, crashes and reward chimes.
 
+const CLIPS = ['horn', 'bark'];
 const fetchClip = (base, name) => fetch(`${base}sounds/${name}.mp3`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(name))));
 
 export class Sound {
   constructor() {
-    this.ctx = null; this.muted = false; this.kind = 'car'; this.samples = {}; this.loading = {};
-    // fetch the recordings straight away, so they're ready the moment sound starts
+    this.ctx = null; this.muted = false; this.kind = 'car'; this.samples = {};
+    // fetch the recordings straight away (once), so they're ready the moment sound starts
     const base = import.meta.env.BASE_URL || './';
-    this.raw = {}; for (const n of ['horn', 'bark']) { this.raw[n] = fetchClip(base, n); this.raw[n].catch(() => {}); }
+    this.raw = {}; for (const n of CLIPS) { this.raw[n] = fetchClip(base, n); this.raw[n].catch(() => {}); }
   }
 
   /** Must be called from a user gesture. */
@@ -23,6 +24,7 @@ export class Sound {
     this.loadSamples(ctx);
     ctx.onstatechange = () => { if (ctx.state !== 'running' && this.ctx === ctx) setTimeout(() => this.wake(false), 500); };
     this.master = ctx.createGain(); this.master.gain.value = this.muted ? 0 : 0.6; this.master.connect(ctx.destination);
+    this.fx = ctx.createGain(); this.fx.gain.value = this.muted ? 0 : 0.75; this.fx.connect(ctx.destination);
     const noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const d = noise.getChannelData(0);
     for (let k = 0; k < d.length; k++) d[k] = Math.random() * 2 - 1;
@@ -96,12 +98,17 @@ export class Sound {
   // Real recordings for the horn, the bark and the quack (short clips bundled with the game; see
   // Help for credits). Until they've loaded, or if they can't, the synthesised versions play.
   // Loaded once: a decoded clip isn't tied to one audio engine, so it survives a rebuild.
+  // Each new sound engine decodes its own copy from the bytes already in memory (a few ms): iOS can
+  // play a clip decoded by an engine it has since closed as silence.
   loadSamples(ctx) {
+    this.samples = {};
     const base = import.meta.env.BASE_URL || './';
-    for (const name of ['horn', 'bark']) {
-      if (this.samples[name] || this.loading[name]) continue;
-      this.loading[name] = true;
-      (this.raw?.[name] || fetchClip(base, name)).then((b) => ctx.decodeAudioData(b.slice(0))).then((buf) => { this.samples[name] = buf; }).catch(() => { this.loading[name] = false; if (this.raw) delete this.raw[name]; });
+    for (const name of CLIPS) {
+      const bytes = this.raw[name] || (this.raw[name] = fetchClip(base, name));
+      bytes
+        .then((b) => new Promise((ok, no) => { const p = ctx.decodeAudioData(b.slice(0), ok, no); p?.catch?.(no); })) // callback form too: older WebKit
+        .then((buf) => { if (this.ctx === ctx) this.samples[name] = buf; })
+        .catch(() => { if (this.raw[name] === bytes) delete this.raw[name]; }); // fetch again next time
     }
   }
   sample(name, gain = 0.8, rate = 1) {
@@ -110,13 +117,16 @@ export class Sound {
     const src = this.ctx.createBufferSource(); src.buffer = buf;
     src.playbackRate.value = rate * (0.96 + Math.random() * 0.08); // never quite the same twice
     const g = this.ctx.createGain(); g.gain.value = gain;
-    src.connect(g).connect(this.master); src.start();
+    src.connect(g).connect(this.fx || this.master); src.start();
     return true;
   }
   setMuted(m) { this.muted = m; this.applyLevel(); }
   /** While the radio plays, the car's own sounds sit well underneath it. */
   setDuck(on) { this.duck = on; this.applyLevel(); }
-  applyLevel() { if (this.master) this.master.gain.setTargetAtTime(this.muted ? 0 : this.duck ? 0.34 : 0.6, this.ctx.currentTime, 0.3); }
+  applyLevel() {
+    if (this.master) this.master.gain.setTargetAtTime(this.muted ? 0 : this.duck ? 0.34 : 0.6, this.ctx.currentTime, 0.3);
+    if (this.fx) this.fx.gain.setTargetAtTime(this.muted ? 0 : 0.75, this.ctx.currentTime, 0.05); // the horn and bark: not turned down under the radio
+  }
 
   update(v, { rain = 0 } = {}) {
     if (!this.ctx) return;
