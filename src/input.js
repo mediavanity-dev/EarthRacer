@@ -97,6 +97,8 @@ export class Input {
     const s = this.state;
     const k = (list) => list.some((c) => this.keys.has(c));
     let throttle = k(KEYS.up) ? 1 : 0, brake = k(KEYS.down) ? 1 : 0;
+    // looking around: Q/E turn the camera, Z/X zoom; on a controller, the right stick (click it to recentre)
+    let lookX = (k(['KeyE']) ? 1 : 0) - (k(['KeyQ']) ? 1 : 0), lookY = (k(['KeyX']) ? 1 : 0) - (k(['KeyZ']) ? 1 : 0), lookReset = false;
     let steer = (k(KEYS.right) ? 1 : 0) - (k(KEYS.left) ? 1 : 0), hand = k(KEYS.hand), analog = false;
 
     // gamepad
@@ -112,6 +114,10 @@ export class Input {
         throttle = Math.max(throttle, rt); brake = Math.max(brake, lt);
         if (Math.abs(sx2) > Math.abs(steer)) { steer = sx2; analog = true; }
         hand = hand || b(0) > 0.5;
+        const rx = gp.axes[2] || 0, ry = gp.axes[3] || 0;
+        if (Math.abs(rx) > 0.18) lookX = rx;
+        if (Math.abs(ry) > 0.18) lookY = ry;
+        lookReset = b(10) > 0.5 || b(11) > 0.5;
       }
       const map = { 3: 'camera', 2: 'horn', 1: 'reset', 9: 'menu', 8: 'jobs' };
       gp.buttons.forEach((btn, i) => { if (btn.pressed && !this.padPrev[i] && map[i]) this.onAction(map[i]); this.padPrev[i] = btn.pressed; });
@@ -130,6 +136,7 @@ export class Input {
     }
     if (!this.enabled) { throttle = 0; brake = 0; steer = 0; hand = false; }
     s.throttle = throttle; s.brake = brake; s.steer = steer; s.handbrake = hand; s.analog = analog;
+    s.lookX = this.enabled ? lookX : 0; s.lookY = this.enabled ? lookY : 0; s.lookReset = lookReset;
     return s;
   }
 

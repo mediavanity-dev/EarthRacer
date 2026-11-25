@@ -356,3 +356,11 @@ body[data-sign="au"] #sidepops .nm { --bg: #fff; --fg: #16357a; --bd: #16357a; }
 .card.seatback { max-height: calc(100dvh - 16px); }
 #stk { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 8px; }
 #stk .btn { margin: 4px 0; }
+
+/* garage: the trade-off bars fold away behind "Stats" */
+.vstd { margin-top: 4px; }
+.vstd summary { cursor: pointer; font-size: 12px; color: var(--accent); list-style: none; display: inline-block; padding: 2px 0; }
+.vstd summary::-webkit-details-marker { display: none; }
+.vstd summary::before { content: '▸ '; }
+.vstd[open] summary::before { content: '▾ '; }
+#topbtns.compact { gap: 5px; } #topbtns.compact button { min-width: 34px; padding: 0 6px; }

@@ -6,7 +6,7 @@ import { cacheGet, cachePut } from './cache.js';
 import { request, backoff } from './net.js';
 
 const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
-const VERSION = 1;
+const VERSION = 2; // 2: plus the real, individually mapped trees
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function overpass(query, attempts = 4) {
@@ -53,10 +53,14 @@ export async function loadBuildingDetail(key, b) {
   way["building"]["roof:material"];
   way["building"]["building"~"${TYPES.source.slice(2, -2)}"];
 );
-out tags qt;`);
+out tags qt;
+node["natural"="tree"];
+out qt;`);
     const out = {};
+    const trees = []; // [lat, lon, 1 if needle-leaved, ...]
     for (const el of raw.elements || []) {
       const t = el.tags || {};
+      if (el.type === 'node') { if (t.natural === 'tree' && el.lat != null) trees.push(+el.lat.toFixed(6), +el.lon.toFixed(6), t.leaf_type === 'needleleaved' ? 1 : 0); continue; }
       const d = {};
       if (t['roof:shape']) d.s = t['roof:shape'];
       if (t['building:colour']) d.c = t['building:colour'];
@@ -68,6 +72,7 @@ out tags qt;`);
       else if (t['roof:levels']) d.rh = (parseFloat(t['roof:levels']) || 0) * 2.6 || undefined;
       if (Object.keys(d).length) out[el.id] = d;
     }
+    if (trees.length) out._trees = trees;
     cachePut(ck, out);
     return out;
   });

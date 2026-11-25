@@ -64,7 +64,7 @@ addEventListener('resize', resize);
 
 const world = new World(scene, {
   anisotropy: Math.min(8, renderer.capabilities.getMaxAnisotropy()),
-  quality: isTouch ? { tex: 1024, maxTrees: 2200, maxProps: 900 } : { tex: 2048, maxTrees: 4000, maxProps: 1600 },
+  quality: isTouch ? { tex: 1024, maxTrees: 3200, maxProps: 900 } : { tex: 2048, maxTrees: 4000, maxProps: 1600 },
 });
 const sky = new Sky(scene);
 const signs = new Signs(scene);
@@ -153,13 +153,15 @@ function spawnVehicle(kind, x, z, heading) {
   game.v.fuel = profile.fuel[kind] ?? VEHICLES[kind].fuel;
   game.v.damage = profile.damage[kind] ?? 0;
   if (prev) { game.v.y = prev.y; }
-  game.model = buildModel(kind, kind === 'bike' ? '#2f6fb0' : kind === 'truck' ? '#2f6fb0' : '#d23a2e');
+  game.model = buildModel(kind, kind === 'bike' ? '#2f6fb0' : kind === 'truck' ? '#2f6fb0' : kind === 'demon' ? '#16171a' : '#d23a2e');
   scene.add(game.model.group);
   // a damaged vehicle still looks it when it comes back
   prepDamage(game.model, kind);
   for (let k = 0; k < Math.floor(game.v.damage / 18); k++) dent(game.model, 8);
   grime(game.model, game.v.damage);
   game.dmgShown = game.v.damage;
+  $('#b-horn').textContent = HORN_ICON[kind] || '📯';
+  game.gs = 0;
   game.fuelOut = false;
   const r = VEHICLES[kind].radius;
   shadow.scale.set(r * 1.4, 1, r * (kind === 'truck' ? 4.4 : kind === 'bike' ? 2.2 : 3));
@@ -381,7 +383,7 @@ async function begin(lat, lon, heading, kind, { snap = false, teleport = false, 
   });
   let p = world.toLocal(lat, lon);
   if (!world.isReady(p.x, p.z)) { overlay(`<div class="card"><h2>The map didn't load</h2><p>Check your connection and try again.</p><button class="btn primary" onclick="location.reload()">Try again</button></div>`); return; }
-  if (VEHICLES[kind].terrain === 'water' && !world.isWater(p.x, p.z)) kind = 'car';
+  if (VEHICLES[kind].terrain === 'water' && !VEHICLES[kind].amphibious && !world.isWater(p.x, p.z)) kind = 'car';
   if (snap || (VEHICLES[kind].terrain !== 'water' && world.isWater(p.x, p.z))) {
     const r = findRoadNear(p.x, p.z, 1500);
     if (r) { p = { x: r.px, z: r.pz }; heading = Math.atan2(r.dirX, -r.dirZ); }
@@ -396,7 +398,7 @@ async function begin(lat, lon, heading, kind, { snap = false, teleport = false, 
   if (profile.random.active) {
     toast('🎲 Where are you? Explore, read the signs, then tap Guess.', { ms: 7000 });
   } else if (!profile.stats.km) {
-    toast(isTouch ? 'Hold GAS to go. Open ☰ for jobs, races and vehicles.' : 'W / ↑ to go. Press Esc for jobs, races and vehicles.', { ms: 7000 });
+    toast(isTouch ? 'Hold GAS to go. Drag the view to look around, pinch to zoom. Open ☰ for jobs, races and vehicles.' : 'W / ↑ to go. Drag the view (or Q/E) to look around, wheel to zoom. Esc for jobs, races and vehicles.', { ms: 8000 });
   }
   updateWeather(true);
 }
@@ -453,7 +455,7 @@ function onAction(a, extra) {
   if (a === 'menu') { if ($('#panel').hidden) openPanel(); else closePanel(); }
   else if (!$('#panel').hidden) return;
   else if (a === 'camera') { game.cam = (game.cam + 1) % 4; profile.settings.cam = game.cam; save(); }
-  else if (a === 'horn') ({ bike: () => sound.bell(), dog: () => sound.bark(), duck: () => sound.squeak(), cart: () => sound.bell() }[game.v.kind] || (() => sound.horn()))();
+  else if (a === 'horn') honk();
   else if (a === 'reset') resetToRoad();
   else if (a === 'jobs') openPanel('jobs');
   else if (a === 'guess' && profile.random.active) openGuess();
@@ -466,12 +468,20 @@ $('#b-radio').onclick = () => radioNext();
 $('#b-guess').onclick = () => openGuess();
 $('#b-trip').onclick = () => { if (game.nearStop) openTripPlanner(game.nearStop); };
 $('#b-fuel').onclick = () => outOfFuel();
+// The horn: cars honk, the dog barks, the duck quacks, bicycles and the cart ring a bell.
+function honk() {
+  if (game.state !== 'driving' || !game.v) return;
+  ({ bike: () => sound.bell(), dog: () => sound.bark(), duck: () => sound.quack(), cart: () => sound.bell(), para: () => sound.bell() }[game.v.kind] || (() => sound.horn()))();
+  input.rumble(0.15, 0.3, 90);
+}
+$('#b-horn').onclick = () => { userGesture(); honk(); };
+const HORN_ICON = { dog: '🐕', duck: '🦆', bike: '🔔', cart: '🔔' };
 
 // ---------- a hidden developer unlock ----------
 // Seven quick taps on the speed while stopped open an unlabelled box; the right phrase unlocks every
 // vehicle, tops up coins and resets the week's random placements. Only a hash of the phrase is in
 // the code (the repo is public).
-const UNLOCK_HASH = '36a467ffbedf1c409bd0581d4c5cb46a287bb127cc3b550c2f4ac9639954f898';
+const UNLOCK_HASH = '70136d52dd9119ae293897bbfc35454bca1896ba81c70aeb5cf10de1c290bd47';
 async function sha256(text) {
   if (crypto?.subtle) return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, '0')).join('');
   return ''; // no WebCrypto: no unlock
@@ -851,10 +861,12 @@ function fitHud() {
   if (innerWidth > 600 && tb.getBoundingClientRect().left < wh.getBoundingClientRect().right + 10) tb.classList.add('compact');
 }
 let fitT = 0;
+// refit at once whenever a top button appears, goes or changes its label (not just every few frames)
+new MutationObserver(() => fitHud()).observe($('#topbtns'), { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden'] });
 function hudFrame() {
   const v = game.v;
   if (++fitT % 10 === 0) fitHud();
-  const kmh = Math.abs(v.vf) * 3.6;
+  const kmh = (game.gs ?? Math.abs(v.vf)) * 3.6;
   $('#speed').innerHTML = `<b>${Math.round(game.mph ? kmh / 1.609 : kmh)}</b><span>${game.mph ? 'mph' : 'km/h'} ${v.spec.icon}</span>`;
   const why = v.limitWhy;
   const limitV = v.limit * 3.6 / (game.mph ? 1.609 : 1);
@@ -991,7 +1003,9 @@ function renderTab(tab, body) {
       <tr><td>Steer</td><td><span class="kbd">A</span>/<span class="kbd">D</span> · left stick</td></tr>
       <tr><td>Handbrake (drift)</td><td><span class="kbd">Space</span> or <span class="kbd">Shift</span> · A</td></tr>
       <tr><td>Camera</td><td><span class="kbd">C</span> · Y</td></tr>
-      <tr><td>Horn / bell</td><td><span class="kbd">H</span> · X</td></tr>
+      <tr><td>Look around / zoom</td><td>drag · wheel · <span class="kbd">Q</span>/<span class="kbd">E</span> <span class="kbd">Z</span>/<span class="kbd">X</span> · right stick (click to recentre)</td></tr>
+      <tr><td>Horn (honk, bark, quack, bell)</td><td><span class="kbd">H</span> · X on a controller · 📯 on a phone</td></tr>
+      <tr><td>Duck: flap to fly</td><td>hold the handbrake (<span class="kbd">Space</span> · A)</td></tr>
       <tr><td>Back on the road</td><td><span class="kbd">R</span> · B</td></tr>
       <tr><td>Menu</td><td><span class="kbd">Esc</span> · Menu button</td></tr>
       <tr><td>Jobs</td><td><span class="kbd">J</span> · View button</td></tr>
@@ -1005,7 +1019,7 @@ function vstats(k) {
   const kmh = Math.round(Math.min(s.top, SPEED_CAP) * 3.6);
   const rows = [[`Top speed ${game.mph ? Math.round(kmh / 1.609) + ' mph' : kmh + ' km/h'}`, r.speed], ['Acceleration', r.accel], ['Handling', r.handling], ['Toughness', r.tough]];
   if (r.offroad != null) rows.push(['Off-road', r.offroad]);
-  return `<div class="vst">${rows.map(([n, x]) => `<div><span>${n}</span><i><b style="width:${Math.round(x * 100)}%"></b></i></div>`).join('')}<div><span>${r.range ? `⛽ ${game.mph ? Math.round(r.range / 1.609) + ' mi' : r.range + ' km'} a tank` : '⛽ no fuel needed'}</span></div></div>`;
+  return `<details class="vstd"><summary>Stats</summary><div class="vst">${rows.map(([n, x]) => `<div><span>${n}</span><i><b style="width:${Math.round(x * 100)}%"></b></i></div>`).join('')}<div><span>${r.range ? `⛽ ${game.mph ? Math.round(r.range / 1.609) + ' mi' : r.range + ' km'} a tank` : '⛽ no fuel needed'}</span></div></div></details>`;
 }
 // The tip jar (iPhone app only): three in-app tips that unlock nothing, like OpenEarth's.
 const TIP_NAMES = { 'com.mediavanity.earthracer.tip.small': 'Small tip', 'com.mediavanity.earthracer.tip.medium': 'Kind tip', 'com.mediavanity.earthracer.tip.large': 'Generous tip' };
@@ -1201,8 +1215,8 @@ function summon(kind) {
   if (v.flying) { toast('🪂 Land first.'); return; }
   if (s.terrain === 'air') {
     // take off only from a park or open field, with room to run
-    const ok = (px, pz) => world.isOpen(px, pz) && [[12, 0], [-12, 0], [0, 12], [0, -12]].every(([dx, dz]) => world.isOpen(px + dx, pz + dz));
-    const spot = searchAround(x, z, 150, ok);
+    const ok = (px, pz) => world.isOpen(px, pz) && [[6, 0], [-6, 0], [0, 6], [0, -6]].every(([dx, dz]) => world.isOpen(px + dx, pz + dz));
+    const spot = searchAround(x, z, 300, ok);
     if (!spot) { toast('🪂 Take off from a park or open field: get to one first (green areas on the map).', { ms: 5000 }); return; }
     x = spot.x; z = spot.z;
     // face the longest clear run
@@ -1213,7 +1227,7 @@ function summon(kind) {
       for (let d = 10; d <= 120; d += 10) { if (world.isOpen(x + dx * d, z + dz * d)) n++; else break; }
       if (n > best) { best = n; h = ang; }
     }
-  } else if (s.terrain === 'water') {
+  } else if (s.terrain === 'water' && !s.amphibious) {
     const w = searchAround(x, z, 120, (px, pz) => world.isWater(px, pz) && world.isWater(px + 6, pz) && world.isWater(px, pz + 6) && world.isWater(px - 6, pz) && world.isWater(px, pz - 6));
     if (!w) { toast('🚤 Get to the water\'s edge first (a river, lake or the sea).'); return; }
     x = w.x; z = w.z;
@@ -1761,15 +1775,18 @@ function updateCamera(dt) {
   // look slightly towards where we're sliding (but not when reversing: then just stay behind)
   const fwdMove = v.vx * fx + v.vz * fz > 0;
   const mvx = speed > 2 && fwdMove ? v.vx / speed : fx, mvz = speed > 2 && fwdMove ? v.vz / speed : fz;
-  const bx = fx * 0.7 + mvx * 0.3, bz = fz * 0.7 + mvz * 0.3;
-  let dist = s.camDist, h = s.camH;
+  const bx0 = fx * 0.7 + mvx * 0.3, bz0 = fz * 0.7 + mvz * 0.3;
+  // looking around (drag, mouse, Q/E or the right stick) swings the camera round the vehicle
+  const cyw = Math.cos(camCtl.yaw), syw = Math.sin(camCtl.yaw);
+  const bx = bx0 * cyw - bz0 * syw, bz = bx0 * syw + bz0 * cyw;
+  let dist = s.camDist * camCtl.zoom, h = s.camH * camCtl.zoom * (1 + camCtl.pitch);
   if (game.cam === 1) { dist *= 1.7; h *= 1.8; }
   dist += speed * 0.04;
   const target = new THREE.Vector3();
   const look = new THREE.Vector3();
   if (game.cam === 3) {
     // straight down from above, the direction of travel at the top of the screen
-    const hgt = (v.kind === 'truck' ? 75 : v.kind === 'bike' ? 45 : 60) + speed * 1.6;
+    const hgt = ((v.kind === 'truck' ? 75 : v.kind === 'bike' ? 45 : 60) + speed * 1.6) * camCtl.zoom;
     target.set(v.x + fx * speed * 0.9, v.y + hgt, v.z + fz * speed * 0.9);
     look.set(target.x, v.y, target.z);
     if (!camInit) { camPos.copy(target); camLook.copy(look); camInit = true; }
@@ -1780,7 +1797,8 @@ function updateCamera(dt) {
     const fwdOff = v.kind === 'truck' ? 3.6 : v.kind === 'bike' ? -0.2 : v.kind === 'boat' ? 0 : 0.3;
     const eye = v.kind === 'truck' ? 3 : v.kind === 'bike' ? 1.75 : v.kind === 'boat' ? 2 : 1.25;
     target.set(v.x + fx * -fwdOff * -1, v.y + eye, v.z + fz * -fwdOff * -1);
-    look.set(v.x + fx * 30, v.y + eye - 0.6 + Math.sin(v.pitch) * 30, v.z + fz * 30);
+    const lfx = fx * cyw - fz * syw, lfz = fx * syw + fz * cyw;
+    look.set(v.x + lfx * 30, v.y + eye - 0.6 + Math.sin(v.pitch) * 30 - camCtl.pitch * 20, v.z + lfz * 30);
     camPos.copy(target); camLook.copy(look);
   } else {
     // keep the camera out of buildings: pull it in towards the vehicle
@@ -1811,13 +1829,64 @@ function updateCamera(dt) {
   if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix(); }
 }
 
+// ---------- looking around ----------
+// Phone: drag on the open view to swing the camera round, pinch to zoom; it drifts back behind you
+// a couple of seconds after you let go. Computer: drag with the mouse, wheel to zoom, Q/E and Z/X.
+// Controller: right stick (click it to recentre). Zoom is remembered.
+const camCtl = { yaw: 0, pitch: 0, zoom: profile.settings.camZoom || 1, held: false, at: 0 };
+{
+  const pts = new Map();
+  let pinch0 = 0, zoom0 = 1;
+  const clampZoom = (z) => Math.max(0.55, Math.min(2.6, z));
+  canvas.addEventListener('pointerdown', (e) => {
+    if (game.state !== 'driving') return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    canvas.setPointerCapture?.(e.pointerId);
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); zoom0 = camCtl.zoom; }
+    camCtl.held = true; camCtl.at = performance.now();
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    const p = pts.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    if (pts.size >= 2) {
+      const [a, b] = [...pts.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinch0 > 10) camCtl.zoom = clampZoom(zoom0 * (pinch0 / d));
+    } else {
+      camCtl.yaw -= dx * 0.008;
+      camCtl.pitch = Math.max(-0.45, Math.min(1.2, camCtl.pitch + dy * 0.004));
+    }
+    camCtl.at = performance.now();
+  });
+  const up = (e) => { pts.delete(e.pointerId); if (!pts.size) { camCtl.held = false; profile.settings.camZoom = +camCtl.zoom.toFixed(2); save(); } };
+  canvas.addEventListener('pointerup', up);
+  canvas.addEventListener('pointercancel', up);
+  canvas.addEventListener('wheel', (e) => { if (game.state !== 'driving') return; e.preventDefault(); camCtl.zoom = clampZoom(camCtl.zoom * (1 + e.deltaY * 0.0012)); profile.settings.camZoom = +camCtl.zoom.toFixed(2); save(); }, { passive: false });
+}
+function tickCamCtl(dt, inp) {
+  if (inp.lookX || inp.lookY) {
+    camCtl.yaw -= inp.lookX * dt * 2.2;
+    camCtl.zoom = Math.max(0.55, Math.min(2.6, camCtl.zoom * (1 + inp.lookY * dt * 0.9)));
+    camCtl.at = performance.now();
+  }
+  if (inp.lookReset) camCtl.at = 0;
+  // let go for a couple of seconds and the camera swings back behind you (zoom stays)
+  if (!camCtl.held && !inp.lookX && performance.now() - camCtl.at > 2200) {
+    const k = 1 - Math.exp(-dt * 3.5);
+    camCtl.yaw = Math.atan2(Math.sin(camCtl.yaw), Math.cos(camCtl.yaw)) * (1 - k);
+    camCtl.pitch *= 1 - k;
+  }
+}
+
 // ---------- vehicle visuals ----------
 function updateModel(dt) {
   const v = game.v, m = game.model;
   const waves = game.waves || 0;
   const t = performance.now() / 1000;
   let bob = 0, wavePitch = 0, waveRoll = 0;
-  if (v.spec.terrain === 'water') {
+  if (v.wet) {
     const amp = 0.08 + Math.min(1.2, waves) * 0.35;
     bob = Math.sin(t * 1.7) * amp; wavePitch = Math.sin(t * 1.3 + 1) * amp * 0.08; waveRoll = Math.sin(t * 1.1) * amp * 0.1;
   }
@@ -1848,11 +1917,21 @@ function updateModel(dt) {
   const ud = m.group.userData;
   if (ud.legs) {
     const sp = Math.abs(v.vf), amp = Math.min(0.9, sp / 6);
-    game.gait = (game.gait || 0) + dt * (4 + sp * 1.2);
-    for (const l of ud.legs) l.hip.rotation.x = Math.sin(game.gait + l.ph) * amp;
-    ud.tail.rotation.y = Math.sin(t * (sp > 1 ? 14 : 8)) * 0.6;
-    ud.head.position.y = 1.08 + Math.abs(Math.sin(game.gait)) * 0.05 * amp;
-    m.body.position.y = Math.abs(Math.sin(game.gait)) * 0.06 * amp;
+    game.gait = (game.gait || 0) + dt * (4 + sp * (ud.duck ? 2.2 : 1.2) + (v.wet ? 3 : 0)); // paddling is quick
+    for (const l of ud.legs) l.hip.rotation.x = Math.sin(game.gait + l.ph) * (v.wet ? 0.5 : amp);
+    if (ud.tail) ud.tail.rotation.y = Math.sin(t * (sp > 1 ? 14 : 8)) * 0.6;
+    if (ud.head) ud.head.position.y = 1.08 + Math.abs(Math.sin(game.gait)) * 0.05 * amp;
+    if (ud.duck) {
+      // on land the duck stands up on its legs and waddles side to side; afloat they're tucked under
+      const stand = v.wet && v.grounded !== false ? 0 : 0.85;
+      game.duckLift = (game.duckLift ?? stand) + (stand - (game.duckLift ?? stand)) * Math.min(1, dt * 6);
+      m.body.position.y = game.duckLift;
+      for (const l of ud.legs) l.hip.visible = game.duckLift > 0.3;
+      m.body.rotation.z = !v.wet ? Math.sin(game.gait) * 0.12 * Math.min(1, sp / 3) : 0;
+      // wings: out and flapping while it flies
+      const fly = v.flapping || (!v.grounded && !v.wet) || v.boatAir;
+      for (const wg of ud.wings) { wg.g.visible = fly; wg.g.rotation.z = fly ? wg.sx * (v.flapping ? Math.sin(t * 26) * 0.7 : 0.15) : 0; }
+    } else m.body.position.y = Math.abs(Math.sin(game.gait)) * 0.06 * amp - (v.wet ? 0.35 : 0); // a swimming dog sits low
   }
   if (v.kind === 'cart' && Math.abs(v.vf) > 1) m.body.rotation.z = Math.sin(t * 22) * 0.02; // that one wobbly wheel
   // brake lights
@@ -1860,7 +1939,7 @@ function updateModel(dt) {
   if (m.revM) m.revM.color.set(game.reversing ? '#ffffff' : '#55585c');
   if (m.headM) m.headM.color.set(sky.night > 0.4 ? '#ffffff' : '#fff6d8');
   // shadow
-  const g = v.spec.terrain === 'water' ? v.y : (v.road ? v.road.y : world.groundAt(v.x, v.z) ?? v.y);
+  const g = v.wet ? v.y : (v.road ? v.road.y : world.groundAt(v.x, v.z) ?? v.y);
   shadow.position.set(v.x, g + 0.06, v.z);
   shadow.rotation.y = -v.heading;
   shadow.material.opacity = 0.35 * Math.max(0, 1 - (v.y - g) / 8) * (1 - sky.night * 0.6);
@@ -1878,7 +1957,9 @@ const DEV_HOUR = DEV && params.get('hour') ? +params.get('hour') : null; // UTC 
 const TIMER = DEV && params.has('timer'); // testing in a background window, where animation frames are throttled
 function frame(now) {
   if (TIMER) setTimeout(() => frame(performance.now()), 16); else requestAnimationFrame(frame);
-  const dt = Math.min(0.1, (now - last) / 1000);
+  // a slow frame still counts in full (up to 1/4 s; physics runs in 1/60 s steps), so the game
+  // never drifts into slow motion while the speedometer shows the real speed
+  const dt = Math.min(0.25, (now - last) / 1000);
   last = now;
   if (game.state === 'watch-plane' || game.state === 'watch-ferry') { watchFrame(dt); return; }
   if (game.state !== 'driving' || !game.v) {
@@ -1897,10 +1978,11 @@ function frame(now) {
     const ux = v.vx / sp, uz = v.vz / sp;
     if (!world.isReady(v.x + ux * 250, v.z + uz * 250)) loadLimit = 7;
     else if (!world.isReady(v.x + ux * 550, v.z + uz * 550)) loadLimit = 14;
+    else if (sp > 25 && !world.isReady(v.x + ux * sp * 7, v.z + uz * sp * 7)) loadLimit = Math.max(25, sp * 0.9); // very fast: ease off until the map catches up
   }
   if ((game.limT = (game.limT || 0) + dt) > 0.3) { game.limT = 0; game.roadKmh = v.road ? world.speedLimitAt(v.x, v.z) : null; }
   const ctx = { world, grip: sky.grip(), wind: windVec(), loadLimit, traffic: traffic.density ? traffic : null, draft: game.style.draftOn, night: sky.night, roadLimit: game.roadKmh };
-  if (v.spec.terrain === 'water' && game.waves) ctx.grip *= Math.max(0.6, 1 - game.waves * 0.12);
+  if (v.wet && game.waves) ctx.grip *= Math.max(0.6, 1 - game.waves * 0.12);
   let acc = dt, moved = 0;
   const x0 = v.x, z0 = v.z;
   while (acc > 1e-4) {
@@ -1924,6 +2006,7 @@ function frame(now) {
   signs.update(dt, world, v);
   tickStunts(dt);
   tickTrees(dt);
+  tickDog(dt);
   tickPortal(dt);
   tickEngineSmoke(dt);
   tickFuel();
@@ -1931,6 +2014,10 @@ function frame(now) {
   tickActivity(dt);
   tickPassive(dt, moved);
   updateModel(dt);
+  // the speed you see is how far you really went this frame (after walls, trees and traffic have
+  // pushed back), smoothed: not the engine's idea of it. A big jump is the world re-centring.
+  { const net = Math.hypot(v.x - x0, v.z - z0); if (net < 60 && dt > 0) game.gs = (game.gs ?? net / dt) + (net / dt - (game.gs ?? net / dt)) * Math.min(1, dt * 6); }
+  tickCamCtl(dt, inp);
   updateCamera(dt);
   const env = sky.update(dt, game.lat, game.lon, camera, DEV_HOUR != null ? new Date(new Date().setUTCHours(DEV_HOUR, 0, 0)) : new Date());
   sound.update(v, { rain: env.raining ? 1 : 0 });
@@ -2100,7 +2187,7 @@ function tickStunts(dt) {
       }
     };
     for (const o of st.hoops) cross(o, 4.1, true, 'Through the hoop', 200, 'hoops');
-    if (v.spec.terrain === 'water') for (const o of st.gates) cross(o, o.half - 0.8, false, 'Buoy gate', 80, 'gates');
+    if (v.wet) for (const o of st.gates) cross(o, o.half - 0.8, false, 'Buoy gate', 80, 'gates');
   }
 }
 
@@ -2192,7 +2279,7 @@ function wallHit(at, impact) {
 }
 
 // Smoke from a damaged engine: wisps past half damage, thick and dark once it's wrecked.
-const ENGINE = { car: [1.6, 0.9], pickup: [1.9, 1.0], truck: [4.2, 1.3], moto: [0, 0.8], boat: [-2.8, 1.0], jetski: [1.1, 0.9] };
+const ENGINE = { demon: [1.6, 0.8], car: [1.6, 0.9], pickup: [1.9, 1.0], truck: [4.2, 1.3], moto: [0, 0.8], boat: [-2.8, 1.0], jetski: [1.1, 0.9] };
 function tickEngineSmoke(dt) {
   const v = game.v, at = ENGINE[v.kind];
   if (!at || v.damage < 55) return;
@@ -2210,7 +2297,7 @@ function tickEngineSmoke(dt) {
 function tickTrees(dt) {
   treeHits.update(dt);
   const v = game.v;
-  if (v.spec.terrain !== 'land' || !v.grounded) return;
+  if (v.spec.terrain === 'air' || v.wet || !v.grounded) return;
   const sp = Math.hypot(v.vx, v.vz);
   if (sp < 1.5) return;
   const ch = world.chunkAt(v.x, v.z);
@@ -2231,6 +2318,37 @@ function tickTrees(dt) {
   debris.leaves(tx, t.mat[o + 13], tz, t.mat[o], [t.col[h.k * 3], t.col[h.k * 3 + 1], t.col[h.k * 3 + 2]], Math.min(18, 6 + Math.round(sp)));
   sound.burst(0.18, 3200, 0.5); // the rustle
   if (fell) { setTimeout(() => sound.crash(5), 900); profile.stats.trees = (profile.stats.trees || 0) + 1; stylePop('Timber!', 60); }
+}
+
+// The dog, left standing by a tree for a while, sometimes lifts a leg on it.
+const puddles = [];
+function tickDog(dt) {
+  const v = game.v, m = game.model, ud = m?.group.userData;
+  for (const p of puddles) { p.t += dt; p.mesh.material.opacity = Math.max(0, 0.55 * (1 - p.t / 90)); p.mesh.scale.setScalar(Math.min(1, 0.3 + p.t * 0.4)); if (p.t > 90) p.mesh.visible = false; }
+  if (v.kind !== 'dog' || !ud?.legs) { game.peeT = 0; return; }
+  if (game.peeing) {
+    game.peeing.t += dt;
+    const leg = ud.legs[game.peeing.leg];
+    leg.hip.rotation.z = game.peeing.side * Math.min(1.1, game.peeing.t * 4) * (game.peeing.t > 2.6 ? Math.max(0, 1 - (game.peeing.t - 2.6) * 3) : 1);
+    if (game.peeing.t > 3) { leg.hip.rotation.z = 0; game.peeing = null; }
+    return;
+  }
+  const still = Math.hypot(v.vx, v.vz) < 0.3 && !v.wet;
+  const ch = still ? world.chunkAt(v.x, v.z) : null;
+  const near = ch?.treeHit ? ch.treeHit((v.x - ch.ox) / ch.sx, v.z - ch.oz, 2.2) : null;
+  game.peeT = near ? (game.peeT || 0) + dt : 0;
+  if (game.peeT > 5 && Math.random() < dt * 0.4) { // after a while, now and then
+    game.peeT = -20; // not again for a bit
+    const [fx, fz] = v.fwd(), side = Math.random() < 0.5 ? 1 : -1;
+    game.peeing = { t: 0, leg: side > 0 ? 3 : 2, side };
+    let p = puddles.find((q) => !q.mesh.visible);
+    if (!p) { if (puddles.length >= 6) p = puddles.shift(); else { const mesh = new THREE.Mesh(new THREE.CircleGeometry(0.45, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#e8c94a', transparent: true, opacity: 0.55, depthWrite: false })); scene.add(mesh); p = { mesh, t: 0 }; } puddles.push(p); }
+    const px = v.x - fz * side * 0.5 - fx * 0.4, pz = v.z + fx * side * 0.5 - fz * 0.4;
+    p.mesh.position.set(px, (world.groundAt(px, pz) ?? v.y) + 0.04, pz); p.t = 0; p.mesh.visible = true;
+    sound.hiss(2.4);
+    profile.stats.trees_marked = (profile.stats.trees_marked || 0) + 1;
+    if (profile.stats.trees_marked === 1) toast('🐕 …a very good dog. Mostly.', { ms: 3500 });
+  }
 }
 
 function tickStyle(dt, inp) {
@@ -2258,7 +2376,7 @@ function tickStyle(dt, inp) {
 const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences).';
 
 // ---------- boot ----------
-if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, radio, sound, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
+if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, radio, sound, camCtl, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
 pruneRaces();
 world.stuntMode = profile.settings.mode || 'explorer';
 document.body.dataset.mode = world.stuntMode;

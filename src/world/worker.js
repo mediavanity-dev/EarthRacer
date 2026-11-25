@@ -233,7 +233,16 @@ async function build({ x, y, opts }) {
     const wallC = shade(base, 0.92 + r * 0.12), lowC = shade(wallC, 0.86);
     const ws = church ? 1 : (tall ? 3 : industrial ? 4 : house ? 1 : 2) + (tall || industrial ? 0 : style.tint * 10);
     const shape = det?.s || null;
-    const shapeOk = outer.length >= 4 && outer.length <= 24 && bd.rings.length === 1 && !(bd.minHeight > 0);
+    // a pitched roof only on footprints a real one could sit on: convex, without many corners (an
+    // L-shaped or irregular building gets a flat roof, not a strange spike)
+    let convex = true;
+    for (let k = 0, sign = 0; k < outer.length && convex; k++) {
+      const [ax, ay] = outer[k], [bx, by] = outer[(k + 1) % outer.length], [qx, qy] = outer[(k + 2) % outer.length];
+      const cr = (bx - ax) * (qy - by) - (by - ay) * (qx - bx);
+      if (Math.abs(cr) < 1e-6) continue;
+      if (!sign) sign = Math.sign(cr); else if (Math.sign(cr) !== sign) convex = false;
+    }
+    const shapeOk = outer.length >= 4 && outer.length <= 8 && convex && bd.rings.length === 1 && !(bd.minHeight > 0);
     const pitched = shapeOk && shape !== 'flat' && (PITCHED.has(shape) || church || (!shape && house && outer.length <= 10 && rr() < style.pitched) || (!shape && ty && HOUSE_T.has(ty) && outer.length <= 12));
     const realRoof = colourOf(det?.rc) || hexRgb(ROOF_MATERIAL[det?.rm]);
     const roofC = realRoof || (pitched ? shade(pal(style.roofs, rr()), 0.95 + r * 0.1) : tall ? shade(base, 0.8) : shade([0.62, 0.62, 0.6], 0.9 + r * 0.2));
@@ -409,6 +418,13 @@ async function build({ x, y, opts }) {
     // every road vertex (edges and markings too) sits just above the ground right where it is: a road
     // across a slope tilts with it rather than its uphill edge sinking under the hillside
     const off = (p, sd, d, dy = 0) => { const x = p[0] + sd[0] * d, z = p[2] + sd[1] * d; return [x, Math.max(p[1], Hxz(x, z) + 0.1) + dy, z]; };
+    // paths are painted on the ground, except where they cross water (footbridges, causeways, boardwalks):
+    // there they get a deck you can see and use
+    if (flatPath) for (let k = 1; k < P.length; k++) {
+      if (!(rd.bridge || (maskAt(L[k - 1][0], L[k - 1][1]) & 1) || (maskAt(L[k][0], L[k][1]) & 1))) continue;
+      const a = P[k - 1], c = P[k], sa = side[k - 1], sc = side[k], ph = Math.max(1, hw);
+      quad(off(a, sa, -ph, 0.05), off(c, sc, -ph, 0.05), off(c, sc, ph, 0.05), off(a, sa, ph, 0.05), shade(PATHC, 0.92));
+    }
     if (!flatPath) for (let k = 1; k < P.length; k++) {
       const a = P[k - 1], c = P[k], sa = side[k - 1], sc = side[k];
       quad(off(a, sa, -hw), off(c, sc, -hw), off(c, sc, hw), off(a, sa, hw), cl);
@@ -518,7 +534,22 @@ async function build({ x, y, opts }) {
   const maxTrees = opts.maxTrees || 4000;
   const evergreenShare = Math.abs(latc) > 55 ? 0.6 : 0.22;
   const blockers = footprints.map((f) => ({ rings: [f.ring], bb: f.bb }));
-  const blocked = (px, py) => onWay(px, py) || (maskAt(px, py) & 1) || blockers.some((o) => px >= o.bb.x0 && px <= o.bb.x1 && py >= o.bb.y0 && py <= o.bb.y1 && insidePoly(px, py, o.rings));
+  const inBuilding = (px, py) => blockers.some((o) => px >= o.bb.x0 && px <= o.bb.x1 && py >= o.bb.y0 && py <= o.bb.y1 && insidePoly(px, py, o.rings));
+  const blocked = (px, py) => onWay(px, py) || (maskAt(px, py) & 1) || inBuilding(px, py);
+  // the real, individually mapped trees first (street trees, park trees, orchards), right where they
+  // stand; a park that has its trees mapped doesn't get made-up ones as well
+  const realT = opts.detail?._trees || [];
+  const tiles = 2 ** CHUNK_Z, cellPx = 40 / mPerPx, realCells = new Set();
+  const pxOfLon = (lon) => (((lon + 180) / 360) * tiles - x) * E;
+  const pyOfLat = (lat) => { const r = (lat * Math.PI) / 180; return (((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * tiles - y) * E; };
+  const rrT = rng(seed ^ 0x7a11);
+  for (let i = 0; i < realT.length && blobs.length + cones.length < maxTrees; i += 3) {
+    const px = pxOfLon(realT[i + 1]), py = pyOfLat(realT[i]);
+    if (px < 0 || py < 0 || px >= E || py >= E || (maskAt(px, py) & 1) || onWay(px, py) || inBuilding(px, py)) continue; // never in the roadway
+    const needle = realT[i + 2] === 1;
+    (needle ? cones : blobs).push(treeInstance(X(px), H(px, py), Z(py), 1.8 + rrT() * 2.2, needle ? 'evergreen-needle' : 'deciduous', season, rrT));
+    realCells.add(`${Math.floor(px / cellPx)},${Math.floor(py / cellPx)}`);
+  }
   for (let ai = 0; ai < fabric.areas.length && blobs.length + cones.length < maxTrees; ai++) {
     const a = fabric.areas[ai];
     const dens = DENS[a.cls];
@@ -532,6 +563,7 @@ async function build({ x, y, opts }) {
     for (let k = 0, tries = 0; k < n && tries < n * 4; tries++) {
       const px = bb.x0 + rr() * (bb.x1 - bb.x0), py = bb.y0 + rr() * (bb.y1 - bb.y0);
       if (!insidePoly(px, py, a.rings) || blocked(px, py)) continue;
+      if ((a.cls === 'park' || a.cls === 'cemetery') && realCells.has(`${Math.floor(px / cellPx)},${Math.floor(py / cellPx)}`)) continue; // mapped trees here already
       const small = a.cls === 'scrub';
       const radius = small ? 0.9 + rr() * 0.9 : 2 + rr() * 2.4;
       const evergreen = !small && a.cls === 'wood' && rr() < evergreenShare;

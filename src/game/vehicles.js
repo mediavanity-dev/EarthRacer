@@ -39,8 +39,8 @@ export const VEHICLES = {
   },
   dog: {
     name: 'Dog', icon: '🐕', top: 25, accel: 4, brake: 10, grip: 10, wheelbase: 1, steer: 0.85, radius: 0.6,
-    fuel: 0, use: 0, terrain: 'land', offroadK: 1, offroadTop: 25, sound: 'dog', camDist: 5, camH: 2, mass: 0.2, feat: true, tough: 0.9,
-    about: 'A very good dog that runs as fast as a car. Never needs fuel.',
+    fuel: 0, use: 0, terrain: 'land', amphibious: true, waterK: 0.14, offroadK: 1, offroadTop: 25, sound: 'dog', camDist: 5, camH: 2, mass: 0.2, feat: true, tough: 0.9,
+    about: 'A very good dog that runs as fast as a car, paddles slowly through water and barks on the horn. Never needs fuel.',
     unlock: { what: 'Drive 1,000 miles (1,609 km)', key: 'km', n: 1609 },
   },
   cart: {
@@ -50,22 +50,28 @@ export const VEHICLES = {
     unlock: { what: 'Grab 50 stunt stars', key: 'stars', n: 50 },
   },
   duck: {
-    name: 'Rubber duck', icon: '🦆', top: 12, accel: 1.8, brake: 2, grip: 2.5, wheelbase: 2, steer: 0.6, radius: 1.2,
-    fuel: 0, use: 0, terrain: 'water', offroadTop: 0, sound: 'duck', camDist: 7, camH: 3, mass: 0.5, feat: true, tough: 0.4,
-    about: 'A giant rubber duck. Squeaks when you sound the horn.',
+    name: 'Rubber duck', icon: '🦆', top: 34, accel: 5.5, brake: 4, grip: 3.2, wheelbase: 2, steer: 0.7, radius: 1.2,
+    fuel: 0, use: 0, terrain: 'water', amphibious: true, landK: 0.32, flaps: true, noLimit: true, offroadTop: 11, sound: 'duck', camDist: 7.5, camH: 3, mass: 0.5, feat: true, tough: 0.4,
+    about: 'A giant rubber duck: about 120 km/h on water, waddles about on land, flaps to fly short hops (hold the handbrake) and quacks on the horn.',
     unlock: { what: 'Steer through 20 buoy gates', key: 'gates', n: 20 },
   },
   para: {
     name: 'Paramotor', icon: '🪂', top: 13, accel: 1.4, brake: 2, grip: 6, wheelbase: 2, steer: 0.5, radius: 1.2,
     fuel: 12, use: 0.11, terrain: 'air', offroadTop: 13, sound: 'para', camDist: 11, camH: 4.5, mass: 0.3, tough: 1.3,
     about: 'A powered paraglider: about 40 km/h, up to 150 m above the ground. Take off from a park or open field; the real wind pushes you about.',
-    unlock: { what: 'Finish 3 daily races', key: 'races', n: 3 },
+    unlock: { what: 'Finish a daily race', key: 'races', n: 1 },
   },
   boat: {
     name: 'Speedboat', icon: '🚤', top: 20, accel: 2.2, brake: 2.5, grip: 2.2, wheelbase: 4, steer: 0.5, radius: 2,
     fuel: 150, use: 0.5, terrain: 'water', offroadTop: 0, sound: 'boat', camDist: 10, camH: 4, mass: 1.5, tough: 0.8,
     about: 'Real top speed about 70 km/h. Water only. Summon it at a shore.',
     unlock: { what: 'Reach the water\'s edge (river, lake or sea)', key: 'shore', n: 1 },
+  },
+  demon: {
+    name: 'Speed Demon', icon: '😈', top: 89.4, accel: 7.5, brake: 12, grip: 9.5, wheelbase: 2.6, steer: 0.5, radius: 1.6,
+    fuel: 70, use: 0.14, terrain: 'land', offroadK: 0.55, offroadTop: 9, sound: 'demon', camDist: 8.5, camH: 2.7, mass: 1.1, tough: 1, noLimit: true,
+    about: 'No speed limits anywhere and a 200 mph (320 km/h) top speed. Hard to keep on the road. Only the map loading ahead can hold it back.',
+    unlock: { what: 'Drive 300 km', key: 'km', n: 300 },
   },
   jetski: {
     name: 'Jet ski', icon: '🌊', top: 18, accel: 3.6, brake: 3, grip: 3.4, wheelbase: 2.2, steer: 0.75, radius: 1.0,
@@ -79,14 +85,14 @@ export const VEHICLES = {
     about: 'Emergency only: never needs fuel, but 35 km/h at best, and it crawls once the sun is down.',
   },
 };
-export const VEHICLE_ORDER = ['bike', 'car', 'pickup', 'moto', 'truck', 'boat', 'jetski', 'para', 'solar', 'dog', 'cart', 'duck'];
+export const VEHICLE_ORDER = ['bike', 'car', 'pickup', 'moto', 'demon', 'truck', 'boat', 'jetski', 'para', 'solar', 'dog', 'cart', 'duck'];
 
 // How each vehicle compares, 0..1, for the Garage (what you actually get in the game, under the cap).
 export function ratings(k) {
   const s = VEHICLES[k];
   const air = s.terrain === 'air', water = s.terrain === 'water';
   return {
-    speed: Math.min(s.top, SPEED_CAP) / SPEED_CAP,
+    speed: s.noLimit ? 1 : Math.min(s.top, SPEED_CAP) / SPEED_CAP,
     accel: Math.min(1, s.accel / 5),
     handling: water || air ? Math.min(1, s.grip / 10) * 0.6 : Math.min(1, 0.5 * Math.min(1, s.grip / 10) + 0.5 * Math.min(1, s.steer / s.wheelbase / 0.6)),
     tough: Math.min(1, 0.45 / (s.tough ?? 1)),
@@ -240,6 +246,18 @@ export function buildModel(kind, color = '#d23a2e') {
     const headM2 = new THREE.Mesh(new THREE.SphereGeometry(0.8, 16, 12), yellow); headM2.position.set(0, 2.0, -1.0); body.add(headM2);
     const beak = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.22, 0.7), orange); beak.position.set(0, 1.85, -1.85); body.add(beak);
     for (const sx of [-0.4, 0.4]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), eye); e.position.set(sx, 2.2, -1.65); body.add(e); }
+    // legs for land: thin orange legs and big flat feet, swinging as it waddles (hidden afloat)
+    const legs = [];
+    for (const [x, ph] of [[-0.55, 0], [0.55, Math.PI]]) {
+      const hip = new THREE.Group(); hip.position.set(x, 0.1, 0.2);
+      hip.add(box(0.16, 0.9, 0.16, orange, 0, -0.45, 0));
+      hip.add(box(0.55, 0.08, 0.75, orange, 0, -0.9, -0.2));
+      body.add(hip); legs.push({ hip, ph });
+    }
+    group.userData.legs = legs; group.userData.duck = true;
+    const wings = [];
+    for (const sx of [-1, 1]) { const wg = new THREE.Group(); wg.position.set(sx * 1.25, 0.9, 0.2); const f = box(1.3, 0.12, 1.1, yellow, sx * 0.6, 0, 0); wg.add(f); wg.visible = false; body.add(wg); wings.push({ g: wg, sx }); }
+    group.userData.wings = wings;
   } else if (kind === 'para') {
     // the wing: an arc of cells above the pilot, lines down to a harness, a caged propeller behind
     const wingM = lam(color, { side: THREE.DoubleSide }), wingB = lam('#f4f1ea', { side: THREE.DoubleSide });
@@ -263,6 +281,20 @@ export function buildModel(kind, color = '#d23a2e') {
     cage.position.set(0, 1.15, 0.55); body.add(cage);
     const prop = box(1.3, 0.12, 0.04, dark, 0, 1.15, 0.5); body.add(prop);
     wheels.push({ mesh: prop, front: false, r: 0.05, prop: true });
+  } else if (kind === 'demon') {
+    // a low wedge with a big rear wing
+    body.add(box(1.96, 0.46, 4.5, paint, 0, 0.5, 0));
+    body.add(box(1.7, 0.34, 1.7, glass, 0, 0.88, 0.35));
+    body.add(box(1.9, 0.12, 1.2, paint, 0, 0.78, -1.55));
+    body.add(box(0.25, 0.48, 4.52, lam('#c8102e'), 0, 0.52, 0));          // the stripe
+    body.add(box(2.0, 0.08, 0.5, dark, 0, 1.22, 2.05), box(0.08, 0.42, 0.3, dark, -0.8, 0.98, 2.05), box(0.08, 0.42, 0.3, dark, 0.8, 0.98, 2.05)); // wing
+    body.add(box(1.98, 0.14, 0.1, dark, 0, 0.3, -2.26));                   // splitter
+    body.add(box(0.46, 0.08, 0.06, headM, -0.66, 0.6, -2.26), box(0.46, 0.08, 0.06, headM, 0.66, 0.6, -2.26));
+    body.add(box(0.5, 0.1, 0.06, tailM, -0.62, 0.62, 2.26), box(0.5, 0.1, 0.06, tailM, 0.62, 0.62, 2.26));
+    body.add(box(0.14, 0.1, 0.06, revM, -0.2, 0.62, 2.26), box(0.14, 0.1, 0.06, revM, 0.2, 0.62, 2.26));
+    for (const [x, z, front] of [[-0.9, -1.4, true], [0.9, -1.4, true], [-0.9, 1.4, false], [0.9, 1.4, false]]) {
+      const w = wheel(0.36, 0.32, tyre); w.position.set(x, 0.36, z); group.add(w); wheels.push({ mesh: w, front, r: 0.36 });
+    }
   } else if (kind === 'jetski') {
     // a short, chunky hull with a seat, handlebars and a rider standing up a little
     const hull = new THREE.BufferGeometry();
@@ -309,7 +341,7 @@ export function buildModel(kind, color = '#d23a2e') {
 
 // ---------- how damage looks: knocked panels and grime, put right by a repair ----------
 const SOOT = new THREE.Color('#3a3631');
-const DENTS = new Set(['car', 'truck', 'pickup', 'moto', 'boat', 'jetski', 'solar', 'cart', 'para']);
+const DENTS = new Set(['car', 'demon', 'truck', 'pickup', 'moto', 'boat', 'jetski', 'solar', 'cart', 'para']);
 export function prepDamage(m, kind) {
   const mats = new Set(), panels = [];
   m.body.traverse((o) => { if (o.isMesh && o.material?.isMeshLambertMaterial) { mats.add(o.material); if (o.geometry.type === 'BoxGeometry') panels.push(o); } });
