@@ -91,7 +91,7 @@ export class Sound {
   loadSamples(ctx) {
     this.samples = {};
     const base = import.meta.env.BASE_URL || './';
-    for (const name of ['horn', 'bark', 'quack']) {
+    for (const name of ['horn', 'bark']) {
       fetch(`${base}sounds/${name}.mp3`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject())).then((b) => ctx.decodeAudioData(b)).then((buf) => { if (this.ctx === ctx) this.samples[name] = buf; }).catch(() => {});
     }
   }
@@ -171,21 +171,38 @@ export class Sound {
   checkpoint() { this.tone([880, 1175], 0.1, 'square', 0.07); }
   fail() { this.tone([330, 247], 0.18, 'sawtooth', 0.08); }
   horn(rate = 1) { if (!this.sample('horn', 0.7, rate)) this.tone([392, 494], 0.35, 'square', 0.08); }
-  bell() { this.tone([1568, 1568], 0.12, 'sine', 0.12); }
+  /** A bicycle bell: two quick strikes of a small brass dome (bright, inharmonic partials that ring on). */
+  bell() {
+    if (!this.ctx) return;
+    const strike = (at, level) => {
+      const ctx = this.ctx, t = ctx.currentTime + at;
+      for (const [ratio, amp, decay] of [[1, 1, 0.9], [1.51, 0.55, 0.6], [2.27, 0.35, 0.45], [3.13, 0.2, 0.3], [4.06, 0.12, 0.2]]) {
+        const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 2400 * ratio;
+        const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.09 * amp * level, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+        o.connect(g).connect(this.master); o.start(t); o.stop(t + decay + 0.05);
+      }
+    };
+    strike(0, 1); strike(0.16, 0.85); // ring-ring
+  }
   bark() { if (!this.sample('bark', 0.85)) { this.tone([520, 380], 0.09, 'sawtooth', 0.12); setTimeout(() => this.tone([560, 400], 0.09, 'sawtooth', 0.1), 180); } }
   squeak() { this.tone([1900, 2400, 1700], 0.07, 'sine', 0.1); }
-  /** A duck's quack: a nasal, falling buzz, twice. */
+  /** A cartoon quack: a buzzy, nasal, kazoo-like "WAK" that drops in pitch, with a wobble. */
   quack() {
-    if (!this.ctx || this.sample('quack', 0.9)) return;
-    const one = (at) => {
-      const ctx = this.ctx, t = ctx.currentTime + at;
-      const o = ctx.createOscillator(); o.type = 'sawtooth';
-      o.frequency.setValueAtTime(620, t); o.frequency.exponentialRampToValueAtTime(380, t + 0.16);
-      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 3;
-      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
-      o.connect(f).connect(g).connect(this.master); o.start(t); o.stop(t + 0.2);
-    };
-    one(0); one(0.22);
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(330, t); o.frequency.linearRampToValueAtTime(420, t + 0.04); o.frequency.exponentialRampToValueAtTime(240, t + 0.26);
+    const wob = ctx.createOscillator(); wob.frequency.value = 32; const wg = ctx.createGain(); wg.gain.value = 18; wob.connect(wg).connect(o.frequency);
+    const sq = ctx.createOscillator(); sq.type = 'square'; sq.frequency.setValueAtTime(165, t); sq.frequency.exponentialRampToValueAtTime(120, t + 0.26);
+    const mix = ctx.createGain(); mix.gain.value = 1; o.connect(mix); const sg = ctx.createGain(); sg.gain.value = 0.35; sq.connect(sg).connect(mix);
+    // the "nose": two narrow resonances, then a little grit
+    const f1 = ctx.createBiquadFilter(); f1.type = 'bandpass'; f1.frequency.value = 1050; f1.Q.value = 6;
+    const f2 = ctx.createBiquadFilter(); f2.type = 'bandpass'; f2.frequency.value = 2600; f2.Q.value = 8;
+    const sh = ctx.createWaveShaper(), c = new Float32Array(256); for (let k = 0; k < 256; k++) { const x = k / 127.5 - 1; c[k] = Math.tanh(x * 3); } sh.curve = c;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.02); g.gain.setValueAtTime(0.5, t + 0.14); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+    const out = ctx.createGain(); out.gain.value = 0.55;
+    mix.connect(f1).connect(sh); mix.connect(f2).connect(sh); sh.connect(g).connect(out).connect(this.master);
+    for (const n of [o, wob, sq]) { n.start(t); n.stop(t + 0.3); }
   }
   /** Water on a tree: a soft hiss. */
   hiss(dur = 2.2) { this.burst(0.06, 5000, dur); }

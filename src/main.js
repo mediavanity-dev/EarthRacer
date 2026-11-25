@@ -4,14 +4,14 @@
 import * as THREE from 'three';
 import { World } from './world/world.js';
 import { Sky } from './world/sky.js';
-import { VehicleState } from './game/physics.js';
+import { VehicleState, cheats } from './game/physics.js';
 import { VEHICLES, VEHICLE_ORDER, SPEED_CAP, buildModel, ratings, prepDamage, dent, grime, repairLook, flashHit, animateDamage } from './game/vehicles.js';
 import { Traffic } from './game/traffic.js';
 import { jobsFor, jobTime, jobReward, raceFor, isLandmark, isFuel, pruneRaces } from './game/activities.js';
 import { RANDOM_PLACES } from './game/places.js';
 import { MODES, BOARD_RADIUS, estimate, newTrip, progress, positionAt, fmtDuration } from './game/trips.js';
 import { TripMap } from './ui/tripmap.js';
-import { BADGES, count as featCount } from './game/feats.js';
+import { BADGES, PAINTS, count as featCount } from './game/feats.js';
 import { PlaneView } from './world/planeView.js';
 import { startGame, GAMES, rivalTarget } from './ui/minigames.js';
 import { profile, save, flush, resetProfile, randomLeft, nextWeekReset, RANDOM_PER_WEEK } from './game/profile.js';
@@ -80,7 +80,8 @@ const radio = new Radio((msg) => {
   const st = radio.station, el = $('#radio');
   sound.setDuck(!!st);
   el.hidden = !st;
-  if (st) el.innerHTML = `📻 <span>${esc(st.name)}</span> <button id="r-off" title="Radio off">✕</button>`;
+  // in a random placement the station's name would give the game away: it stays hidden until you guess
+  if (st) el.innerHTML = `📻 <span>${profile.random.active ? 'Local station' : esc(st.name)}</span> <button id="r-off" title="Radio off">✕</button>`;
   if (msg) toast(`📻 ${esc(msg)}`);
   const off = el.querySelector('#r-off'); if (off) off.onclick = () => radio.stop();
   nowPlaying();
@@ -93,7 +94,7 @@ function nowPlaying() {
   const st = radio.station, hidden = !!profile.random.active;
   try {
     ms.metadata = new MediaMetadata({
-      title: st ? st.name : 'EarthRacer',
+      title: st ? (hidden ? 'Local station' : st.name) : 'EarthRacer',
       artist: hidden ? 'Somewhere on Earth' : [game.place, game.country].filter(Boolean).join(', ') || 'EarthRacer',
       album: st ? 'EarthRacer radio' : 'EarthRacer',
       artwork: [{ src: 'icon-512.png', sizes: '512x512', type: 'image/png' }],
@@ -102,11 +103,10 @@ function nowPlaying() {
     ms.setActionHandler('pause', () => radio.stop());
     ms.setActionHandler('stop', () => radio.stop());
     ms.setActionHandler('play', () => radio.next(game.country || 'US'));
-    ms.setActionHandler('nexttrack', () => { if (!profile.random.active) radio.next(game.country || 'US'); });
+    ms.setActionHandler('nexttrack', () => radio.next(game.country || 'US'));
   } catch { /* older browsers */ }
 }
 function radioNext() {
-  if (profile.random.active) { toast("📻 No radio until you've guessed: it would give the game away."); return; }
   userGesture();
   radio.next(game.country || 'US');
 }
@@ -154,7 +154,8 @@ function spawnVehicle(kind, x, z, heading) {
   game.v.fuel = profile.fuel[kind] ?? VEHICLES[kind].fuel;
   game.v.damage = profile.damage[kind] ?? 0;
   if (prev) { game.v.y = prev.y; }
-  game.model = buildModel(kind, kind === 'bike' ? '#2f6fb0' : kind === 'truck' ? '#2f6fb0' : kind === 'demon' ? '#16171a' : '#d23a2e');
+  const paint = profile.paint?.[kind] && profile.paints?.[profile.paint[kind]] ? PAINTS[profile.paint[kind]].color : null;
+  game.model = buildModel(kind, paint || (kind === 'bike' ? '#2f6fb0' : kind === 'truck' ? '#2f6fb0' : kind === 'demon' ? '#16171a' : '#d23a2e'));
   scene.add(game.model.group);
   // a damaged vehicle still looks it when it comes back
   prepDamage(game.model, kind);
@@ -327,6 +328,19 @@ function userGesture() {
   }
 }
 
+// A new day of play: counts towards the "days played" feats, and the streak if it was yesterday too.
+function markDay() {
+  const d = new Date(), key = d.toISOString().slice(0, 10);
+  const st = profile.stats;
+  if (st.lastDay === key) return;
+  const y = new Date(d.getTime() - 864e5).toISOString().slice(0, 10);
+  st.streak = st.lastDay === y ? (st.streak || 0) + 1 : 1;
+  st.bestStreak = Math.max(st.bestStreak || 0, st.streak);
+  st.days = (st.days || 0) + 1; st.lastDay = key;
+  save();
+  if (st.streak >= 2) toast(`🔥 Day ${st.streak} in a row. Keep it going!`, { ms: 3500 });
+}
+
 function firstStart(lat, lon) {
   profile.pos = { lat, lon, heading: 0, kind: 'car', at: Date.now() };
   save(true);
@@ -350,7 +364,6 @@ function startRandom() {
   const d = 300 + Math.random() * 1700, a = Math.random() * Math.PI * 2;
   const g = offsetGeo(la, lo, Math.sin(a) * d, Math.cos(a) * d);
   profile.random.uses.push(Date.now());
-  if (radio.station) radio.stop("No radio until you've guessed: it would give the game away."); // the station would say where you are
   profile.random.active = { lat: g.lat, lon: g.lon, start: Date.now(), km0: profile.stats.km };
   profile.pos = { lat: g.lat, lon: g.lon, heading: Math.random() * Math.PI * 2, kind: VEHICLES[game.v?.kind]?.terrain === 'water' ? 'car' : (game.v?.kind || profile.pos?.kind || 'car'), at: Date.now() };
   if (game.activity) endActivity(null);
@@ -391,6 +404,7 @@ async function begin(lat, lon, heading, kind, { snap = false, teleport = false, 
   }
   spawnVehicle(kind, p.x, p.z, heading);
   game.state = 'driving';
+  markDay();
   hideOverlay();
   $('#hud').hidden = false;
   resize();
@@ -409,7 +423,7 @@ async function begin(lat, lon, heading, kind, { snap = false, teleport = false, 
 function setCountry(w, lat, lon) {
   if (w?.cc) {
     // the radio follows you: a new country means that country's stations
-    if (radio.station && radio.cc && radio.cc !== w.cc && !profile.random.active) radio.next(w.cc);
+    if (radio.station && radio.cc && radio.cc !== w.cc) radio.next(w.cc);
     game.country = w.cc; game.side = drivingSide(w.cc); game.mph = usesMph(w.cc); game.place = w.place;
     traffic.side = game.side;
   }
@@ -483,6 +497,7 @@ const HORN_ICON = { dog: '🐕', duck: '🦆', bike: '🔔', cart: '🔔' };
 // Seven quick taps on the speed while stopped open an unlabelled box; the right phrase unlocks every
 // vehicle, tops up coins and resets the week's random placements. Only a hash of the phrase is in
 // the code (the repo is public).
+const NODAMAGE_HASH = '784b61a9288c8997518588c8b598614534d6ca0ac00ad67eb120cfb8df013d0f'; // also unlocks everything, and toggles no-damage
 const UNLOCK_HASH = '70136d52dd9119ae293897bbfc35454bca1896ba81c70aeb5cf10de1c290bd47';
 async function sha256(text) {
   if (crypto?.subtle) return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -502,11 +517,17 @@ $('#speed').addEventListener('pointerdown', () => {
   const go = async () => {
     const h = await sha256(o.querySelector('#dv').value.trim().toLowerCase().replace(/\s+/g, ' '));
     close();
-    if (h !== UNLOCK_HASH) return; // a wrong phrase just closes the box
+    if (h !== UNLOCK_HASH && h !== NODAMAGE_HASH) return; // a wrong phrase just closes the box
     for (const k of VEHICLE_ORDER) profile.unlocked[k] = true;
     profile.coins += 10000; profile.random.uses = []; profile.dev = true;
+    let extra = '';
+    if (h === NODAMAGE_HASH) {
+      profile.settings.noDamage = !profile.settings.noDamage; cheats.noDamage = profile.settings.noDamage;
+      if (cheats.noDamage) { game.v.damage = 0; game.dmgShown = 0; repairLook(game.model); }
+      extra = cheats.noDamage ? ' 🛡️ No-damage mode on: nothing gets wrecked.' : ' 🛡️ No-damage mode off.';
+    }
     save(true); refreshHud(); sound.chime();
-    toast('🔓 Everything unlocked: all vehicles, +10,000 coins, random placements reset.', { ms: 6000 });
+    toast(`🔓 Everything unlocked: all vehicles, +10,000 coins, random placements reset.${extra}`, { ms: 6500 });
   };
   o.querySelector('#dvok').onclick = go;
   o.querySelector('#dv').onkeydown = (e) => { if (e.key === 'Enter') go(); };
@@ -702,8 +723,11 @@ function checkUnlocks() {
   profile.feats ||= {};
   for (const b of BADGES) {
     if (profile.feats[b.id] || featCount(b.key, profile) < b.n) continue;
-    profile.feats[b.id] = Date.now(); save();
-    sound.chime(); toast(`🏆 Feat: <b>${b.icon} ${b.name}</b> · ${esc(b.what)}`, { ms: 5000 });
+    profile.feats[b.id] = Date.now();
+    if (b.reward) profile.coins += b.reward;
+    if (b.paint) (profile.paints ||= {})[b.paint] = true;
+    save();
+    sound.chime(); toast(`🏆 Feat: <b>${b.icon} ${b.name}</b> · ${esc(b.what)}${b.reward ? ` · +${b.reward.toLocaleString()} coins` : ''}${b.paint ? `<br>🎨 New paint job: <b>${PAINTS[b.paint].name}</b> (pick it in the Garage)` : ''}`, { ms: 7000 });
   }
 }
 
@@ -873,7 +897,7 @@ function hudFrame() {
   const why = v.limitWhy;
   const limitV = v.limit * 3.6 / (game.mph ? 1.609 : 1);
   const posted = game.roadKmh ? `limit ${Math.round(game.mph ? game.roadKmh / 1.609 / 5 : game.roadKmh / 5) * 5}` : '';
-  if (v.kind === 'para') { $('#limit').textContent = `${v.flying ? `altitude ${Math.round(game.mph ? (v.y - (world.groundAt(v.x, v.z) ?? v.y)) * 3.281 : v.y - (world.groundAt(v.x, v.z) ?? v.y))} ${game.mph ? 'ft' : 'm'}` : 'on the ground'}${v.limitWhy ? ` · ${v.limitWhy}` : ''}`; } else
+  if (v.spec.terrain === 'air') { $('#limit').textContent = `${v.flying ? `altitude ${Math.round(game.mph ? (v.y - (world.groundAt(v.x, v.z) ?? v.y)) * 3.281 : v.y - (world.groundAt(v.x, v.z) ?? v.y))} ${game.mph ? 'ft' : 'm'}` : 'on the ground'}${v.limitWhy ? ` · ${v.limitWhy}` : ''}`; } else
   $('#limit').textContent = why && (Math.abs(v.vf) > v.limit * 0.85 || why === 'map loading ahead' || why === 'out of fuel' || why.startsWith('wrecked')) ? `${why} · max ${Math.round(limitV)}` : posted;
   const fb = $('#fuelbar');
   fb.hidden = !v.spec.fuel;
@@ -904,7 +928,13 @@ function renderTab(tab, body) {
   const ch = world.chunkAt(v.x, v.z);
   if (tab === 'garage') {
     body.innerHTML = `<h3>Summon a vehicle</h3><p class="note">It turns up right where you are. Better vehicles are earned. Speeds are real-world: up to the posted limit plus 10 mph where the map knows it, otherwise ${game.mph ? `${Math.round(SPEED_CAP * 3.6 / 1.609)} mph` : `${Math.round(SPEED_CAP * 3.6)} km/h`}.</p><div class="list" id="vl"></div>
+      ${Object.keys(profile.paints || {}).length ? `<h3>🎨 Paint jobs</h3><p class="note">Earned with the biggest feats. For your ${esc(VEHICLES[v.kind].name.toLowerCase())}:</p><div class="chips" id="paints"><button class="chip" data-p="">Factory</button>${Object.keys(profile.paints).map((k) => `<button class="chip" data-p="${k}" style="border-color:${PAINTS[k].color}">${PAINTS[k].name}</button>`).join('')}</div>` : ''}
       <h3>Service</h3><div class="list" id="svc"></div>`;
+    body.querySelectorAll('#paints .chip').forEach((b) => b.onclick = () => {
+      (profile.paint ||= {})[v.kind] = b.dataset.p || null; save();
+      const { x, z, heading } = game.v; storeVehicle(); spawnVehicle(v.kind, x, z, heading); game.v.init = false;
+      toast(`🎨 ${b.dataset.p ? PAINTS[b.dataset.p].name : 'Factory'} paint.`); openPanel('garage');
+    });
     const vl = body.querySelector('#vl');
     for (const k of VEHICLE_ORDER) {
       const s = VEHICLES[k], open = profile.unlocked[k] || s.always;
@@ -1215,7 +1245,21 @@ function summon(kind) {
   const s = VEHICLES[kind];
   let x = v.x, z = v.z, h = v.heading;
   if (v.flying) { toast('🪂 Land first.'); return; }
-  if (s.terrain === 'air') {
+  if (s.glider) {
+    // a hang glider launches from a hilltop: a spot well above its surroundings, facing downhill
+    const g0 = (px, pz) => world.groundAt(px, pz) ?? 0;
+    let best = null;
+    for (let r = 0; r <= 400; r += 25) for (let a = 0; a < (r ? 16 : 1); a++) {
+      const px = x + Math.cos(a / 16 * 6.283) * r, pz = z + Math.sin(a / 16 * 6.283) * r;
+      if (!world.isReady(px, pz) || world.isWater(px, pz) || world.collide(px, pz, 2)) continue;
+      const h = g0(px, pz);
+      let drop = 0, dir = 0;
+      for (let b = 0; b < 16; b++) { const dx = Math.sin(b / 16 * 6.283), dz = -Math.cos(b / 16 * 6.283); const d = h - g0(px + dx * 300, pz + dz * 300); if (d > drop) { drop = d; dir = b / 16 * 6.283; } }
+      if (drop >= 25 && (!best || drop > best.drop)) best = { x: px, z: pz, drop, dir };
+    }
+    if (!best) { toast('🪁 Launch from a hilltop: get somewhere with a slope at least 25 m high below you.', { ms: 5000 }); return; }
+    x = best.x; z = best.z; h = best.dir;
+  } else if (s.terrain === 'air') {
     // take off only from a park or open field, with room to run
     const ok = (px, pz) => world.isOpen(px, pz) && [[6, 0], [-6, 0], [0, 6], [0, -6]].every(([dx, dz]) => world.isOpen(px + dx, pz + dz));
     const spot = searchAround(x, z, 300, ok);
@@ -1254,6 +1298,7 @@ function summon(kind) {
   game.v.init = false;
   toast(`${s.icon} ${s.name} summoned.`);
   if (VEHICLES[kind].terrain === 'water') updateWaves();
+  if (kind === 'glider') toast(isTouch ? 'Hold GAS to run down the slope and launch. GAS dives, BRAKE slows, steer to turn. Wind into a slope lifts you.' : 'Hold W to run down the slope and launch. W dives, S slows, A/D turn. Wind into a slope lifts you.', { ms: 8000 });
   if (kind === 'para') toast(isTouch ? 'Hold GAS to run and take off. GAS climbs, BRAKE sinks, steer to bank. Ease off to land.' : 'Hold W to run and take off. W climbs, S sinks, A/D bank. Ease off to land.', { ms: 8000 });
 }
 function searchAround(x, z, maxR, ok) {
@@ -1754,6 +1799,7 @@ async function revealPlacement() {
   profile.random.history.push({ at: Date.now(), where, cc: truth?.cc || '', guess: g ? g.name.split(',').slice(0, 2).join(',') : 'gave up', km: Number.isFinite(km) ? km : 0, points, drove });
   if (profile.random.history.length > 50) profile.random.history.shift();
   profile.random.active = null;
+  radio.onChange(); // the station's name can be shown now
   profile.coins += Math.round(points / 20);
   if (truth?.cc && !profile.atlas.countries.includes(truth.cc)) profile.atlas.countries.push(truth.cc);
   save(true);
@@ -1912,8 +1958,11 @@ function updateModel(dt) {
   }
   for (const w of m.wheels) {
     if (w.prop) { w.mesh.rotation.z = v.spin; continue; }
+    // steer first, then roll about the wheel's own axle (the other order spun the wheel around a
+    // tilted axis when steering: the wobble)
+    w.mesh.rotation.order = 'YXZ';
     w.mesh.rotation.x = -v.spin * (0.34 / w.r);
-    if (w.front) w.mesh.rotation.y = -v.steer * v.spec.steer * 0.8;
+    w.mesh.rotation.y = w.front ? -v.steer * v.spec.steer * 0.8 : 0;
   }
   // the dog: a running gait (legs swing faster the faster it goes) and a wagging tail
   const ud = m.group.userData;
@@ -1993,6 +2042,7 @@ function frame(now) {
   }
   moved = Math.hypot(v.x - x0, v.z - z0);
   profile.stats.km += moved / 1000;
+  if (moved > 0.01 || Math.abs(v.vf) > 0.5) profile.stats.playS = (profile.stats.playS || 0) + dt; // time actually driving
   const geo = world.toGeo(v.x, v.z);
   game.lat = geo.lat; game.lon = geo.lon;
 
@@ -2364,6 +2414,13 @@ function tickStyle(dt, inp) {
   smoke.update(dt, v, sliding && v.surface !== 'offroad', v.drifting ? 34 : 18);
   if (sliding) {
     s.driftT += dt; s.drift += (v.slip + 1) * dt * 14;
+    // a drift of a few seconds is free; hold one past 5 s and the tyres overheat and wear (so endless
+    // drifting for points costs you)
+    if (s.driftT > 5 && !cheats.noDamage) {
+      v.damage = Math.min(100, v.damage + dt * 4);
+      grime(game.model, v.damage);
+      if (!game.tyreWarned) { game.tyreWarned = true; toast('🛞 Tyres overheating: long drifts wear them out.', { ms: 3500 }); }
+    }
     if (s.driftT > 0.6) $('#style').innerHTML = `<div class="live">Drift ${s.driftT.toFixed(1)}s · ${Math.round(s.drift * s.combo)}</div>`;
   } else {
     if (s.driftT > 1.2) { profile.stats.drift += s.driftT; stylePop(`Drift ${s.driftT.toFixed(1)}s`, Math.round(s.drift)); }
@@ -2376,12 +2433,13 @@ function tickStyle(dt, inp) {
   if (st.overtakes) profile.stats.overtakes += st.overtakes; // counted, but points are for stunts only
 }
 
-const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences). Sounds (trimmed), via Wikimedia Commons: car horn by 15HPanska_Ruttner_Jan (CC0), dog bark by Amada44 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>), duck by WaderClub (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>).';
+const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences). Sounds (trimmed), via Wikimedia Commons: car horn by 15HPanska_Ruttner_Jan (CC0) and dog bark by Amada44 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>).';
 
 // ---------- boot ----------
 if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, radio, sound, camCtl, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
 pruneRaces();
 world.stuntMode = profile.settings.mode || 'explorer';
+cheats.noDamage = !!profile.settings.noDamage;
 document.body.dataset.mode = world.stuntMode;
 $('#gscore').hidden = world.stuntMode !== 'gamer';
 resize();
