@@ -38,6 +38,9 @@ jobs:
       - name: Install and build web app
         run: |
           npm ci
+          # the version and build number, shown at the bottom of Settings
+          export VITE_BUILD=${{ github.run_number }}
+          export VITE_VERSION=$(grep -m1 -o 'MARKETING_VERSION = [0-9.]*' ios/App/App.xcodeproj/project.pbxproj | awk '{print $3}')
           npm run build:app
           npx cap sync ios
 

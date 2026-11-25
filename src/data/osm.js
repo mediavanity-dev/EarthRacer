@@ -63,6 +63,7 @@ export async function loadBuildingDetail(key, b) {
   way["building"]["office"];
   way["building"]["craft"];
   way["building"]["amenity"];
+  way["building"]["man_made"~"^(storage_tank|silo|water_tower|gasometer)$"];
 );
 out tags qt;
 node["natural"="tree"];
@@ -79,6 +80,8 @@ out qt;`);
       if (t['building:material']) d.m = t['building:material'];
       if (t['roof:material']) d.rm = t['roof:material'];
       if (t.building && TYPES.test(t.building)) d.t = t.building;
+      if (/^(storage_tank|gasometer|water_tower)$/.test(t.man_made)) d.t = 'storage_tank';
+      else if (t.man_made === 'silo') d.t = 'silo';
       // what it's used for, from its own tags: c = a business, v = civic (school, hospital...)
       if (t.amenity && CIVIC_USE.test(t.amenity)) d.u = 'v';
       else if (t.shop || t.office || t.craft || (t.amenity && BIZ_USE.test(t.amenity))) d.u = 'c';
