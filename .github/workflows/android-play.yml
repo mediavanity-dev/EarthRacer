@@ -57,6 +57,9 @@ jobs:
       - name: Install and build web app
         run: |
           npm ci
+          # the version and build number (the Play version code), shown at the bottom of Settings
+          export VITE_BUILD=$(( GITHUB_RUN_NUMBER + VERSION_CODE_OFFSET ))
+          export VITE_VERSION=$(grep -m1 -oE 'MARKETING_VERSION = [0-9.]+' ios/App/App.xcodeproj/project.pbxproj 2>/dev/null | awk '{print $3}')
           $WEB_BUILD
           npx cap sync android
 
