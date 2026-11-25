@@ -6,7 +6,7 @@ import { cacheGet, cachePut } from './cache.js';
 import { request, backoff } from './net.js';
 
 const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.openstreetmap.fr/api/interpreter'];
-const VERSION = 2; // 2: plus the real, individually mapped trees
+const VERSION = 3; // 2: plus the real, individually mapped trees; 3: what each building is used for
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let good = 0;
@@ -40,7 +40,10 @@ async function slot(fn) {
   try { return await fn(); } finally { inflight--; waiting.shift()?.(); }
 }
 
-const TYPES = /^(house|detached|semidetached_house|terrace|bungalow|cabin|farm|apartments|residential|commercial|retail|office|industrial|warehouse|church|cathedral|chapel|mosque|temple|synagogue|shrine|barn|farm_auxiliary|garage|garages|shed|school|hospital|hotel|train_station|stadium|greenhouse|hut)$/;
+const TYPES = /^(house|detached|semidetached_house|terrace|bungalow|cabin|farm|apartments|residential|commercial|retail|office|industrial|warehouse|church|cathedral|chapel|mosque|temple|synagogue|shrine|barn|farm_auxiliary|garage|garages|shed|school|hospital|hotel|train_station|stadium|greenhouse|hut|supermarket|kiosk|manufacture|dormitory|public|civic|government|university|college|kindergarten|fire_station|transportation|service|storage_tank|hangar|boathouse|parking)$/;
+
+const CIVIC_USE = /^(school|college|university|kindergarten|library|townhall|hospital|police|fire_station|courthouse|community_centre|arts_centre)$/;
+const BIZ_USE = /^(restaurant|cafe|fast_food|bar|pub|bank|pharmacy|clinic|doctors|dentist|cinema|theatre|nightclub|fuel|car_wash|marketplace|ice_cream|veterinary|post_office)$/;
 
 /** -> { [wayId]: { s: roof shape, c: wall colour, rc: roof colour, m: material, rm: roof material, t: type, l: levels, rh: roof height } } */
 export async function loadBuildingDetail(key, b) {
@@ -56,6 +59,10 @@ export async function loadBuildingDetail(key, b) {
   way["building"]["building:material"];
   way["building"]["roof:material"];
   way["building"]["building"~"${TYPES.source.slice(2, -2)}"];
+  way["building"]["shop"];
+  way["building"]["office"];
+  way["building"]["craft"];
+  way["building"]["amenity"];
 );
 out tags qt;
 node["natural"="tree"];
@@ -72,6 +79,9 @@ out qt;`);
       if (t['building:material']) d.m = t['building:material'];
       if (t['roof:material']) d.rm = t['roof:material'];
       if (t.building && TYPES.test(t.building)) d.t = t.building;
+      // what it's used for, from its own tags: c = a business, v = civic (school, hospital...)
+      if (t.amenity && CIVIC_USE.test(t.amenity)) d.u = 'v';
+      else if (t.shop || t.office || t.craft || (t.amenity && BIZ_USE.test(t.amenity))) d.u = 'c';
       if (t['roof:height']) d.rh = parseFloat(t['roof:height']) || undefined;
       else if (t['roof:levels']) d.rh = (parseFloat(t['roof:levels']) || 0) * 2.6 || undefined;
       if (Object.keys(d).length) out[el.id] = d;

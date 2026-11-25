@@ -70,37 +70,51 @@ export const treeMat = hook(new THREE.MeshLambertMaterial({ flatShading: true })
   after: '#include <color_fragment>',
 });
 export const trunkMat = new THREE.MeshLambertMaterial({ color: '#7a5c42' });
-// Buildings: windows drawn by the shader (floors every 3.2 m), some lit at night. No extra geometry.
+// Buildings: windows drawn by the shader (floor height by use), some lit at night. No extra geometry.
 export const buildingMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
 buildingMat.onBeforeCompile = (shader) => {
   Object.assign(shader.uniforms, env);
   shader.vertexShader = 'attribute vec2 aB; varying vec3 vWP; varying vec3 vON; varying vec2 vB;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz; vON = normal; vB = aB;');
   shader.fragmentShader = 'uniform float uNight; uniform float uSnow; varying vec3 vWP; varying vec3 vON; varying vec2 vB;\nfloat hsh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' + shader.fragmentShader
     .replace('#include <color_fragment>', `#include <color_fragment>
-      // window styles: 1 house, 2 apartments/shops, 3 glass tower, 4 warehouse; tint = shutters etc.
+      // window styles: 1 house, 2 shopfront with floors above, 3 glass tower, 4 industrial shed, 5 flats,
+      // 6 offices (ribbon glazing), 7 civic (tall windows); tint 1-2 shutters, 3 Paris grey-blue, 5-9 sign colour
       float st = mod(vB.x, 10.0), tint = floor(vB.x / 10.0 + 0.01);
+      float s1 = step(0.5, st) * step(st, 1.5), s2 = step(1.5, st) * step(st, 2.5), s3 = step(2.5, st) * step(st, 3.5);
+      float s4 = step(3.5, st) * step(st, 4.5), s5 = step(4.5, st) * step(st, 5.5), s6 = step(5.5, st) * step(st, 6.5), s7 = step(6.5, st);
       float wallF = (1.0 - step(0.5, abs(vON.y))) * step(0.5, st);
       float rel = vWP.y - vB.y;
       float hz = dot(vWP.xz, normalize(vec2(-vON.z, vON.x) + 1e-5));
-      float sp = st < 1.5 ? 3.6 : st < 2.5 ? 2.8 : st < 3.5 ? 1.7 : 6.0;
-      float fh = st < 1.5 ? 2.9 : st < 3.5 ? 3.3 : 5.0;
+      float sp = s1 * 3.6 + s2 * 2.8 + s3 * 1.7 + s4 * 6.0 + s5 * 3.0 + s6 * 3.2 + s7 * 3.4 + (1.0 - s1 - s2 - s3 - s4 - s5 - s6 - s7) * 2.8;
+      float fh = s1 * 2.9 + s2 * 3.3 + s3 * 3.3 + s4 * 5.0 + s5 * 3.0 + s6 * 3.6 + s7 * 3.9 + (1.0 - s1 - s2 - s3 - s4 - s5 - s6 - s7) * 3.3;
       vec2 cell = vec2(floor(hz / sp), floor(rel / fh));
       vec2 f = vec2(fract(hz / sp), fract(rel / fh));
-      float x0 = 0.24, x1 = 0.76, y0 = 0.3, y1 = 0.8;
-      if (st > 2.5 && st < 3.5) { x0 = 0.05; x1 = 0.95; y0 = 0.08; y1 = 0.94; }
-      if (st > 1.5 && st < 2.5 && rel < 4.2) { x0 = 0.06; x1 = 0.94; y0 = 0.12; y1 = 0.85; } // shopfronts
-      if (st > 3.5) { x0 = 0.04; x1 = 0.96; y0 = 0.62; y1 = 0.8; }
-      float win = wallF * step(x0, f.x) * step(f.x, x1) * step(y0, f.y) * step(f.y, y1) * step(0.4, rel);
-      vec3 glass = st > 2.5 && st < 3.5 ? vec3(0.38, 0.5, 0.62) : rel < 4.2 && st > 1.5 && st < 2.5 ? vec3(0.32, 0.36, 0.4) : vec3(0.42, 0.47, 0.55);
-      if (tint > 2.5) glass = vec3(0.5, 0.55, 0.62);
-      diffuseColor.rgb = mix(diffuseColor.rgb, st > 2.5 && st < 3.5 ? glass : diffuseColor.rgb * glass, win * 0.88);
+      float shopF = s2 * step(rel, 4.2);
+      vec4 bx = vec4(0.24, 0.76, 0.3, 0.8);
+      bx = mix(bx, vec4(0.05, 0.95, 0.08, 0.94), s3);
+      bx = mix(bx, vec4(0.06, 0.94, 0.12, 0.85), shopF); // shopfronts
+      bx = mix(bx, vec4(0.04, 0.96, 0.62, 0.8), s4);
+      bx = mix(bx, vec4(0.22, 0.78, 0.28, 0.78), s5);
+      bx = mix(bx, vec4(-0.01, 1.01, 0.32, 0.84), s6);
+      bx = mix(bx, vec4(0.3, 0.7, 0.16, 0.86), s7);
+      float win = wallF * step(bx.x, f.x) * step(f.x, bx.y) * step(bx.z, f.y) * step(f.y, bx.w) * step(0.4, rel);
+      vec3 glass = mix(mix(mix(vec3(0.42, 0.47, 0.55), vec3(0.32, 0.36, 0.4), shopF), vec3(0.38, 0.5, 0.62), s3), vec3(0.36, 0.46, 0.56), s6);
+      if (tint > 2.5 && tint < 4.5) glass = vec3(0.5, 0.55, 0.62);
+      diffuseColor.rgb = mix(diffuseColor.rgb, (s3 + s6) > 0.5 ? glass : diffuseColor.rgb * glass, win * 0.88);
+      // industrial sheds: ribbed metal cladding
+      diffuseColor.rgb *= 1.0 - s4 * wallF * 0.08 * step(0.5, fract(hz / 0.45));
+      // a shop's sign band over the shopfront (higher up on a trade shed)
+      float bandLo = mix(3.55, 4.6, s4);
+      float band = wallF * step(4.5, tint) * step(bandLo, rel) * step(rel, bandLo + 0.8);
+      vec3 signC = tint < 5.5 ? vec3(0.55, 0.11, 0.09) : tint < 6.5 ? vec3(0.12, 0.35, 0.22) : tint < 7.5 ? vec3(0.11, 0.2, 0.34) : tint < 8.5 ? vec3(0.77, 0.42, 0.07) : vec3(0.13, 0.13, 0.14);
+      diffuseColor.rgb = mix(diffuseColor.rgb, signC, band);
       // shutters either side of the window (Mediterranean / Middle East)
       float shut = wallF * (1.0 - win) * step(0.5, tint) * step(tint, 2.5) * step(0.4, rel - 4.2)
-        * (step(0.1, f.x) * step(f.x, 0.24) + step(0.76, f.x) * step(f.x, 0.9)) * step(y0, f.y) * step(f.y, y1);
+        * (step(0.1, f.x) * step(f.x, 0.24) + step(0.76, f.x) * step(f.x, 0.9)) * step(bx.z, f.y) * step(f.y, bx.w);
       vec3 shutC = tint < 1.5 ? vec3(0.3, 0.45, 0.32) : vec3(0.48, 0.34, 0.22);
       diffuseColor.rgb = mix(diffuseColor.rgb, shutC, shut * 0.9);
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.95, 0.98), uSnow * step(0.5, abs(vON.y)) * 0.8);
-      float lit = win * step(rel < 4.2 && st > 1.5 && st < 2.5 ? 0.3 : 0.62, hsh(cell + floor(vWP.xz / 40.0))) * uNight;`)
+      float lit = win * step(shopF > 0.5 ? 0.3 : s6 > 0.5 ? 0.45 : 0.62, hsh(cell + floor(vWP.xz / 40.0))) * uNight;`)
     .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += vec3(1.0, 0.82, 0.5) * lit * 0.85;');
 };
 buildingMat.customProgramCacheKey = () => 'er-building';

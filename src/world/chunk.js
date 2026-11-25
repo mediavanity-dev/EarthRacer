@@ -198,7 +198,7 @@ export function makeChunk(p, { anisotropy = 4 } = {}) {
       }
       return best;
     },
-    treeSets, fallen,
+    treeSets, fallen, uses: p.uses,
     /** The tree trunk a circle (x, z, radius) touches, or null: { id, set, k, x, y (base), z, r }. */
     treeHit(x, z, rad) {
       const l = treeCells.get(cellOf(x, z));

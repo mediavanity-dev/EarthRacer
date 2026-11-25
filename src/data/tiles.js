@@ -53,6 +53,11 @@ const KIND = {
   park: 'leisure', garden: 'leisure', playground: 'leisure', stadium: 'leisure', swimming: 'leisure', golf: 'leisure', dog_park: 'leisure', pitch: 'leisure',
   railway: 'transport', ferry_terminal: 'transport', fuel: 'fuel', harbor: 'transport',
 };
+// Points that tell us what a building is used for (named or not, shown on the map or not):
+// 1 = a business (shops, food and drink, banks, hotels, garages, offices, pharmacies, clinics),
+// 2 = civic (schools, colleges, libraries, town halls, hospitals, museums, police, fire).
+const CIVIC = new Set(['school', 'college', 'library', 'town_hall', 'hospital', 'museum', 'art_gallery', 'police', 'fire_station', 'kindergarten', 'university', 'courthouse', 'prison']);
+const NOT_A_BUILDING = new Set(['park', 'garden', 'playground', 'stadium', 'swimming', 'golf', 'dog_park', 'pitch', 'bus', 'railway', 'ferry_terminal', 'harbor', 'aerialway', 'entrance', 'campsite', 'cemetery', 'monument', 'memorial', 'castle', 'ruins', 'archaeological_site', 'attraction', 'zoo', 'aquarium', 'place_of_worship', 'information', 'atm', 'toilets', 'drinking_water', 'bench', 'waste_basket', 'parking', 'bicycle_parking', 'charging_station', 'post_box', 'telephone', 'shelter', 'viewpoint', 'picnic_site', 'water_park', 'marina', 'beach', 'fountain']);
 const SKIP_SUB = new Set(['platform', 'halt', 'subway_entrance', 'tram_stop', 'bus_stop', 'clinic', 'doctors', 'dentist', 'pharmacy']);
 
 // Ways people may walk on: everything but motorways and rail, unless closed to walkers
@@ -147,7 +152,7 @@ export async function loadBaseTile(z, x, y) {
   return vt ? normalizeTile(vt) : emptyFabric();
 }
 
-function emptyFabric() { return { extent: 4096, buildings: [], areas: [], lines: [], roads: [], pois: [], stops: [], places: [], streets: [], walk: [], waterNames: [], waterways: [], areaName: null }; }
+function emptyFabric() { return { extent: 4096, buildings: [], areas: [], lines: [], roads: [], pois: [], biz: [], stops: [], places: [], streets: [], walk: [], waterNames: [], waterways: [], areaName: null }; }
 
 export function normalizeTile(vt) {
   const out = emptyFabric();
@@ -251,6 +256,13 @@ export function normalizeTile(vt) {
       if (stop) {
         const g = f.loadGeometry()[0]?.[0];
         if (g && g.x >= 0 && g.y >= 0 && g.x < E && g.y < E) out.stops.push({ kind: stop, name: p.name || null, px: g.x, py: g.y });
+      }
+      if (p.class && !stop) {
+        const civ = CIVIC.has(p.class) || CIVIC.has(p.subclass);
+        if (civ || (!NOT_A_BUILDING.has(p.class) && !NOT_A_BUILDING.has(p.subclass))) {
+          const g = f.loadGeometry()[0]?.[0];
+          if (g && g.x >= -64 && g.y >= -64 && g.x < E + 64 && g.y < E + 64) out.biz.push(g.x, g.y, civ ? 2 : 1);
+        }
       }
       const kind = KIND[p.class];
       if (!kind || (!p.name && kind !== 'fuel') || SKIP_SUB.has(p.subclass)) continue;
