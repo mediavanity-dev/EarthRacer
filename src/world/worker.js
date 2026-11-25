@@ -65,6 +65,16 @@ const ROOF_MATERIAL = { roof_tiles: '#a3402c', tile: '#a3402c', tiles: '#a3402c'
 const PITCHED = new Set(['gabled', 'hipped', 'pyramidal', 'half-hipped', 'gambrel', 'mansard', 'skillion', 'side_hipped', 'saltbox', 'dome', 'onion', 'cone', 'round']);
 const HOUSE_T = new Set(['house', 'detached', 'semidetached_house', 'terrace', 'bungalow', 'cabin', 'farm', 'barn', 'farm_auxiliary', 'hut', 'garage', 'shed']);
 const FLAT_T = new Set(['apartments', 'commercial', 'retail', 'office', 'industrial', 'warehouse', 'hospital', 'school', 'hotel', 'train_station', 'stadium', 'garages']);
+// building types by use (OSM building=*)
+const RES_T = new Set(['house', 'detached', 'semidetached_house', 'terrace', 'bungalow', 'cabin', 'farm', 'apartments', 'residential', 'dormitory', 'hut']);
+const COM_T = new Set(['retail', 'commercial', 'supermarket', 'kiosk', 'hotel', 'office']);
+const IND_T = new Set(['industrial', 'warehouse', 'manufacture', 'storage_tank', 'hangar', 'service', 'transportation']);
+const CIV_T = new Set(['school', 'hospital', 'university', 'college', 'kindergarten', 'public', 'civic', 'government', 'fire_station', 'train_station', 'stadium']);
+const IND_WALLS = ['#c9c6be', '#b8bcbf', '#d4cfc4', '#a9b0b3', '#8d9ba3', '#a7b5ad', '#9a5a44'];
+const IND_ROOFS = ['#c7cac9', '#aeb7bb', '#8f9ea6', '#b9b3a6'];
+const COM_WALLS = ['#ece6da', '#ddd2bf', '#cbb79b', '#b86b47', '#d9dde0', '#f1efe9', '#c4c9c2'];
+const OFFICE_WALLS = ['#9fb0bd', '#b7c2c9', '#c9cfd2', '#8e9aa3', '#d3d0c8'];
+const CIV_WALLS = ['#d9cdb6', '#cbb89a', '#a5583c', '#e2dccf', '#bfae94'];
 const CHURCH_T = new Set(['church', 'cathedral', 'chapel', 'mosque', 'temple', 'synagogue', 'shrine']);
 const shade = (c, f) => [Math.min(1, c[0] * f), Math.min(1, c[1] * f), Math.min(1, c[2] * f)];
 
@@ -174,6 +184,13 @@ async function build({ x, y, opts }) {
   mg.fillStyle = '#00f';
   for (const a of fabric.areas) if (a.cls === 'industrial') { trace(mg, a.rings, ms); mg.fill('evenodd'); }
   const md = mg.getImageData(0, 0, MASK, MASK).data;
+  const uc = new OffscreenCanvas(MASK, MASK), ug = uc.getContext('2d', { willReadFrequently: true });
+  ug.fillStyle = '#000'; ug.fillRect(0, 0, MASK, MASK); ug.globalCompositeOperation = 'lighter';
+  for (const [cls, colr] of [['commercial', '#f00'], ['residential', '#0f0'], ['campus', '#00f']]) {
+    ug.fillStyle = colr;
+    for (const a of fabric.areas) if (a.cls === cls) { trace(ug, a.rings, ms); ug.fill('evenodd'); }
+  }
+  const ud = ug.getImageData(0, 0, MASK, MASK).data;
   // open land you could take off from (parks, grass, fields, pitches, scrub, sand), minus buildings
   const oc = new OffscreenCanvas(MASK, MASK), og = oc.getContext('2d', { willReadFrequently: true });
   og.fillStyle = '#000'; og.fillRect(0, 0, MASK, MASK); og.fillStyle = '#fff';
@@ -181,8 +198,8 @@ async function build({ x, y, opts }) {
   og.fillStyle = '#000';
   for (const bd of fabric.buildings) { trace(og, bd.rings, ms); og.fill('evenodd'); }
   const od = og.getImageData(0, 0, MASK, MASK).data;
-  const mask = new Uint8Array(MASK * MASK);
-  for (let k = 0; k < mask.length; k++) mask[k] = (md[k * 4] > 127 ? 1 : 0) | (md[k * 4 + 1] > 127 ? 2 : 0) | (md[k * 4 + 2] > 127 ? 4 : 0) | (od[k * 4] > 127 ? 8 : 0);
+  const mask = new Uint8Array(MASK * MASK); // bits: 1 water, 2 built-up, 4 industrial, 8 open, 16 commercial, 32 residential, 64 campus
+  for (let k = 0; k < mask.length; k++) mask[k] = (md[k * 4] > 127 ? 1 : 0) | (md[k * 4 + 1] > 127 ? 2 : 0) | (md[k * 4 + 2] > 127 ? 4 : 0) | (od[k * 4] > 127 ? 8 : 0) | (ud[k * 4] > 127 ? 16 : 0) | (ud[k * 4 + 1] > 127 ? 32 : 0) | (ud[k * 4 + 2] > 127 ? 64 : 0);
   const maskAt = (px, py) => { const c = Math.floor(px * ms), r = Math.floor(py * ms); return c >= 0 && r >= 0 && c < MASK && r < MASK ? mask[r * MASK + c] : 0; };
   // the elevation data includes the sea floor: water is drawn (and sailed) at the surface
   for (let r = 0; r <= GRID; r++) for (let c = 0; c <= GRID; c++) {
@@ -212,7 +229,32 @@ async function build({ x, y, opts }) {
     win.push(ws, wb, ws, wb, ws, wb);
   };
   const footprints = [];
+  const uses = {}; // how many buildings got each use (for checking)
   const fpPts = [], fpIdx = [];
+  // shops, cafes, offices... (1) and schools, hospitals... (2) standing in or right at a building
+  const BG = 32, bgc = E / BG, bizGrid = new Map(), biz = fabric.biz || [];
+  for (let k = 0; k < biz.length; k += 3) { const key = Math.floor(biz[k + 1] / bgc) * 100 + Math.floor(biz[k] / bgc); (bizGrid.get(key) || bizGrid.set(key, []).get(key)).push(k); }
+  const pad = 3 / mPerPx; // a point mapped on the doorstep still counts
+  const nearRing = (x, y, ring) => {
+    for (let k = 0; k < ring.length; k++) {
+      const [ax, ay] = ring[k], [bx, by] = ring[(k + 1) % ring.length];
+      const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+      const t = L ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L)) : 0;
+      if (Math.hypot(x - ax - dx * t, y - ay - dy * t) < pad) return true;
+    }
+    return false;
+  };
+  const usePoint = (rings, bb) => {
+    let best = 0;
+    for (let r = Math.floor((bb.y0 - pad) / bgc); r <= Math.floor((bb.y1 + pad) / bgc); r++) for (let c = Math.floor((bb.x0 - pad) / bgc); c <= Math.floor((bb.x1 + pad) / bgc); c++) {
+      for (const k of bizGrid.get(r * 100 + c) || []) {
+        const x = biz[k], y = biz[k + 1];
+        if (x < bb.x0 - pad || x > bb.x1 + pad || y < bb.y0 - pad || y > bb.y1 + pad) continue;
+        if (insidePoly(x, y, rings) || nearRing(x, y, rings[0])) best = Math.max(best, biz[k + 2] === 2 ? 2 : 1);
+      }
+    }
+    return best;
+  };
   for (const bd of fabric.buildings) {
     const outer = bd.rings[0];
     let ground = Infinity, cx = 0, cy = 0;
@@ -225,13 +267,48 @@ async function build({ x, y, opts }) {
     const det = opts.detail && bd.way ? opts.detail[bd.way] : null;
     const ty = det?.t || null;
     const tall = bd.height > 30;
-    const industrial = ty ? ty === 'industrial' || ty === 'warehouse' : !tall && areaM > 1500 && bd.height < 16 && (maskAt(cx, cy) & 4) !== 0;
     const church = ty ? CHURCH_T.has(ty) : false;
-    const house = ty ? HOUSE_T.has(ty) && areaM < 1200 : !tall && !industrial && bd.height <= 12 && areaM < 450;
+    // What it's used for, reconciled from (strongest first): its own shop/office/amenity tags, its
+    // building type, a business or school mapped in it or on its doorstep, then the land use
+    // around it. So a showroom or brewery in an industrial estate still looks like a business,
+    // and a corner shop under flats gets a shopfront with homes above.
+    const pt = usePoint(bd.rings, bbox(outer));
+    const m = maskAt(cx, cy);
+    const tagUse = det?.u === 'v' ? 'civ' : det?.u === 'c' ? 'com' : null;
+    const tyUse = ty ? (RES_T.has(ty) ? 'res' : COM_T.has(ty) ? (ty === 'office' ? 'office' : 'com') : IND_T.has(ty) ? 'ind' : CIV_T.has(ty) ? 'civ' : null) : null;
+    const landUse = m & 16 ? 'com' : m & 64 ? 'civ' : m & 4 ? 'ind' : m & 32 ? 'res' : null;
+    let use;
+    if (church) use = 'church';
+    else if (tagUse === 'com') use = tyUse === 'res' ? 'mixed' : tyUse === 'ind' ? 'trade' : tall ? 'office' : 'com';
+    else if (tagUse === 'civ') use = 'civ';
+    else if (tyUse) use = tyUse === 'res' && pt === 1 ? 'mixed' : tyUse === 'ind' && pt === 1 ? 'trade' : tyUse === 'com' && tall ? 'office' : tyUse;
+    else if (pt === 1) use = landUse === 'ind' && areaM > 600 ? 'trade' : landUse === 'res' && bd.height > 7 ? 'mixed' : tall ? 'office' : 'com';
+    else if (pt === 2) use = 'civ';
+    else if (landUse === 'ind') use = areaM >= 250 && !tall ? 'ind' : null;
+    else if (landUse === 'com') use = bd.height > 14 ? 'office' : areaM < 40 ? null : 'com';
+    else if (landUse === 'civ') use = areaM > 150 ? 'civ' : null;
+    else if (landUse === 'res') use = 'res';
+    else use = !tall && areaM > 1500 && bd.height < 16 && (m & 4) ? 'ind' : null;
+    uses[use || 'other'] = (uses[use || 'other'] || 0) + 1;
+    const industrial = use === 'ind' || use === 'trade';
+    const house = (ty ? HOUSE_T.has(ty) && areaM < 1200 : (use === 'res' || !use) && !tall && bd.height <= 12 && areaM < 450) && use !== 'com' && use !== 'mixed';
     const realWall = colourOf(det?.c) || hexRgb(MATERIAL[det?.m]) || hexRgb(bd.colour);
-    const base = realWall || (church ? pal(['#c9bfae', '#d8cfbd', '#b9ae9a'], rr()) : ty === 'barn' ? hexRgb('#8b2e22') : tall ? pal(TALL_WALLS, rr()) : industrial ? pal(['#c9c6be', '#b8bcbf', '#d4cfc4', '#a9b0b3'], rr()) : pal(style.walls, rr()));
+    const base = realWall || (church ? pal(['#c9bfae', '#d8cfbd', '#b9ae9a'], rr()) : ty === 'barn' ? hexRgb('#8b2e22')
+      : industrial ? pal(IND_WALLS, rr()) : use === 'office' ? pal(OFFICE_WALLS, rr()) : tall ? pal(TALL_WALLS, rr())
+        : use === 'com' ? pal(COM_WALLS, rr()) : use === 'civ' ? pal(CIV_WALLS, rr()) : pal(style.walls, rr()));
     const wallC = shade(base, 0.92 + r * 0.12), lowC = shade(wallC, 0.86);
-    const ws = church ? 1 : (tall ? 3 : industrial ? 4 : house ? 1 : 2) + (tall || industrial ? 0 : style.tint * 10);
+    // window styles (see the building shader): 1 house, 2 shopfront with floors above, 3 glass tower,
+    // 4 industrial shed, 5 flats, 6 offices, 7 civic; + 10 x tint (regional shutters, or 5..9 = the
+    // colour of a shop's sign band)
+    const sign = 5 + Math.floor(rr() * 5);
+    const ws = church ? 1
+      : use === 'office' ? 6 : tall && use !== 'res' ? 3
+        : industrial ? 4 + (use === 'trade' ? sign * 10 : 0)
+          : use === 'com' ? 2 + sign * 10
+            : use === 'mixed' ? 2 + style.tint * 10
+              : use === 'civ' ? 7
+                : house ? 1 + style.tint * 10
+                  : 5 + style.tint * 10;
     const shape = det?.s || null;
     // a pitched roof only on footprints a real one could sit on: convex, without many corners (an
     // L-shaped or irregular building gets a flat roof, not a strange spike)
@@ -245,7 +322,7 @@ async function build({ x, y, opts }) {
     const shapeOk = outer.length >= 4 && outer.length <= 8 && convex && bd.rings.length === 1 && !(bd.minHeight > 0);
     const pitched = shapeOk && shape !== 'flat' && (PITCHED.has(shape) || church || (!shape && house && outer.length <= 10 && rr() < style.pitched) || (!shape && ty && HOUSE_T.has(ty) && outer.length <= 12));
     const realRoof = colourOf(det?.rc) || hexRgb(ROOF_MATERIAL[det?.rm]);
-    const roofC = realRoof || (pitched ? shade(pal(style.roofs, rr()), 0.95 + r * 0.1) : tall ? shade(base, 0.8) : shade([0.62, 0.62, 0.6], 0.9 + r * 0.2));
+    const roofC = realRoof || (pitched ? shade(pal(style.roofs, rr()), 0.95 + r * 0.1) : industrial ? shade(pal(IND_ROOFS, rr()), 0.95 + r * 0.1) : tall ? shade(base, 0.8) : shade([0.62, 0.62, 0.6], 0.9 + r * 0.2));
     const top = ground + bd.height;
     const bottom = bd.minHeight > 0 ? ground + bd.minHeight : ground - 1.5;
     // local corner points
@@ -631,7 +708,7 @@ async function build({ x, y, opts }) {
     buildings, roadMesh, fp: { pts: new Float32Array(fpPts), idx: new Uint32Array(fpIdx) },
     lamps: new Float32Array(props.lamp), posts: new Float32Array(props.post),
     trees: packTrees(blobs), cones: packTrees(cones),
-    roads, streets, pois, stops, labels,
+    roads, streets, pois, stops, labels, uses,
   };
   const transfer = [grid.buffer, xs.buffer, zs.buffer, mask.buffer, tPos.buffer, tUv.buffer, texture, payload.fp.pts.buffer, payload.fp.idx.buffer, payload.lamps.buffer, payload.posts.buffer];
   if (buildings) transfer.push(buildings.pos.buffer, buildings.nrm.buffer, buildings.col.buffer, buildings.win.buffer);

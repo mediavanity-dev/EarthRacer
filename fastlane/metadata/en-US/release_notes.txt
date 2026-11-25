@@ -18,6 +18,7 @@ Sounds
 
 A truer world
 • Real, individually mapped trees, including street trees along the kerb.
+• Buildings show what they're used for: shopfronts with sign bands on shops and cafés (even in industrial estates), ribbed metal sheds, office glazing, schools and hospitals, and homes.
 • Truer roof shapes, and paths that cross water on decks.
 • Roads no longer draw over your vehicle.
 

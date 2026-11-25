@@ -1906,7 +1906,7 @@ const camCtl = { yaw: 0, pitch: 0, zoom: profile.settings.camZoom || 1, held: fa
       if (pinch0 > 10) camCtl.zoom = clampZoom(zoom0 * (pinch0 / d));
     } else {
       camCtl.yaw -= dx * 0.008;
-      camCtl.pitch = Math.max(-0.45, Math.min(1.2, camCtl.pitch + dy * 0.004));
+      camCtl.pitch = Math.max(-0.45, Math.min(1.2, camCtl.pitch - dy * 0.004)); // drag down: the camera comes down
     }
     camCtl.at = performance.now();
   });
