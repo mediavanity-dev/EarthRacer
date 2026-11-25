@@ -102,6 +102,7 @@ export class Sound {
     let f = 0, eg = 0, cut = 900;
     if (kind === 'car') { f = 38 + v.rpm * 120; eg = 0.11 + v.rpm * 0.07; cut = 500 + v.rpm * 1600; }
     else if (kind === 'truck') { f = 26 + v.rpm * 60; eg = 0.14 + v.rpm * 0.06; cut = 350 + v.rpm * 700; }
+    else if (kind === 'demon') { f = 48 + v.rpm * 240; eg = 0.12 + v.rpm * 0.08; cut = 700 + v.rpm * 3000; } // a high-revving V12
     else if (kind === 'jetski') { f = 80 + v.rpm * 230; eg = 0.07 + v.rpm * 0.08; cut = 1100 + v.rpm * 2600; } // a buzzier two-stroke
     else if (kind === 'boat') { f = 55 + v.rpm * 110; eg = 0.08 + v.rpm * 0.08; cut = 700 + v.rpm * 1400; }
     else if (kind === 'moto') { f = 55 + v.rpm * 190; eg = 0.09 + v.rpm * 0.07; cut = 900 + v.rpm * 2600; }
@@ -119,11 +120,11 @@ export class Sound {
     const skid = onWater || !v.grounded ? 0 : Math.max(0, Math.min(1, (v.slip - 3.4) / 5)) * (v.surface === 'road' ? 1 : 0.4);
     this.tyre.g.gain.setTargetAtTime(skid * 0.22, t, 0.05);
     this.tyre.flt.frequency.setTargetAtTime(v.surface === 'road' ? 1400 : 600, t, 0.1);
-    this.wind.g.gain.setTargetAtTime(Math.min(0.35, (speed / 25) ** 2 * 0.3), t, 0.2);
+    this.wind.g.gain.setTargetAtTime(Math.min(0.1, (speed / 30) ** 2 * 0.08), t, 0.2);
     this.wind.flt.frequency.setTargetAtTime(300 + speed * 25, t, 0.2);
     const rough = v.surface === 'road' ? 0.25 : v.surface === 'water' ? 0 : 0.8;
     this.road.g.gain.setTargetAtTime(v.grounded ? Math.min(0.3, speed / 25 * (0.08 + rough * 0.25)) * (kind === 'bike' ? 1.6 : 1) : 0, t, 0.1);
-    this.rain.g.gain.setTargetAtTime(rain * 0.12, t, 0.5);
+    this.rain.g.gain.setTargetAtTime(rain * 0.022, t, 0.5); // just loud enough to hear it's raining
     this.water.g.gain.setTargetAtTime(onWater ? Math.min(0.3, 0.05 + speed / 20 * 0.25) : 0, t, 0.2);
   }
 
@@ -154,4 +155,19 @@ export class Sound {
   bell() { this.tone([1568, 1568], 0.12, 'sine', 0.12); }
   bark() { this.tone([520, 380], 0.09, 'sawtooth', 0.12); setTimeout(() => this.tone([560, 400], 0.09, 'sawtooth', 0.1), 180); }
   squeak() { this.tone([1900, 2400, 1700], 0.07, 'sine', 0.1); }
+  /** A duck's quack: a nasal, falling buzz, twice. */
+  quack() {
+    if (!this.ctx) return;
+    const one = (at) => {
+      const ctx = this.ctx, t = ctx.currentTime + at;
+      const o = ctx.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(620, t); o.frequency.exponentialRampToValueAtTime(380, t + 0.16);
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 3;
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+      o.connect(f).connect(g).connect(this.master); o.start(t); o.stop(t + 0.2);
+    };
+    one(0); one(0.22);
+  }
+  /** Water on a tree: a soft hiss. */
+  hiss(dur = 2.2) { this.burst(0.06, 5000, dur); }
 }

@@ -19,8 +19,9 @@ const HITBOX = {
   para: [[0, 1.0]],
   solar: [[-0.7, 0.75], [0.7, 0.75]],
   jetski: [[-0.6, 0.6], [0.6, 0.6]],
+  demon: [[-1.4, 0.95], [0, 0.95], [1.4, 0.95]],
 };
-const LENGTH = { bike: 1.7, car: 4.3, truck: 9.4, boat: 6, pickup: 5.3, moto: 2.1, dog: 1.3, cart: 1, duck: 3.4, para: 2, solar: 2.6, jetski: 3 };
+const LENGTH = { bike: 1.7, car: 4.3, truck: 9.4, boat: 6, pickup: 5.3, moto: 2.1, dog: 1.3, cart: 1, duck: 3.4, para: 2, solar: 2.6, jetski: 3, demon: 4.5 };
 
 export class VehicleState {
   constructor(kind, x, z, heading) {
@@ -62,13 +63,16 @@ export class VehicleState {
     let [fx, fz] = this.fwd();
     let rx = -fz, rz = fx; // right of forward
     let vf = this.vx * fx + this.vz * fz, vr = this.vx * rx + this.vz * rz;
+    // amphibious (the duck, the dog): on water when it's under you and you're not on a bridge
+    const wet = (this.wet = s.terrain === 'water' && !s.amphibious ? true : !!s.amphibious && w.isWater(this.x, this.z) && !this.onBridge(w, this.x, this.z) && !(this.y > (w.groundAt(this.x, this.z) ?? this.y) + 1.5));
 
     // ---------- what's under us ----------
     // the speed cap: a posted limit + 10 mph where the map gives one, else the usual SPEED_CAP
-    const cap = ctx.roadLimit && this.road ? Math.max(SPEED_CAP * 0.5, ctx.roadLimit / 3.6 + 4.47) : SPEED_CAP;
+    const cap = s.noLimit ? s.top : ctx.roadLimit && this.road ? Math.max(SPEED_CAP * 0.5, ctx.roadLimit / 3.6 + 4.47) : SPEED_CAP; // the Speed Demon ignores limits
     let surfGrip = 1, surfTop = s.top, drag = 0.0;
-    if (s.terrain === 'water') {
+    if (wet) {
       this.surface = 'water'; this.road = null;
+      if (s.waterK) surfTop = s.top * s.waterK; // the dog paddles
     } else {
       const rd = w.roadAt(this.x, this.z, 6);
       const on = rd && rd.d < 0.4 && (!this.grounded || rd.y < this.y + 1.6) ? rd : null;
@@ -83,12 +87,13 @@ export class VehicleState {
       } else {
         this.surface = 'offroad'; surfGrip = 0.65; surfTop = Math.min(s.top, cap) * (s.offroadK ?? 0.86); drag = 0.06;
       }
+      if (s.landK) surfTop *= s.landK; // the duck waddles
     }
     // wind: a headwind slows bikes and boats noticeably; cars barely notice
     const windAlong = ctx.wind ? ctx.wind[0] * fx + ctx.wind[1] * -fz : 0; // + = tailwind
-    const windK = this.kind === 'bike' ? 0.3 : s.terrain === 'water' ? 0.15 : 0.02;
+    const windK = this.kind === 'bike' ? 0.3 : wet ? 0.15 : 0.02;
     let top = Math.min(surfTop + windAlong * windK, cap);
-    let why = top < cap - 0.5 ? (this.surface === 'offroad' ? 'off-road' : this.surface === 'unpaved' ? 'gravel' : null) : cap !== SPEED_CAP ? 'speed limit +10 mph' : 'speed cap';
+    let why = top < cap - 0.5 ? (this.surface === 'offroad' ? 'off-road' : this.surface === 'unpaved' ? 'gravel' : null) : s.noLimit ? 'top speed' : cap !== SPEED_CAP ? 'speed limit +10 mph' : 'speed cap';
     if (top >= s.top - 0.1 && s.top < cap) why = 'top speed';
     if (ctx.loadLimit < top) { top = ctx.loadLimit; why = 'map loading ahead'; }
     if (this.damage >= 100) { top = Math.min(top, 4); why = 'wrecked: summon a fresh one'; }
@@ -103,7 +108,7 @@ export class VehicleState {
     // ---------- forward ----------
     const grip = s.grip * surfGrip * (ctx.grip ?? 1);
     const t = input.throttle, b = input.brake;
-    if (this.grounded || s.terrain === 'water') {
+    if (this.grounded || wet) {
       if ((t > 0 || this.boost > 0) && vf > -0.5) {
         const k = Math.max(0, 1 - (vf / top) ** 2);
         vf += s.accel * (this.boost > 0 ? 4 : 1) * Math.max(t, this.boost > 0 ? 1 : 0) * k * (0.55 + 0.45 * Math.min(1, grip / s.grip + 0.3)) * dt;
@@ -115,10 +120,10 @@ export class VehicleState {
       }
       // over the limit: only the map-loading governor brakes hard; a new, lower speed limit (or the
       // vehicle's own top speed) just means gliding down to it, as if you'd lifted off the gas
-      if (vf > top) vf -= Math.min(vf - top, why === 'map loading ahead' ? (vf - top) * 1.5 * dt + 2 * dt : (0.6 + (vf - top) * 0.12) * dt);
+      if (vf > top) vf -= Math.min(vf - top, why === 'map loading ahead' || (s.amphibious && !wet) ? (vf - top) * 1.5 * dt + 2 * dt : (0.6 + (vf - top) * 0.12) * dt);
       if (t === 0 && b === 0) vf -= Math.sign(vf) * Math.min(Math.abs(vf), (0.35 + Math.abs(vf) * 0.012) * dt);
       vf -= vf * drag * dt;
-      if (input.handbrake && s.terrain !== 'water') vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.drifting ? 0.8 : 3) * dt);
+      if (input.handbrake && !wet && !s.flaps) vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.drifting ? 0.8 : 3) * dt);
     }
 
     // ---------- steering ----------
@@ -126,15 +131,15 @@ export class VehicleState {
     this.steer += (input.steer - this.steer) * k8;
     const maxAngle = s.steer / (1 + Math.abs(vf) / (this.kind === 'bike' ? 9 : 14));
     let yaw = (vf / s.wheelbase) * Math.tan(this.steer * maxAngle);
-    if (s.terrain === 'water') yaw = this.steer * (0.25 + 0.35 * Math.min(1, Math.abs(vf) / 4)) * (vf < -0.5 ? -1 : 1); // boats can turn on the spot, slowly
+    if (wet) yaw = this.steer * (0.25 + 0.35 * Math.min(1, Math.abs(vf) / 4)) * (vf < -0.5 ? -1 : 1); // boats can turn on the spot, slowly
     // drifting: a flick of the handbrake while turning at speed kicks the rear out, and the slide
     // holds (steer to set the angle, counter-steer to straighten) until you straighten up or slow down
     const canDrift = s.terrain === 'land' && this.grounded && this.kind !== 'cart';
     if (canDrift && !this.drifting && input.handbrake && Math.abs(vf) > 6 && Math.abs(this.steer) > 0.25) this.drifting = true;
     if (this.drifting && (!canDrift || Math.abs(vf) < 4 || input.brake > 0.6 || (!input.handbrake && this.slip < 1.0 && Math.abs(this.steer) < 0.2))) this.drifting = false;
     if (this.drifting) yaw *= input.handbrake ? 1.55 : 1.2;
-    else if (input.handbrake && Math.abs(vf) > 5 && s.terrain !== 'water') yaw *= 1.45;
-    if (!this.grounded && s.terrain !== 'water') yaw *= 0.2;
+    else if (input.handbrake && Math.abs(vf) > 5 && !wet && !s.flaps) yaw *= 1.45;
+    if (!this.grounded && !wet) yaw *= s.flaps ? 0.6 : 0.2; // a flying duck can still steer
     // the velocity in the world before turning: the body turns, the motion lags behind (that's slip)
     const vx0 = fx * vf + rx * vr, vz0 = fz * vf + rz * vr;
     this.heading += yaw * dt;
@@ -142,8 +147,8 @@ export class VehicleState {
     // ---------- sideways grip (slip dies away; less grip = more slide) ----------
     [fx, fz] = this.fwd(); rx = -fz; rz = fx;
     let nvf = vx0 * fx + vz0 * fz, nvr = vx0 * rx + vz0 * rz;
-    if (this.grounded || s.terrain === 'water') {
-      const g2 = grip * (this.drifting ? (input.handbrake ? 0.16 : 0.3) : input.handbrake && s.terrain !== 'water' ? 0.22 : 1);
+    if (this.grounded || wet) {
+      const g2 = grip * (this.drifting ? (input.handbrake ? 0.16 : 0.3) : input.handbrake && !wet && !s.flaps ? 0.22 : 1);
       const before = nvr;
       nvr *= Math.exp(-g2 * dt);
       nvf += Math.sign(nvf) * Math.abs(before - nvr) * (this.drifting ? 0.65 : 0.35); // sideways speed carries on forward (more of it in a drift)
@@ -157,7 +162,7 @@ export class VehicleState {
     this.x += this.vx * dt; this.z += this.vz * dt;
     const frontX = this.x + fx * LENGTH[this.kind] * 0.5 * Math.sign(nvf || 1), frontZ = this.z + fz * LENGTH[this.kind] * 0.5 * Math.sign(nvf || 1);
     if (!w.isReady(frontX, frontZ)) { this.x = px; this.z = pz; this.vx *= 0.5; this.vz *= 0.5; ev.push({ type: 'blocked', why: 'map' }); }
-    else if (s.terrain === 'water' ? !w.isWater(frontX, frontZ) : (w.isWater(frontX, frontZ) && !this.onBridge(w, frontX, frontZ))) {
+    else if (!s.amphibious && (s.terrain === 'water' ? !w.isWater(frontX, frontZ) : (w.isWater(frontX, frontZ) && !this.onBridge(w, frontX, frontZ)))) {
       this.x = px; this.z = pz;
       const imp = Math.abs(nvf);
       this.vx = -this.vx * 0.15; this.vz = -this.vz * 0.15;
@@ -190,11 +195,22 @@ export class VehicleState {
 
     // ---------- vertical ----------
     const ground = this.groundAt(w);
-    if (s.terrain === 'water') {
+    if (s.flaps) {
+      this.flapE ??= 3;
+      if (input.handbrake && this.flapE > 0.05) {
+        this.flapE -= dt; this.vy = Math.max(this.vy, 4.5); this.flapping = true;
+        if (wet && !this.boatAir) { this.boatAir = true; this.takeoff = { x: this.x, z: this.z }; }
+      } else {
+        this.flapping = false;
+        if (this.grounded || (wet && !this.boatAir)) this.flapE = Math.min(3, this.flapE + dt * 0.7);
+      }
+    }
+    const fallG = s.flaps && !this.flapping ? G * 0.35 : G; // wings out: a slow glide down
+    if (wet) {
       // boats float, but a kicker ramp on the water throws them into the air
       const kick = this.onRamp;
       if (this.boatAir) {
-        this.vy -= G * dt; this.y += this.vy * dt; this.air += dt;
+        this.vy -= (s.flaps ? fallG : G) * dt; this.y += this.vy * dt; this.air += dt;
         this.airH = Math.max(this.airH || 0, this.y - ground);
         if (this.y <= ground) {
           if (this.air > 0.5 && this.airH > 0.6) ev.push({ type: 'land', air: this.air, hard: this.vy < -12, dist: this.takeoff ? Math.hypot(this.x - this.takeoff.x, this.z - this.takeoff.z) : 0 });
@@ -209,7 +225,7 @@ export class VehicleState {
       }
       this.grounded = !this.boatAir;
     } else {
-      this.vy -= (this.grounded ? G * 2.2 : G) * dt; // suspension keeps the wheels down over small humps
+      this.vy -= (this.grounded ? G * 2.2 : s.flaps ? fallG : G) * dt; // suspension keeps the wheels down over small humps
       this.y = Math.max(this.y + this.vy * dt, ground);
       if (this.y <= ground) {
         if (!this.grounded && this.air > 0.5 && this.airH > 0.6) ev.push({ type: 'land', air: this.air, hard: this.vy < -12, dist: this.takeoff ? Math.hypot(this.x - this.takeoff.x, this.z - this.takeoff.z) : 0 });
@@ -235,7 +251,7 @@ export class VehicleState {
     // ---------- looks, wheels, fuel ----------
     const L = LENGTH[this.kind];
     const hf = this.rawGround(w, this.x + fx * L * 0.4, this.z + fz * L * 0.4), hb = this.rawGround(w, this.x - fx * L * 0.4, this.z - fz * L * 0.4);
-    const tp = s.terrain === 'water' ? -Math.min(0.15, Math.max(0, nvf - 8) * 0.012) : Math.atan2(hf - hb, L * 0.8);
+    const tp = wet ? -Math.min(0.15, Math.max(0, nvf - 8) * 0.012) : Math.atan2(hf - hb, L * 0.8);
     const accelPitch = (nvf - (this.prevVf ?? nvf)) / Math.max(dt, 1e-3) * -0.006;
     this.pitch += (tp + accelPitch * 0.5 - this.pitch) * Math.min(1, dt * 5);
     const lean = this.kind === 'bike' || s.lean ? Math.max(-0.6, Math.min(0.6, -yaw * nvf * (s.lean ? 0.05 : 0.08))) : Math.max(-0.08, Math.min(0.08, yaw * nvf * 0.012));
@@ -246,7 +262,7 @@ export class VehicleState {
     this.odo = (this.odo || 0) + dist;
     if (s.fuel && this.fuel > 0) this.fuel = Math.max(0, this.fuel - (dist / 1000) * s.use * (t > 0 ? 1.15 : 0.5));
     // engine note: gears by speed band
-    const bands = this.kind === 'truck' ? [0, 4, 8, 13, 18, 23, 30] : this.kind === 'car' || this.kind === 'pickup' ? [0, 7, 13, 19, 26, 34, 60] : this.kind === 'moto' ? [0, 9, 16, 23, 30, 60] : [0, 60];
+    const bands = this.kind === 'truck' ? [0, 4, 8, 13, 18, 23, 30] : this.kind === 'demon' ? [0, 12, 22, 33, 46, 62, 95] : this.kind === 'car' || this.kind === 'pickup' ? [0, 7, 13, 19, 26, 34, 60] : this.kind === 'moto' ? [0, 9, 16, 23, 30, 60] : [0, 60];
     const v = Math.abs(nvf);
     let gi = 0; while (gi < bands.length - 2 && v > bands[gi + 1]) gi++;
     this.gear = gi + 1;
@@ -339,14 +355,14 @@ export class VehicleState {
   // under ordinary roads (OpenStreetMap rarely tags those roads as bridges).
   onBridge(w, x, z) { const r = w.roadAt(x, z, 4); return !!(r && r.d < (this.road ? 3 : 1.5)); } // more leeway while you're on a road // d: metres beyond the road edge
   rawGround(w, x, z) {
-    if (this.spec.terrain === 'water' || this.spec.terrain === 'air') return this.y;
+    if (this.wet || this.spec.terrain === 'air') return this.y;
     const r = this.road ? w.roadAt(x, z, 2) : null;
     if (r && r.d < 0.5 && Math.abs(r.y - this.y) < 1.6) return r.y;
     return w.groundAt(x, z) ?? this.y;
   }
   groundAt(w) {
     let g;
-    if (this.spec.terrain === 'water') {
+    if (this.wet ?? this.spec.terrain === 'water') {
       const wg = w.groundAt(this.x, this.z);
       g = wg == null ? this.y : wg + 0.1;
     } else {
@@ -360,9 +376,10 @@ export class VehicleState {
   }
   /** Put the vehicle on the ground (after placing it). */
   settle(w) {
-    const r = this.spec.terrain === 'water' ? null : w.roadAt(this.x, this.z, 2);
+    this.wet = this.spec.terrain === 'water' && (!this.spec.amphibious || w.isWater(this.x, this.z));
+    const r = this.wet ? null : w.roadAt(this.x, this.z, 2);
     this.road = r && r.d < 0.4 ? r : null;
-    this.y = this.road ? this.road.y : (w.groundAt(this.x, this.z) ?? 0) + (this.spec.terrain === 'water' ? 0.1 : 0);
+    this.y = this.road ? this.road.y : (w.groundAt(this.x, this.z) ?? 0) + (this.wet ? 0.1 : 0);
     this.lastGround = this.y; this.vy = 0; this.gvy = 0; this.grounded = true; this.air = 0;
   }
 }
