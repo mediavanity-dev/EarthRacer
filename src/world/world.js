@@ -186,7 +186,11 @@ export class World {
       if (this.hint === old) this.hint = null;
       entry.chunk = chunk;
       this.emit({ type: 'chunk', chunk, refined: true, old });
-    } catch (err) { console.warn('building detail unavailable (tile keeps its look)', key, err.message); }
+    } catch (err) {
+      console.warn('building detail unavailable (tile keeps its look)', key, err.message);
+      // the map server is often just busy: try again a little later (twice), as long as the tile is still around
+      if ((entry.detailRetries = (entry.detailRetries || 0) + 1) <= 2) setTimeout(() => { if (this.chunks.get(key) === entry && entry.chunk) this.refine(key, entry); }, 90000);
+    }
   }
 
   place(chunk) {

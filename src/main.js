@@ -261,7 +261,7 @@ function wireModeChooser(o) {
   });
 }
 function controlsChooser() {
-  if (!isTouch) return `<p class="note" style="margin-top:14px">Controls: <span class="kbd">W A S D</span> or arrows, <span class="kbd">Space</span> or <span class="kbd">Shift</span> handbrake, <span class="kbd">C</span> camera, <span class="kbd">Esc</span> menu. An Xbox or other game controller works too: just press a button on it.</p>`;
+  if (!isTouch) return `<p class="note" style="margin-top:14px">Controls: <span class="kbd">W A S D</span> or arrows, <span class="kbd">Space</span> or <span class="kbd">Shift</span> handbrake / drift, <span class="kbd">H</span> horn, <span class="kbd">C</span> camera, <span class="kbd">Esc</span> menu. An Xbox or other game controller works too: just press a button on it.</p>`;
   const m = input.mode;
   return `<h3 style="margin:16px 0 6px;font-size:15px">How do you want to steer?</h3>
     <div class="seg" id="ctl">
@@ -1889,7 +1889,7 @@ const camCtl = { yaw: 0, pitch: 0, zoom: profile.settings.camZoom || 1, held: fa
   canvas.addEventListener('pointerdown', (e) => {
     if (game.state !== 'driving') return;
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    canvas.setPointerCapture?.(e.pointerId);
+    try { canvas.setPointerCapture?.(e.pointerId); } catch { /* pointer already gone */ }
     if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); zoom0 = camCtl.zoom; }
     camCtl.held = true; camCtl.at = performance.now();
   });
