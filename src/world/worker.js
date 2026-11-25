@@ -68,9 +68,10 @@ const FLAT_T = new Set(['apartments', 'commercial', 'retail', 'office', 'industr
 // building types by use (OSM building=*)
 const RES_T = new Set(['house', 'detached', 'semidetached_house', 'terrace', 'bungalow', 'cabin', 'farm', 'apartments', 'residential', 'dormitory', 'hut']);
 const COM_T = new Set(['retail', 'commercial', 'supermarket', 'kiosk', 'hotel', 'office']);
-const IND_T = new Set(['industrial', 'warehouse', 'manufacture', 'storage_tank', 'hangar', 'service', 'transportation']);
+const IND_T = new Set(['industrial', 'warehouse', 'manufacture', 'storage_tank', 'silo', 'hangar', 'service', 'transportation']);
 const CIV_T = new Set(['school', 'hospital', 'university', 'college', 'kindergarten', 'public', 'civic', 'government', 'fire_station', 'train_station', 'stadium']);
 const IND_WALLS = ['#c9c6be', '#b8bcbf', '#d4cfc4', '#a9b0b3', '#8d9ba3', '#a7b5ad', '#9a5a44'];
+const TANK_WALLS = ['#e6e6e1', '#d4d7d6', '#c5cac8', '#b9bfbb', '#dcd6c8'];
 const IND_ROOFS = ['#c7cac9', '#aeb7bb', '#8f9ea6', '#b9b3a6'];
 const COM_WALLS = ['#ece6da', '#ddd2bf', '#cbb79b', '#b86b47', '#d9dde0', '#f1efe9', '#c4c9c2'];
 const OFFICE_WALLS = ['#9fb0bd', '#b7c2c9', '#c9cfd2', '#8e9aa3', '#d3d0c8'];
@@ -273,12 +274,17 @@ async function build({ x, y, opts }) {
     // around it. So a showroom or brewery in an industrial estate still looks like a business,
     // and a corner shop under flats gets a shopfront with homes above.
     const pt = usePoint(bd.rings, bbox(outer));
+    let perim = 0;
+    for (let k = 0; k < outer.length; k++) { const [ax, ay] = outer[k], [bx, by] = outer[(k + 1) % outer.length]; perim += Math.hypot(bx - ax, by - ay); }
+    perim *= mPerPx;
+    const round = outer.length >= 10 && bd.rings.length === 1 && perim > 0 && (4 * Math.PI * areaM) / (perim * perim) > 0.82;
     const m = maskAt(cx, cy);
     const tagUse = det?.u === 'v' ? 'civ' : det?.u === 'c' ? 'com' : null;
     const tyUse = ty ? (RES_T.has(ty) ? 'res' : COM_T.has(ty) ? (ty === 'office' ? 'office' : 'com') : IND_T.has(ty) ? 'ind' : CIV_T.has(ty) ? 'civ' : null) : null;
     const landUse = m & 16 ? 'com' : m & 64 ? 'civ' : m & 4 ? 'ind' : m & 32 ? 'res' : null;
     let use;
     if (church) use = 'church';
+    else if (ty === 'storage_tank' || ty === 'silo' || (round && !tagUse && pt === 0 && areaM > 40 && (!tyUse || tyUse === 'ind') && !(ty && HOUSE_T.has(ty)))) use = 'tank';
     else if (tagUse === 'com') use = tyUse === 'res' ? 'mixed' : tyUse === 'ind' ? 'trade' : tall ? 'office' : 'com';
     else if (tagUse === 'civ') use = 'civ';
     else if (tyUse) use = tyUse === 'res' && pt === 1 ? 'mixed' : tyUse === 'ind' && pt === 1 ? 'trade' : tyUse === 'com' && tall ? 'office' : tyUse;
@@ -290,19 +296,20 @@ async function build({ x, y, opts }) {
     else if (landUse === 'res') use = 'res';
     else use = !tall && areaM > 1500 && bd.height < 16 && (m & 4) ? 'ind' : null;
     uses[use || 'other'] = (uses[use || 'other'] || 0) + 1;
-    const industrial = use === 'ind' || use === 'trade';
+    const industrial = use === 'ind' || use === 'trade' || use === 'tank';
     const house = (ty ? HOUSE_T.has(ty) && areaM < 1200 : (use === 'res' || !use) && !tall && bd.height <= 12 && areaM < 450) && use !== 'com' && use !== 'mixed';
     const realWall = colourOf(det?.c) || hexRgb(MATERIAL[det?.m]) || hexRgb(bd.colour);
     const base = realWall || (church ? pal(['#c9bfae', '#d8cfbd', '#b9ae9a'], rr()) : ty === 'barn' ? hexRgb('#8b2e22')
-      : industrial ? pal(IND_WALLS, rr()) : use === 'office' ? pal(OFFICE_WALLS, rr()) : tall ? pal(TALL_WALLS, rr())
+      : use === 'tank' ? pal(TANK_WALLS, rr()) : industrial ? pal(IND_WALLS, rr()) : use === 'office' ? pal(OFFICE_WALLS, rr()) : tall ? pal(TALL_WALLS, rr())
         : use === 'com' ? pal(COM_WALLS, rr()) : use === 'civ' ? pal(CIV_WALLS, rr()) : pal(style.walls, rr()));
     const wallC = shade(base, 0.92 + r * 0.12), lowC = shade(wallC, 0.86);
     // window styles (see the building shader): 1 house, 2 shopfront with floors above, 3 glass tower,
-    // 4 industrial shed, 5 flats, 6 offices, 7 civic; + 10 x tint (regional shutters, or 5..9 = the
+    // 4 industrial shed, 5 flats, 6 offices, 7 civic, 8 tank (ribbed, no windows); + 10 x tint (regional shutters, or 5..9 = the
     // colour of a shop's sign band)
     const sign = 5 + Math.floor(rr() * 5);
     const ws = church ? 1
-      : use === 'office' ? 6 : tall && use !== 'res' ? 3
+      : use === 'tank' ? 8
+        : use === 'office' ? 6 : tall && use !== 'res' ? 3
         : industrial ? 4 + (use === 'trade' ? sign * 10 : 0)
           : use === 'com' ? 2 + sign * 10
             : use === 'mixed' ? 2 + style.tint * 10

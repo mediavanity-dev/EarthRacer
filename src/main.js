@@ -1017,7 +1017,8 @@ function renderTab(tab, body) {
       <h3>Traffic</h3><div class="seg" id="trf">${[['None', 0], ['Light', 0.5], ['Normal', 1], ['Busy', 1.5]].map(([n, d]) => `<button data-d="${d}" class="${traffic.density === d ? 'on' : ''}">${n}</button>`).join('')}</div>
       <h3>Sound</h3><div class="seg"><button id="snd" class="${profile.settings.mute ? '' : 'on'}">${profile.settings.mute ? '🔇 Off' : '🔊 On'}</button></div>
       <h3>Start over</h3><p class="note">Begins the whole game again from nothing.</p><button class="btn" id="wipe">Start over…</button>
-      ${window.__tipJar ? `<div class="tipjar"><h3>💛 Support EarthRacer</h3><p class="note">EarthRacer is free, with no ads and nothing to unlock. If you enjoy it, you can leave a tip. It doesn't change the game; it helps keep it going.</p><div class="row" id="tip-btns"><span class="note">Loading…</span></div><p class="note" id="tip-msg"></p></div>` : ''}`;
+      ${window.__tipJar ? `<div class="tipjar"><h3>💛 Support EarthRacer</h3><p class="note">EarthRacer is free, with no ads and nothing to buy. If you enjoy it, you can leave a tip. It doesn't change the game; it helps keep it going.</p><div class="row" id="tip-btns"><span class="note">Loading…</span></div><p class="note" id="tip-msg"></p></div>` : ''}
+      <p class="note" style="text-align:center;opacity:.6;margin-top:14px">${['EarthRacer', import.meta.env.VITE_VERSION, import.meta.env.VITE_BUILD ? `(build ${import.meta.env.VITE_BUILD})` : '(web)'].filter(Boolean).join(' ')}</p>`;
     if (window.__tipJar) tipJar(body);
     body.querySelectorAll('#ctl button').forEach((b) => b.onclick = async () => { await setControls(b.dataset.m); openPanel('settings'); });
     const cal = body.querySelector('#cal'); if (cal) cal.onclick = () => { closePanel(); calibrateTilt(); };
@@ -1830,7 +1831,7 @@ function updateCamera(dt) {
   const cyw = Math.cos(camCtl.yaw), syw = Math.sin(camCtl.yaw);
   const bx = bx0 * cyw - bz0 * syw, bz = bx0 * syw + bz0 * cyw;
   let dist = s.camDist * camCtl.zoom, h = s.camH * camCtl.zoom * (1 + camCtl.pitch);
-  if (game.cam === 1) { dist *= 1.7; h *= 1.8; }
+  if (game.cam === 1) { dist *= 3.4; h *= 3.6; } // Far: twice as far back as it was
   dist += speed * 0.04;
   const target = new THREE.Vector3();
   const look = new THREE.Vector3();

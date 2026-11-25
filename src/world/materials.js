@@ -78,10 +78,10 @@ buildingMat.onBeforeCompile = (shader) => {
   shader.fragmentShader = 'uniform float uNight; uniform float uSnow; varying vec3 vWP; varying vec3 vON; varying vec2 vB;\nfloat hsh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' + shader.fragmentShader
     .replace('#include <color_fragment>', `#include <color_fragment>
       // window styles: 1 house, 2 shopfront with floors above, 3 glass tower, 4 industrial shed, 5 flats,
-      // 6 offices (ribbon glazing), 7 civic (tall windows); tint 1-2 shutters, 3 Paris grey-blue, 5-9 sign colour
+      // 6 offices (ribbon glazing), 7 civic (tall windows), 8 tank (ribbed, no windows); tint 1-2 shutters, 3 Paris grey-blue, 5-9 sign colour
       float st = mod(vB.x, 10.0), tint = floor(vB.x / 10.0 + 0.01);
       float s1 = step(0.5, st) * step(st, 1.5), s2 = step(1.5, st) * step(st, 2.5), s3 = step(2.5, st) * step(st, 3.5);
-      float s4 = step(3.5, st) * step(st, 4.5), s5 = step(4.5, st) * step(st, 5.5), s6 = step(5.5, st) * step(st, 6.5), s7 = step(6.5, st);
+      float s4 = step(3.5, st) * step(st, 4.5), s5 = step(4.5, st) * step(st, 5.5), s6 = step(5.5, st) * step(st, 6.5), s7 = step(6.5, st) * step(st, 7.5), s8 = step(7.5, st);
       float wallF = (1.0 - step(0.5, abs(vON.y))) * step(0.5, st);
       float rel = vWP.y - vB.y;
       float hz = dot(vWP.xz, normalize(vec2(-vON.z, vON.x) + 1e-5));
@@ -97,12 +97,13 @@ buildingMat.onBeforeCompile = (shader) => {
       bx = mix(bx, vec4(0.22, 0.78, 0.28, 0.78), s5);
       bx = mix(bx, vec4(-0.01, 1.01, 0.32, 0.84), s6);
       bx = mix(bx, vec4(0.3, 0.7, 0.16, 0.86), s7);
+      bx = mix(bx, vec4(2.0, 2.0, 2.0, 2.0), s8); // tanks: no windows
       float win = wallF * step(bx.x, f.x) * step(f.x, bx.y) * step(bx.z, f.y) * step(f.y, bx.w) * step(0.4, rel);
       vec3 glass = mix(mix(mix(vec3(0.42, 0.47, 0.55), vec3(0.32, 0.36, 0.4), shopF), vec3(0.38, 0.5, 0.62), s3), vec3(0.36, 0.46, 0.56), s6);
       if (tint > 2.5 && tint < 4.5) glass = vec3(0.5, 0.55, 0.62);
       diffuseColor.rgb = mix(diffuseColor.rgb, (s3 + s6) > 0.5 ? glass : diffuseColor.rgb * glass, win * 0.88);
       // industrial sheds: ribbed metal cladding
-      diffuseColor.rgb *= 1.0 - s4 * wallF * 0.08 * step(0.5, fract(hz / 0.45));
+      diffuseColor.rgb *= 1.0 - (s4 + s8) * wallF * 0.08 * step(0.5, fract(hz / 0.45));
       // a shop's sign band over the shopfront (higher up on a trade shed)
       float bandLo = mix(3.55, 4.6, s4);
       float band = wallF * step(4.5, tint) * step(bandLo, rel) * step(rel, bandLo + 0.8);
