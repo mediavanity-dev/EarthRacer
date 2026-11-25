@@ -486,8 +486,10 @@ $('#b-fuel').onclick = () => outOfFuel();
 // The horn: cars honk, the dog barks, the duck quacks, bicycles and the cart ring a bell.
 function honk() {
   if (game.state !== 'driving' || !game.v) return;
-  const HORN_PITCH = { truck: 0.72, boat: 0.8, pickup: 0.9, demon: 1.08, moto: 1.22, jetski: 1.2, solar: 1.3 }; // the same horn, deeper on big vehicles
-  ({ bike: () => sound.bell(), dog: () => sound.bark(), duck: () => sound.quack(), cart: () => sound.bell(), para: () => sound.bell() }[game.v.kind] || (() => sound.horn(HORN_PITCH[game.v.kind] || 1)))();
+  // real recordings: an air horn for the truck and pickup, a ship's horn for the boats, a car horn for the rest
+  const HORN = { truck: ['horn-truck', 1], pickup: ['horn-truck', 1.12], boat: ['horn-ship', 1.05], jetski: ['horn-ship', 1.5], demon: ['horn', 1.08], moto: ['horn', 1.22], solar: ['horn', 1.3] };
+  const [clip, pitch] = HORN[game.v.kind] || ['horn', 1];
+  ({ bike: () => sound.bell(), dog: () => sound.bark(), duck: () => sound.quack(), cart: () => sound.bell(), para: () => sound.bell() }[game.v.kind] || (() => sound.horn(pitch, clip)))();
   input.rumble(0.15, 0.3, 90);
 }
 $('#b-horn').onclick = () => { userGesture(); honk(); };
@@ -2433,7 +2435,7 @@ function tickStyle(dt, inp) {
   if (st.overtakes) profile.stats.overtakes += st.overtakes; // counted, but points are for stunts only
 }
 
-const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences). Sounds (trimmed), via Wikimedia Commons: car horn by 15HPanska_Ruttner_Jan (CC0) and dog bark by Amada44 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>).';
+const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences). Sounds (trimmed), via Wikimedia Commons: car horn by 15HPanska_Ruttner_Jan (CC0), truck horn from a city bus by Work With Sounds / Technical Museum of Slovenia (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>), ship horn by Tvabutzku1234 (CC0) and dog bark by Amada44 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>).';
 
 // ---------- boot ----------
 if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, radio, sound, camCtl, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
