@@ -41,14 +41,21 @@ export const roadMat = hook(new THREE.MeshLambertMaterial({
 // in places it bulges a little above them. Each road vertex is drawn a little towards the camera
 // (more with distance, where the terrain is coarsest), so roads win against terrain that's just
 // above them, while real hills and buildings in front still hide them.
+export const roadFocus = { value: new THREE.Vector3(0, 0, 0) }; // the player's vehicle (set every frame)
 roadMat.onBeforeCompile = ((prev) => (sh, r) => {
   prev?.(sh, r);
-  sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
-    { float d = length(mvPosition.xyz);
-      mvPosition.xyz -= mvPosition.xyz / max(d, 0.001) * clamp(0.08 + d * 0.012, 0.0, 1.6);
+  sh.uniforms.uFocus = roadFocus;
+  sh.vertexShader = `uniform vec3 uFocus;
+` + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+    { vec4 wp = modelMatrix * vec4(transformed, 1.0);
+      // none of this near your vehicle (or it would draw the road over the car's wheels and over
+      // nearby traffic): there the terrain is already pressed down under the road
+      float near = smoothstep(12.0, 35.0, distance(wp.xz, uFocus.xz));
+      float d = length(mvPosition.xyz);
+      mvPosition.xyz -= mvPosition.xyz / max(d, 0.001) * clamp(d * 0.012 - 0.1, 0.0, 1.4) * near;
       gl_Position = projectionMatrix * mvPosition; }`);
 })(roadMat.onBeforeCompile);
-roadMat.customProgramCacheKey = () => 'er-road-front';
+roadMat.customProgramCacheKey = () => 'er-road-front-2';
 
 const SWAY = `
 #ifdef USE_INSTANCING
