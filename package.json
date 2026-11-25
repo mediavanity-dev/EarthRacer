@@ -1,6 +1,6 @@
 {
   "name": "earthracer",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "description": "Drive, ride and sail the real Earth, built from open map data.",
   "private": true,
   "type": "module",
