@@ -38,7 +38,7 @@ export const VEHICLES = {
     unlock: { what: 'Land 10 jumps', key: 'jumps', n: 10 },
   },
   dog: {
-    name: 'Dog', icon: '🐕', top: 25, accel: 4, brake: 10, grip: 10, wheelbase: 1, steer: 0.85, radius: 0.6,
+    name: 'Dog', icon: '🐕', top: 25, accel: 4, brake: 10, grip: 10, wheelbase: 1.3, steer: 0.55, radius: 0.6,
     fuel: 0, use: 0, terrain: 'land', amphibious: true, waterK: 0.14, offroadK: 1, offroadTop: 25, sound: 'dog', camDist: 5, camH: 2, mass: 0.2, feat: true, tough: 0.9,
     about: 'A very good dog that runs as fast as a car, paddles slowly through water and barks on the horn. Never needs fuel.',
     unlock: { what: 'Drive 1,000 miles (1,609 km)', key: 'km', n: 1609 },
@@ -79,13 +79,19 @@ export const VEHICLES = {
     about: 'Quick and nimble on the water, about 65 km/h, and it flies off kickers. Small tank, and it doesn\'t take knocks well.',
     unlock: { what: 'Steer through 8 buoy gates', key: 'gates', n: 8 },
   },
+  glider: {
+    name: 'Hang glider', icon: '🪁', top: 17, accel: 3, brake: 2, grip: 6, wheelbase: 2, steer: 0.5, radius: 1.2,
+    fuel: 0, use: 0, terrain: 'air', glider: true, offroadTop: 7, sound: 'glider', camDist: 12, camH: 4.5, mass: 0.2, tough: 1.4,
+    about: 'No engine: launch from the top of a hill and glide. Wind blowing up a slope lifts you, so you can stay up along a ridge.',
+    unlock: { what: 'Take off 5 times in the paramotor', key: 'flights', n: 5 },
+  },
   solar: {
     name: 'Solar buggy', icon: '☀️', top: 9.7, accel: 1.6, brake: 6, grip: 8, wheelbase: 1.9, steer: 0.6, radius: 1.1,
     fuel: 0, use: 0, terrain: 'land', offroadK: 0.8, offroadTop: 8, sound: 'solar', camDist: 6.5, camH: 2.6, mass: 0.4, tough: 1.2, solar: true, always: true,
     about: 'Emergency only: never needs fuel, but 35 km/h at best, and it crawls once the sun is down.',
   },
 };
-export const VEHICLE_ORDER = ['bike', 'car', 'pickup', 'moto', 'demon', 'truck', 'boat', 'jetski', 'para', 'solar', 'dog', 'cart', 'duck'];
+export const VEHICLE_ORDER = ['bike', 'car', 'pickup', 'moto', 'demon', 'truck', 'boat', 'jetski', 'para', 'glider', 'solar', 'dog', 'cart', 'duck'];
 
 // How each vehicle compares, 0..1, for the Garage (what you actually get in the game, under the cap).
 export function ratings(k) {
@@ -107,8 +113,12 @@ const box = (w, h, l, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(ne
 function wheel(r, w, mat) {
   const g = new THREE.CylinderGeometry(r, r, w, 12).rotateZ(Math.PI / 2);
   const m = new THREE.Mesh(g, mat);
-  const hub = new THREE.Mesh(new THREE.BoxGeometry(w * 1.05, r * 0.5, r * 0.5), lam('#9aa0a6'));
-  m.add(hub); // spinning hub makes rotation visible
+  // a hub cap with a cross of spokes, so you can see the wheel roll (and it reads clearly when steered)
+  const rim = lam('#9aa0a6');
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.42, r * 0.42, w * 1.04, 12).rotateZ(Math.PI / 2), rim);
+  const spokeA = new THREE.Mesh(new THREE.BoxGeometry(w * 1.08, r * 1.5, r * 0.14), lam('#5d6266'));
+  const spokeB = spokeA.clone(); spokeB.rotation.x = Math.PI / 2;
+  m.add(hub, spokeA, spokeB);
   return m;
 }
 
@@ -258,6 +268,22 @@ export function buildModel(kind, color = '#d23a2e') {
     const wings = [];
     for (const sx of [-1, 1]) { const wg = new THREE.Group(); wg.position.set(sx * 1.25, 0.9, 0.2); const f = box(1.3, 0.12, 1.1, yellow, sx * 0.6, 0, 0); wg.add(f); wg.visible = false; body.add(wg); wings.push({ g: wg, sx }); }
     group.userData.wings = wings;
+  } else if (kind === 'glider') {
+    // a delta wing on a frame, the pilot hanging underneath, lying flat
+    const wing = new THREE.BufferGeometry();
+    wing.setAttribute('position', new THREE.Float32BufferAttribute([0, 3.2, -2.6, -5, 3.0, 1.6, 0, 3.4, 0.9, 0, 3.2, -2.6, 0, 3.4, 0.9, 5, 3.0, 1.6], 3));
+    wing.computeVertexNormals();
+    body.add(new THREE.Mesh(wing, lam(color, { side: THREE.DoubleSide })));
+    body.add(box(0.08, 0.08, 4.3, dark, 0, 3.32, -0.6));                   // keel
+    body.add(box(10, 0.06, 0.06, dark, 0, 3.05, 1.2));                      // cross bar
+    const lineM = new THREE.LineBasicMaterial({ color: '#cfd3d6' }), pts = [];
+    for (const sx of [-0.7, 0.7]) pts.push(new THREE.Vector3(0, 3.3, 0), new THREE.Vector3(sx, 1.5, -0.1));
+    pts.push(new THREE.Vector3(-0.7, 1.5, -0.1), new THREE.Vector3(0.7, 1.5, -0.1));
+    body.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), lineM));
+    const suit = lam('#2f6fb0'), skin = lam('#d7a985');
+    const pilot = box(0.5, 0.35, 1.7, suit, 0, 1.9, 0.4); body.add(pilot);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), skin); head.position.set(0, 1.95, -0.55); body.add(head);
+    body.add(box(0.34, 0.12, 0.34, lam('#e3e3e3'), 0, 2.07, -0.55));
   } else if (kind === 'para') {
     // the wing: an arc of cells above the pilot, lines down to a harness, a caged propeller behind
     const wingM = lam(color, { side: THREE.DoubleSide }), wingB = lam('#f4f1ea', { side: THREE.DoubleSide });

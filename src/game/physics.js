@@ -17,11 +17,15 @@ const HITBOX = {
   cart: [[0, 0.45]],
   duck: [[-0.8, 1.2], [0.8, 1.2]],
   para: [[0, 1.0]],
+  glider: [[0, 1.0]],
   solar: [[-0.7, 0.75], [0.7, 0.75]],
   jetski: [[-0.6, 0.6], [0.6, 0.6]],
   demon: [[-1.4, 0.95], [0, 0.95], [1.4, 0.95]],
 };
-const LENGTH = { bike: 1.7, car: 4.3, truck: 9.4, boat: 6, pickup: 5.3, moto: 2.1, dog: 1.3, cart: 1, duck: 3.4, para: 2, solar: 2.6, jetski: 3, demon: 4.5 };
+const LENGTH = { bike: 1.7, car: 4.3, truck: 9.4, boat: 6, pickup: 5.3, moto: 2.1, dog: 1.3, cart: 1, duck: 3.4, para: 2, glider: 2, solar: 2.6, jetski: 3, demon: 4.5 };
+
+// Switched on by the hidden no-damage unlock: knocks still happen (sparks, sounds), but nothing breaks.
+export const cheats = { noDamage: false };
 
 export class VehicleState {
   constructor(kind, x, z, heading) {
@@ -225,7 +229,10 @@ export class VehicleState {
       }
       this.grounded = !this.boatAir;
     } else {
-      this.vy -= (this.grounded ? G * 2.2 : s.flaps ? fallG : G) * dt; // suspension keeps the wheels down over small humps
+      // suspension keeps the wheels down over small humps, and the faster you go the harder the air
+      // presses you onto the road (downforce), so a fast car stays planted instead of skipping
+      const spH = Math.hypot(this.vx, this.vz);
+      this.vy -= (this.grounded ? G * (2.2 + (spH * spH) / 500) : s.flaps ? fallG : G) * dt;
       this.y = Math.max(this.y + this.vy * dt, ground);
       if (this.y <= ground) {
         if (!this.grounded && this.air > 0.5 && this.airH > 0.6) ev.push({ type: 'land', air: this.air, hard: this.vy < -12, dist: this.takeoff ? Math.hypot(this.x - this.takeoff.x, this.z - this.takeoff.z) : 0 });
@@ -235,18 +242,21 @@ export class VehicleState {
         const dh = ground - this.lastGround, sp = Math.hypot(this.vx, this.vz);
         const raw = Math.abs(dh) > sp * dt * 0.4 + 0.04 ? 0 : dh / dt;
         this.gvy = (this.gvy || 0) * 0.9 + (Number.isFinite(raw) ? raw : 0) * 0.1;
-        this.gvy = Math.max(-sp * 0.18, Math.min(sp * 0.18, this.gvy));
+        this.gvy = Math.max(-sp * 0.12, Math.min(sp * 0.12, this.gvy)); // no road is steeper than about 12%
         // on a jump ramp: climb exactly at the ramp's slope, so its lip launches you
         if (this.onRamp) this.gvy = Math.max(0, this.vx * this.onRamp.fx + this.vz * this.onRamp.fz) * this.onRamp.slope;
-        this.y = ground; this.vy = this.gvy;
+        // follow the ground; only a ramp gives you lift (carrying the climb's upward speed over a crest
+        // is what threw fast cars into the air)
+        this.y = ground; this.vy = this.onRamp ? this.gvy : Math.min(this.gvy, 0);
         this.grounded = true; this.air = 0; this.airH = 0;
-      } else if (this.y > ground + 0.35) {
+      } else if (this.y > ground + (this.grounded && !this.onRamp && !this.wasRamp ? 0.35 + spH * 0.012 : 0.35)) { // a crest at speed isn't a jump
         if (this.grounded) this.takeoff = { x: this.x, z: this.z };
         this.grounded = false; this.air += dt; this.airH = Math.max(this.airH || 0, this.y - ground);
       }
       else if (!this.grounded) this.air += dt;
     }
     this.lastGround = ground;
+    this.wasRamp = !!this.onRamp; // a ramp's lip still launches you at once
 
     // ---------- looks, wheels, fuel ----------
     const L = LENGTH[this.kind];
@@ -281,13 +291,23 @@ export class VehicleState {
     const s = this.spec, w = ctx.world;
     const ground = w.groundAt(this.x, this.z) ?? this.y;
     const t = input.throttle, b = input.brake;
-    const fuelOk = this.fuel > 0;
+    const glider = !!s.glider; // no engine: run off a hill, then glide (gas dives, brake slows)
+    const fuelOk = !glider && this.fuel > 0;
     const thrust = fuelOk ? t : 0;
     this.steer += (input.steer - this.steer) * Math.min(1, dt * (input.analog ? 6 : 3));
     const [fx, fz] = this.fwd();
     const wind = ctx.wind || [0, 0];
     const px = this.x, pz = this.z;
-    if (!this.flying) {
+    if (!this.flying && glider) {
+      // the launch: run (gas) down the slope; you're off once you're quick and the ground falls away
+      if (t > 0.1) this.vf = Math.min(7.5, this.vf + s.accel * t * dt); else this.vf = Math.max(0, this.vf - 3 * dt);
+      if (b > 0) this.vf = Math.max(0, this.vf - 4 * b * dt);
+      this.heading += this.steer * 0.6 * Math.min(1, this.vf / 2) * dt;
+      [this.vx, this.vz] = [fx * this.vf, fz * this.vf];
+      this.y = ground; this.vy = 0;
+      const ahead = w.groundAt(this.x + fx * 12, this.z + fz * 12) ?? ground;
+      if (this.vf >= 6 && t > 0.4 && ahead < ground - 0.8) { this.flying = true; this.vy = 0; this.y = ground + 0.6; ev.push({ type: 'takeoff' }); }
+    } else if (!this.flying) {
       // take-off run / rolling out after landing
       if (thrust > 0.1) this.vf = Math.min(10, this.vf + s.accel * thrust * dt);
       else this.vf = Math.max(0, this.vf - 2.5 * dt);
@@ -297,10 +317,19 @@ export class VehicleState {
       this.y = ground; this.vy = 0;
       if (this.vf >= 8.3 && thrust > 0.5) { this.flying = true; this.vy = 1.5; this.y = ground + 0.4; ev.push({ type: 'takeoff' }); }
     } else {
-      const air = 9 + thrust * 4 - b * 1.5;
+      const air = glider ? 11 + t * 6 - b * 3 : 9 + thrust * 4 - b * 1.5;
       this.vf += (air - this.vf) * Math.min(1, dt * 0.8);
-      let climb = fuelOk ? (thrust - 0.4) * 4.2 - b * 2 : -this.vf / 8;
+      let climb = fuelOk ? (thrust - 0.4) * 4.2 - b * 2 : glider ? -this.vf / (t > 0.3 ? 7 : 10) : -this.vf / 8;
       const agl = this.y - ground;
+      if (glider) {
+        // ridge lift: wind blowing into rising ground is pushed up the slope, and you with it
+        const ws = Math.hypot(wind[0], wind[1]);
+        if (ws > 0.5 && agl < 250) {
+          const ux = wind[0] / ws, uz = -wind[1] / ws;
+          const up = (w.groundAt(this.x + ux * 60, this.z + uz * 60) ?? ground) - (w.groundAt(this.x - ux * 30, this.z - uz * 30) ?? ground);
+          if (up > 0) climb += Math.min(3.5, ws * (up / 90) * 1.6) * Math.max(0, 1 - agl / 250);
+        }
+      }
       if (agl > 150) climb = Math.min(climb, -0.3); // ceiling
       this.vy += (climb - this.vy) * Math.min(1, dt * 1.2);
       this.heading += this.steer * 0.42 * dt;
@@ -341,13 +370,13 @@ export class VehicleState {
     this.roll += ((this.flying ? -this.steer * 0.35 : 0) - this.roll) * Math.min(1, dt * 2);
     this.rpm += ((fuelOk ? 0.15 + t * 0.85 : 0) - this.rpm) * Math.min(1, dt * 6);
     this.spin += (fuelOk ? 20 + t * 60 : 0) * dt;
-    this.limit = 13; this.limitWhy = !fuelOk ? 'out of fuel: gliding' : null;
+    this.limit = glider ? 17 : 13; this.limitWhy = glider ? (this.flying ? 'gliding' : 'run downhill to launch') : !fuelOk ? 'out of fuel: gliding' : null;
     this.lastGround = ground;
     return ev;
   }
 
   hurt(amount, ev, cause = 'crash') {
-    const add = amount * 1.1 * (this.spec.tough ?? 1); // tough vehicles shrug off more
+    const add = cheats.noDamage ? 0 : amount * 1.1 * (this.spec.tough ?? 1); // tough vehicles shrug off more
     this.damage = Math.min(100, this.damage + add);
     ev.push({ type: 'crash', impact: amount, cause });
   }
