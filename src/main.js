@@ -25,6 +25,7 @@ import { regionOf, regionStyle } from './world/region.js';
 import { Signs } from './world/signs.js';
 import { Smoke } from './world/smoke.js';
 import { Debris, TreeHits } from './world/debris.js';
+import { roadFocus } from './world/materials.js';
 import { Radio } from './data/radio.js';
 import { portalNow, PORTAL_POINTS, PORTAL_COINS } from './game/portals.js';
 import { PortalView, PORTAL_RADIUS } from './world/portal.js';
@@ -471,7 +472,8 @@ $('#b-fuel').onclick = () => outOfFuel();
 // The horn: cars honk, the dog barks, the duck quacks, bicycles and the cart ring a bell.
 function honk() {
   if (game.state !== 'driving' || !game.v) return;
-  ({ bike: () => sound.bell(), dog: () => sound.bark(), duck: () => sound.quack(), cart: () => sound.bell(), para: () => sound.bell() }[game.v.kind] || (() => sound.horn()))();
+  const HORN_PITCH = { truck: 0.72, boat: 0.8, pickup: 0.9, demon: 1.08, moto: 1.22, jetski: 1.2, solar: 1.3 }; // the same horn, deeper on big vehicles
+  ({ bike: () => sound.bell(), dog: () => sound.bark(), duck: () => sound.quack(), cart: () => sound.bell(), para: () => sound.bell() }[game.v.kind] || (() => sound.horn(HORN_PITCH[game.v.kind] || 1)))();
   input.rumble(0.15, 0.3, 90);
 }
 $('#b-horn').onclick = () => { userGesture(); honk(); };
@@ -2017,6 +2019,7 @@ function frame(now) {
   // the speed you see is how far you really went this frame (after walls, trees and traffic have
   // pushed back), smoothed: not the engine's idea of it. A big jump is the world re-centring.
   { const net = Math.hypot(v.x - x0, v.z - z0); if (net < 60 && dt > 0) game.gs = (game.gs ?? net / dt) + (net / dt - (game.gs ?? net / dt)) * Math.min(1, dt * 6); }
+  roadFocus.value.set(v.x, v.y, v.z);
   tickCamCtl(dt, inp);
   updateCamera(dt);
   const env = sky.update(dt, game.lat, game.lon, camera, DEV_HOUR != null ? new Date(new Date().setUTCHours(DEV_HOUR, 0, 0)) : new Date());
@@ -2373,7 +2376,7 @@ function tickStyle(dt, inp) {
   if (st.overtakes) profile.stats.overtakes += st.overtakes; // counted, but points are for stunts only
 }
 
-const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences).';
+const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences). Sounds (trimmed), via Wikimedia Commons: car horn by 15HPanska_Ruttner_Jan (CC0), dog bark by Amada44 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>), duck by WaderClub (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>).';
 
 // ---------- boot ----------
 if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, radio, sound, camCtl, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };

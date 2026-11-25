@@ -1,0 +1,12 @@
+Sounds in this folder, trimmed and re-encoded (MP3) from Wikimedia Commons:
+
+horn.mp3   from "Car Horn.wav" by 15HPanska_Ruttner_Jan, CC0 1.0 (public domain)
+           https://commons.wikimedia.org/wiki/File:Car_Horn.wav
+bark.mp3   from "Barking of a dog.ogg" by Amada44, CC BY-SA 3.0
+           https://commons.wikimedia.org/wiki/File:Barking_of_a_dog.ogg
+           https://creativecommons.org/licenses/by-sa/3.0/
+quack.mp3  from "Pekin duck & mallard.ogg" by WaderClub, CC BY-SA 4.0
+           https://commons.wikimedia.org/wiki/File:Pekin_duck_%26_mallard.ogg
+           https://creativecommons.org/licenses/by-sa/4.0/
+
+The trimmed clips are shared under the same licences as their originals.

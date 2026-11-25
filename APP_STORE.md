@@ -71,5 +71,8 @@ Wikimedia Commons (free licences only). Nothing about the player is sent anywher
   build 17 (the latest) and the three tips. Release: **automatic** after approval. Price free,
   174 regions (not China mainland), age rating 9+ (12+ in Vietnam, Brazil, Korea), App Privacy
   "Data Not Collected" (published).
+- 2026-11-25: 1.0 approved and live. Version bumped to **1.1** (`MARKETING_VERSION` in the Xcode
+  project): build 19 is the first 1.1 build on TestFlight. A build for an approved version is refused
+  ("train version '1.0' is closed"), so bump the version before the next round of builds.
 - App Review contact is typed in App Store Connect (not kept in the repo).
 

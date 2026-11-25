@@ -13,6 +13,7 @@ export class Sound {
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* older browser */ }
     const ctx = (this.ctx = new AC());
     this.listen();
+    this.loadSamples(ctx);
     ctx.onstatechange = () => { if (ctx.state !== 'running' && this.ctx === ctx) setTimeout(() => this.wake(false), 500); };
     this.master = ctx.createGain(); this.master.gain.value = this.muted ? 0 : 0.6; this.master.connect(ctx.destination);
     const noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
@@ -85,6 +86,24 @@ export class Sound {
     this.start();
     this.applyLevel();
   }
+  // Real recordings for the horn, the bark and the quack (short clips bundled with the game; see
+  // Help for credits). Until they've loaded, or if they can't, the synthesised versions play.
+  loadSamples(ctx) {
+    this.samples = {};
+    const base = import.meta.env.BASE_URL || './';
+    for (const name of ['horn', 'bark', 'quack']) {
+      fetch(`${base}sounds/${name}.mp3`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject())).then((b) => ctx.decodeAudioData(b)).then((buf) => { if (this.ctx === ctx) this.samples[name] = buf; }).catch(() => {});
+    }
+  }
+  sample(name, gain = 0.8, rate = 1) {
+    const buf = this.samples?.[name];
+    if (!this.ctx || !buf) return false;
+    const src = this.ctx.createBufferSource(); src.buffer = buf;
+    src.playbackRate.value = rate * (0.96 + Math.random() * 0.08); // never quite the same twice
+    const g = this.ctx.createGain(); g.gain.value = gain;
+    src.connect(g).connect(this.master); src.start();
+    return true;
+  }
   setMuted(m) { this.muted = m; this.applyLevel(); }
   /** While the radio plays, the car's own sounds sit well underneath it. */
   setDuck(on) { this.duck = on; this.applyLevel(); }
@@ -151,13 +170,13 @@ export class Sound {
   whoosh() { this.burst(0.25, 2200, 0.3); }
   checkpoint() { this.tone([880, 1175], 0.1, 'square', 0.07); }
   fail() { this.tone([330, 247], 0.18, 'sawtooth', 0.08); }
-  horn() { this.tone([392, 494], 0.35, 'square', 0.08); }
+  horn(rate = 1) { if (!this.sample('horn', 0.7, rate)) this.tone([392, 494], 0.35, 'square', 0.08); }
   bell() { this.tone([1568, 1568], 0.12, 'sine', 0.12); }
-  bark() { this.tone([520, 380], 0.09, 'sawtooth', 0.12); setTimeout(() => this.tone([560, 400], 0.09, 'sawtooth', 0.1), 180); }
+  bark() { if (!this.sample('bark', 0.85)) { this.tone([520, 380], 0.09, 'sawtooth', 0.12); setTimeout(() => this.tone([560, 400], 0.09, 'sawtooth', 0.1), 180); } }
   squeak() { this.tone([1900, 2400, 1700], 0.07, 'sine', 0.1); }
   /** A duck's quack: a nasal, falling buzz, twice. */
   quack() {
-    if (!this.ctx) return;
+    if (!this.ctx || this.sample('quack', 0.9)) return;
     const one = (at) => {
       const ctx = this.ctx, t = ctx.currentTime + at;
       const o = ctx.createOscillator(); o.type = 'sawtooth';
