@@ -11,7 +11,7 @@ THINGS TO DO
 • Collect postcards of landmarks, fill a street atlas, cross bridges, earn feats.
 
 VEHICLES WITH REAL TRADE-OFFS
-Bicycle, car, pickup, motorcycle, delivery truck, speedboat and a paramotor, each with its own speed, handling, toughness and fuel range. Earn the odd ones too.
+Bicycle, car, pickup, motorcycle, delivery truck, speedboat, jet ski and a paramotor, each with its own speed, handling, toughness and fuel range. Earn the odd ones too: a 200 mph Speed Demon, a hang glider that rides the wind off hilltops, a rubber duck that swims, waddles and flies, and a dog that swims across rivers. Honk, ring, bark or quack with the horn button.
 
 EXPLORER OR GAMER
 • Explorer: the real world, with a few ramps and stunts to find.
@@ -21,10 +21,10 @@ REAL CONDITIONS
 Rain and snow cut grip, fog closes in, headwinds slow you down, night falls with the real sun. Traffic drives on the correct side for the country. Run out of fuel and you'll need a tow truck, another vehicle, or the emergency solar buggy.
 
 PLAY YOUR WAY
-Tilt the phone like a steering wheel, or use the slider or buttons. Tune in to local radio stations wherever you are.
+Tilt the phone like a steering wheel, or use the slider or buttons; a keyboard or game controller works too. Swing the camera round with a drag and zoom with a pinch. Tune in to local radio stations wherever you are.
 
 FREE
-EarthRacer is free, with no ads and nothing to unlock. Optional tips in Settings help keep it going; they don't change the game.
+EarthRacer is free, with no ads and nothing to buy: every vehicle and feat is earned by playing. Long play earns coin rewards and paint jobs. Optional tips in Settings help keep it going; they don't change the game.
 
 OPEN DATA
 Map data © OpenStreetMap contributors, served by OpenFreeMap. Terrain from AWS Terrain Tiles, weather from Open-Meteo, place names from Nominatim, postcards from Wikipedia and Wikimedia Commons, radio stations from Radio Browser.
