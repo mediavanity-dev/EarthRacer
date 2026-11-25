@@ -2,6 +2,12 @@ Sounds in this folder, trimmed and re-encoded (MP3) from Wikimedia Commons:
 
 horn.mp3   from "Car Horn.wav" by 15HPanska_Ruttner_Jan, CC0 1.0 (public domain)
            https://commons.wikimedia.org/wiki/File:Car_Horn.wav
+horn-truck.mp3  from "WWS CityBusMANSG220horn.ogg" (a MAN SG 220 city bus) by Work With Sounds /
+           Technical Museum of Slovenia, CC BY 4.0
+           https://commons.wikimedia.org/wiki/File:WWS_CityBusMANSG220horn.ogg
+           https://creativecommons.org/licenses/by/4.0/
+horn-ship.mp3   from "Cruise ship Albatros ship horn.ogg" by Tvabutzku1234, CC0 1.0 (public domain)
+           https://commons.wikimedia.org/wiki/File:Cruise_ship_Albatros_ship_horn.ogg
 bark.mp3   from "Barking of a dog.ogg" by Amada44, CC BY-SA 3.0
            https://commons.wikimedia.org/wiki/File:Barking_of_a_dog.ogg
            https://creativecommons.org/licenses/by-sa/3.0/

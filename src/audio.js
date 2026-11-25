@@ -1,7 +1,7 @@
 // Sound, synthesised with Web Audio (nothing to download): an engine note that climbs through the
 // gears, tyre squeal when sliding, wind that rises with speed, rain, crashes and reward chimes.
 
-const CLIPS = ['horn', 'bark'];
+const CLIPS = ['horn', 'horn-truck', 'horn-ship', 'bark'];
 const fetchClip = (base, name) => fetch(`${base}sounds/${name}.mp3`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(name))));
 
 export class Sound {
@@ -191,7 +191,8 @@ export class Sound {
   whoosh() { this.burst(0.25, 2200, 0.3); }
   checkpoint() { this.tone([880, 1175], 0.1, 'square', 0.07); }
   fail() { this.tone([330, 247], 0.18, 'sawtooth', 0.08); }
-  horn(rate = 1) { if (!this.sample('horn', 0.7, rate)) this.tone([392, 494], 0.35, 'square', 0.08); }
+  /** A real horn: a car's, a heavy vehicle's air horn (a city bus) or a ship's, pitched for the vehicle. */
+  horn(rate = 1, clip = 'horn') { if (!this.sample(clip, 0.7, rate) && !this.sample('horn', 0.7, rate)) this.tone([392, 494], 0.35, 'square', 0.08); }
   /** A bicycle bell: two quick strikes of a small brass dome (bright, inharmonic partials that ring on). */
   bell() {
     if (!this.ctx) return;
