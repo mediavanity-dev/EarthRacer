@@ -1,8 +1,7 @@
-• Skydive from a flight, steer your fall and land under a canopy.
-• Cruises between real ports.
+• Skydive from a flight; cruises between real ports.
+• Nine new trip mini-games: quizzes, bingo, shuffleboard, cards and more.
 • Earn an autopilot for motorways.
-• Cars you hit get shoved and dented; splashes into water; wakes on the water.
-• An odometer per vehicle; portals to 250 places.
+• Cars you hit get shoved and dented; splashes into water; wakes.
+• Odometer per vehicle; portals to 250 places; one steering sensitivity for all controls.
 • Real horns every time.
-• Fixed: speed past the top speed when swerving, no-damage dents, getting off buses early, flickering buildings.
-• Cooler on the battery.
+• Fixed: speed past the top speed when swerving, no-damage dents, getting off buses early, flickering buildings, drift with the handbrake first.
