@@ -65,6 +65,16 @@ export class Debris {
     }
   }
 
+  /** A splash: white water thrown up and forward (nx, nz) that falls back and is gone. */
+  splash(x, y, z, nx, nz, speed) {
+    const n = Math.min(44, 14 + Math.floor(speed * 2));
+    for (let k = 0; k < n; k++) {
+      const up = 2.5 + Math.random() * (2 + speed * 0.45), out = Math.random() * (1 + speed * 0.35);
+      const w = 0.85 + Math.random() * 0.15;
+      this.add({ x: x + (Math.random() - 0.5) * 2, y, z: z + (Math.random() - 0.5) * 2, vx: nx * out + (Math.random() - 0.5) * 4, vy: up, vz: nz * out + (Math.random() - 0.5) * 4, rx: 0, ry: 0, t: 0, g: y - 0.3, s: 0.14 + Math.random() * 0.22, r: w * 0.86, gg: w * 0.94, b: w, life: 1 + Math.random() * 0.6, drop: true });
+    }
+  }
+
   /** Sparks off a hit: small, bright, quick. */
   sparks(x, y, z, nx, nz, speed) {
     const n = Math.min(16, 4 + Math.floor(speed));
@@ -116,6 +126,7 @@ export class Debris {
           p.vy -= 9.81 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.rx += dt * 6; p.ry += dt * 4;
         }
         const g = groundAt(p.x, p.z) ?? p.g;
+        if (p.drop && p.y < g && p.vy < 0) { p.t = p.life; continue; } // water drops are gone when they fall back in
         if (p.y < g + 0.05) { p.y = g + 0.05; p.vy = !p.leaf && Math.abs(p.vy) > 1.5 ? -p.vy * 0.3 : 0; p.vx *= 0.5; p.vz *= 0.5; if (p.leaf || Math.abs(p.vx) + Math.abs(p.vz) < 0.2) p.vx = p.vz = p.vy = 0; }
       }
       const fade = p.t > p.life - 1 ? Math.max(0.01, p.life - p.t) : 1; // shrink away at the end

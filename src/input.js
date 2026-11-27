@@ -29,7 +29,7 @@ export class Input {
       this.keys.add(e.code);
       this.source = 'keyboard';
       if (!e.repeat) {
-        const a = { KeyC: 'camera', KeyH: 'horn', KeyR: 'reset', Escape: 'menu', KeyM: 'mute', KeyJ: 'jobs', KeyG: 'guess', KeyT: 'trip', KeyV: 'radio' }[e.code];
+        const a = { KeyC: 'camera', KeyH: 'horn', KeyR: 'reset', Escape: 'menu', KeyM: 'mute', KeyJ: 'jobs', KeyG: 'guess', KeyT: 'trip', KeyV: 'radio', KeyP: 'autopilot' }[e.code];
         if (a) this.onAction(a);
       }
       if (KEYS.hand.includes(e.code) || e.code.startsWith('Arrow')) e.preventDefault();

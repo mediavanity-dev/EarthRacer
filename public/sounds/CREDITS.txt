@@ -1,6 +1,6 @@
 Sounds in this folder, trimmed and re-encoded (MP3) from Wikimedia Commons:
 
-horn.mp3   from "Car Horn.wav" by 15HPanska_Ruttner_Jan, CC0 1.0 (public domain)
+horn.mp3   from "Car Horn.wav" by 15HPanska_Ruttner_Jan, CC0 1.0 (public domain); its two honks, joined
            https://commons.wikimedia.org/wiki/File:Car_Horn.wav
 horn-truck.mp3  from "WWS CityBusMANSG220horn.ogg" (a MAN SG 220 city bus) by Work With Sounds /
            Technical Museum of Slovenia, CC BY 4.0

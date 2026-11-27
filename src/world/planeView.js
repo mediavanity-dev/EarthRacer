@@ -14,7 +14,9 @@ const Z = 9, N = 5, PX = 400; // 5x5 tiles at zoom 9, 400 px each
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 export class PlaneView {
-  constructor() {
+  /** opts.z: map zoom for the ground (9 from a plane; a skydive uses closer tiles), opts.noWing */
+  constructor(opts = {}) {
+    this.z = opts.z ?? Z;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(55, 1, 20, 420000);
     this.scene.add(this.camera);
@@ -45,6 +47,7 @@ export class PlaneView {
     this.wing.position.set(-2, -5.5, -6);
     this.wing.rotation.set(0.05, 0, 0.06);
     this.camera.add(this.wing);
+    this.wing.visible = !opts.noWing;
     // clouds: soft sprites drifting past below
     const cc = document.createElement('canvas'); cc.width = cc.height = 128;
     const g = cc.getContext('2d'), grad = g.createRadialGradient(64, 64, 4, 64, 64, 62);
@@ -77,6 +80,7 @@ export class PlaneView {
   async rebuild(lat, lon) {
     if (this.building) return;
     this.building = true;
+    const Z = this.z;
     const cx = Math.floor(lonToTileX(lon, Z)), cy = Math.floor(latToTileY(lat, Z));
     const n = 2 ** Z, x0 = cx - 2, y0 = cy - 2;
     const c = document.createElement('canvas'); c.width = c.height = N * PX;
@@ -114,6 +118,7 @@ export class PlaneView {
 
   /** Move to (lat, lon) at `alt` metres, flying on `bearing` (radians, clockwise from north). */
   update(dt, lat, lon, alt, bearing, now = new Date()) {
+    const Z = this.z;
     const cx = Math.floor(lonToTileX(lon, Z)), cy = Math.floor(latToTileY(lat, Z));
     if (!this.center || Math.abs(cx - this.center.cx) > 0 || Math.abs(cy - this.center.cy) > 0) this.rebuild(lat, lon);
     if (!this.center) this.frame.set(lat, lon);
@@ -150,5 +155,13 @@ export class PlaneView {
       this.weatherAt = Date.now();
       fetchWeather(lat, lon).then((w) => { if (w) this.cloud = Math.max(0.08, w.cloud); }).catch(() => {});
     }
+  }
+
+  /** Straight down from (lat, lon) at `alt`, the top of the screen pointing along `heading` (a skydive). */
+  lookDown(lat, lon, alt, heading, now = new Date()) {
+    this.update(0, lat, lon, alt, heading, now);
+    const p = this.camera.position;
+    this.camera.up.set(Math.sin(heading), 0, -Math.cos(heading));
+    this.camera.lookAt(p.x, p.y - 1, p.z);
   }
 }

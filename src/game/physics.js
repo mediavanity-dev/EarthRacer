@@ -153,10 +153,17 @@ export class VehicleState {
     let nvf = vx0 * fx + vz0 * fz, nvr = vx0 * rx + vz0 * rz;
     if (this.grounded || wet) {
       const g2 = grip * (this.drifting ? (input.handbrake ? 0.16 : 0.3) : input.handbrake && !wet && !s.flaps ? 0.22 : 1);
-      const before = nvr;
+      const before = nvr, speed0 = Math.hypot(nvf, nvr);
       nvr *= Math.exp(-g2 * dt);
       nvf += Math.sign(nvf) * Math.abs(before - nvr) * (this.drifting ? 0.65 : 0.35); // sideways speed carries on forward (more of it in a drift)
+      // ...but never more than there was: swerving must not pump speed out of nowhere
+      const room = Math.sqrt(Math.max(0, speed0 * speed0 - nvr * nvr));
+      if (Math.abs(nvf) > room) nvf = Math.sign(nvf) * room;
     }
+    // a hard ceiling: nothing (swerves, slopes, bumps) takes a vehicle past its own top speed, except a boost
+    const ceiling = this.boost > 0 ? Math.max(top, s.top) : s.top;
+    const sp = Math.hypot(nvf, nvr);
+    if (sp > ceiling) { const k = ceiling / sp; nvf *= k; nvr *= k; }
     this.slip = Math.abs(nvr);
     this.vf = nvf;
     this.vx = fx * nvf + rx * nvr; this.vz = fz * nvf + rz * nvr;
@@ -169,9 +176,15 @@ export class VehicleState {
     else if (!s.amphibious && (s.terrain === 'water' ? !w.isWater(frontX, frontZ) : (w.isWater(frontX, frontZ) && !this.onBridge(w, frontX, frontZ)))) {
       this.x = px; this.z = pz;
       const imp = Math.abs(nvf);
-      this.vx = -this.vx * 0.15; this.vz = -this.vz * 0.15;
-      ev.push({ type: 'blocked', why: s.terrain === 'water' ? 'shore' : 'water', impact: imp });
-      if (imp > 4) this.hurt(imp * 0.6, ev);
+      if (s.terrain === 'water') { // a boat running aground: a bump back off the shore
+        this.vx = -this.vx * 0.15; this.vz = -this.vz * 0.15;
+        ev.push({ type: 'blocked', why: 'shore', impact: imp });
+        if (imp > 4) this.hurt(imp * 0.6, ev);
+      } else { // driving into water: a big splash and you stop at the edge, barely scratched
+        this.vx = 0; this.vz = 0; this.vf = 0;
+        ev.push({ type: 'blocked', why: 'water', impact: imp, at: { x: frontX, z: frontZ, nx: fx, nz: fz, y: this.y } });
+        if (imp > 8) this.hurt(imp * 0.12, ev, 'splash');
+      }
     }
     // buildings
     for (const [off, r] of HITBOX[this.kind]) {
@@ -187,13 +200,25 @@ export class VehicleState {
         this.heading += Math.sign(fx * h.nz - fz * h.nx) * Math.min(0.25, -vn * 0.01);
       }
     }
+    // a stunt ramp from the back or the side, where it's too tall to climb: it's a wall
+    const rb = w.rampAt ? w.rampAt(this.x, this.z) : null;
+    if (rb && rb.y > this.y + 0.9) {
+      const du = (px - rb.ox) * rb.fx + (pz - rb.oz) * rb.fz, dw = (px - rb.ox) * -rb.fz + (pz - rb.oz) * rb.fx; // where we came from, in the ramp's frame
+      const n = du > rb.L ? [rb.fx, rb.fz] : dw > rb.W / 2 ? [-rb.fz, rb.fx] : dw < -rb.W / 2 ? [rb.fz, -rb.fx] : [rb.fx, rb.fz];
+      this.x = px; this.z = pz;
+      const vn = this.vx * n[0] + this.vz * n[1];
+      if (vn < 0) {
+        this.vx -= n[0] * vn * 1.35; this.vz -= n[1] * vn * 1.35;
+        if (-vn > 2) this.hurt(-vn, ev, 'ramp');
+      }
+    }
     // traffic
     if (ctx.traffic) {
       const hit = ctx.traffic.collide(this, HITBOX[this.kind]);
       if (hit) {
         this.x += hit.px; this.z += hit.pz;
-        const vn = this.vx * hit.nx + this.vz * hit.nz;
-        if (vn < 0) { this.vx -= hit.nx * vn * 1.5; this.vz -= hit.nz * vn * 1.5; if (-vn > 1.5) this.hurt(-vn * 1.2, ev, 'traffic'); }
+        // momentum: you lose (and the car gains) by mass, so a truck ploughs on and a bike bounces off
+        if (hit.dv > 0) { this.vx += hit.nx * hit.dv; this.vz += hit.nz * hit.dv; if (hit.dv > 1.5) this.hurt(hit.dv * 1.2, ev, 'traffic'); }
       }
     }
 

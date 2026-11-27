@@ -4,9 +4,12 @@
 // JS (src/native.js): registerPlugin('EarthRacer'), never awaited directly.
 //   tipProducts() -> { products: [{ id, name, price, value }], problem? }
 //   tip({ id })   -> { ok } | { cancelled } | { pending } | { error, detail? }
+//   locate()      -> { lat, lon } | { error: 'denied' | 'failed' }  (once, for "Start where I am": iOS's
+//                    own prompt names EarthRacer, where the web view's names "localhost")
 
 import UIKit
 import StoreKit
+import CoreLocation
 import Capacitor
 
 @objc(EarthRacerPlugin)
@@ -16,7 +19,20 @@ public class EarthRacerPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "tipProducts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "tip", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "locate", returnType: CAPPluginReturnPromise),
     ]
+    private var locator: OneShotLocator?
+
+    @objc func locate(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let l = OneShotLocator { result in
+                call.resolve(result)
+                self.locator = nil
+            }
+            self.locator = l
+            l.start()
+        }
+    }
 
     // must match App Store Connect exactly (consumables)
     static let tipIDs = ["com.mediavanity.earthracer.tip.small", "com.mediavanity.earthracer.tip.medium", "com.mediavanity.earthracer.tip.large"]
@@ -112,4 +128,43 @@ final class Once {
         done = true
         body()
     }
+}
+
+// One location fix, asking for permission first if needed (When In Use).
+final class OneShotLocator: NSObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    private let done: ([String: Any]) -> Void
+    private var finished = false
+    init(done: @escaping ([String: Any]) -> Void) {
+        self.done = done
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+    }
+    func start() {
+        switch manager.authorizationStatus {
+        case .notDetermined: manager.requestWhenInUseAuthorization()
+        case .denied, .restricted: finish(["error": "denied"])
+        default: manager.requestLocation()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { self.finish(["error": "failed"]) }
+    }
+    private func finish(_ r: [String: Any]) {
+        if finished { return }
+        finished = true
+        manager.delegate = nil
+        done(r)
+    }
+    func locationManagerDidChangeAuthorization(_ m: CLLocationManager) {
+        switch m.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways: m.requestLocation()
+        case .denied, .restricted: finish(["error": "denied"])
+        default: break
+        }
+    }
+    func locationManager(_ m: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let c = locations.last?.coordinate else { return }
+        finish(["lat": c.latitude, "lon": c.longitude])
+    }
+    func locationManager(_ m: CLLocationManager, didFailWithError error: Error) { finish(["error": "failed"]) }
 }

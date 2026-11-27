@@ -19,6 +19,8 @@ async function startNative() {
   const { registerPlugin } = await import('@capacitor/core');
   const raw = registerPlugin('EarthRacer');
   window.__tipJar = new Proxy({}, { get: (_, k) => (k === 'then' ? undefined : raw[k]) });
+  // one location fix through iOS itself, so its prompt names the app (the web view's says "localhost")
+  window.__nativeLocate = () => raw.locate();
 }
 
 (native ? startNative().catch((e) => console.warn('native start', e)) : Promise.resolve()).then(() => import('./main.js'));

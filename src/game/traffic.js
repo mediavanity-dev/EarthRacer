@@ -89,6 +89,7 @@ export class Traffic {
   }
 
   drive(c, dt, player, world) {
+    if (c.free || c.parked) return this.slide(c, dt, world);
     const rd = c.chunk.roads[c.ri];
     let target = CLASS_SPEED[rd.c] * c.cruise;
     // look ahead: the player and other cars in our lane
@@ -114,6 +115,28 @@ export class Traffic {
       if (!this.advance(c, world)) return;
     }
     this.place(c);
+  }
+
+  // A car that's been hit: it slides and spins off the road line on its own momentum, scrubs to a
+  // stop (bouncing off walls), and stays there, dented, until you've driven away.
+  slide(c, dt, world) {
+    const f = c.free;
+    if (f) {
+      const sp = Math.hypot(f.vx, f.vz);
+      const dec = Math.min(sp, 6.5 * dt); // tyres scrubbing sideways
+      if (sp > 0) { f.vx -= (f.vx / sp) * dec; f.vz -= (f.vz / sp) * dec; }
+      f.spin *= Math.exp(-2.2 * dt);
+      c.x += f.vx * dt; c.z += f.vz * dt; c.h += f.spin * dt;
+      const h = world.collide(c.x, c.z, 1.3);
+      if (h) {
+        c.x = h.x; c.z = h.z;
+        const vn = f.vx * h.nx + f.vz * h.nz;
+        if (vn < 0) { f.vx -= h.nx * vn * 1.4; f.vz -= h.nz * vn * 1.4; c.dmg = Math.min(100, c.dmg + -vn * 2); }
+      }
+      if (sp < 0.15 && Math.abs(f.spin) < 0.05) { c.free = null; c.parked = true; }
+    }
+    c.y = world.groundAt(c.x, c.z) ?? c.y;
+    c.speed = 0;
   }
 
   // reached the end of a segment: continue, turn at a junction, cross into the next tile, or turn round
@@ -168,11 +191,13 @@ export class Traffic {
     let k = 0;
     for (const c of this.cars) {
       if (k >= MAX) break;
-      e.set(c.pitch * 0.8, -c.h, 0);
+      e.set(c.pitch * 0.8, -c.h, c.roll || 0);
       q.setFromEuler(e);
       m4.compose(v.set(c.x, c.y, c.z), q, one);
       this.mesh.setMatrixAt(k, m4);
-      this.mesh.setColorAt(k, col.set(TRAFFIC_COLORS[c.color]));
+      col.set(TRAFFIC_COLORS[c.color]);
+      if (c.dmg) col.multiplyScalar(1 - Math.min(0.45, c.dmg / 160)); // battered paint
+      this.mesh.setColorAt(k, col);
       k++;
     }
     this.mesh.count = k;
@@ -180,7 +205,9 @@ export class Traffic {
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
   }
 
-  /** Player hitbox vs traffic. Returns a push-out { px, pz, nx, nz } or null; stuns the car hit. */
+  /** Player hitbox vs traffic. Returns a push-out { px, pz, nx, nz, dv } or null. The car hit takes
+   *  the knock: by momentum (a truck sends it flying, a bike barely moves it) it slides off its lane,
+   *  spins and is dented; dv is the player's own change of speed along n. */
   collide(p, hitbox) {
     const [fx, fz] = p.fwd();
     for (const c of this.cars) {
@@ -192,8 +219,24 @@ export class Traffic {
           const cx = c.x + cfx * co, cz = c.z + cfz * co;
           const dx = px - cx, dz = pz - cz, d = Math.hypot(dx, dz), min = r + R;
           if (d < min && d > 1e-3) {
-            c.stun = 3; c.speed *= 0.3;
-            return { px: (dx / d) * (min - d), pz: (dz / d) * (min - d), nx: dx / d, nz: dz / d };
+            const nx = dx / d, nz = dz / d; // from the car towards the player
+            const cvx = c.free ? c.free.vx : cfx * c.speed, cvz = c.free ? c.free.vz : cfz * c.speed;
+            const closing = (cvx - p.vx) * nx + (cvz - p.vz) * nz; // > 0: coming together
+            let dv = 0;
+            if (closing > 0.3) {
+              const m1 = p.spec.mass ?? 1, m2 = 1, e = 0.25;
+              const J = ((1 + e) * closing) / (1 / m1 + 1 / m2);
+              dv = J / m1;
+              // the car: off its lane on its own momentum, pushed away from the player and spun by an off-centre hit
+              const fvx = cvx - nx * (J / m2), fvz = cvz - nz * (J / m2);
+              const lever = (cx - c.x) * nz - (cz - c.z) * nx;
+              c.free = { vx: fvx, vz: fvz, spin: (c.free?.spin || 0) + Math.max(-2.5, Math.min(2.5, lever * J * 0.12)) };
+              c.parked = false;
+              c.dmg = Math.min(100, (c.dmg || 0) + J * 2.2);
+              if (c.dmg > 45 && !c.roll) c.roll = (Math.random() - 0.5) * 0.08; // a sag from a broken spring
+              this.onHit?.(c, J, { x: (px + cx) / 2, z: (pz + cz) / 2, nx, nz });
+            }
+            return { px: nx * (min - d), pz: nz * (min - d), nx, nz, dv };
           }
         }
       }
@@ -213,13 +256,13 @@ export class Traffic {
       const cfx = Math.sin(c.h), cfz = -Math.cos(c.h);
       const along = dx * fx + dz * fz, lat = Math.abs(dx * -fz + dz * fx);
       const rel = Math.hypot(p.vx - cfx * c.speed, p.vz - cfz * c.speed);
-      if (Math.abs(along) < 2.5 && lat < 3.4 && lat > 2.1 && rel > 7 && !c.missCool && !c.stun) { out.nearMiss++; c.missCool = 4; }
+      if (Math.abs(along) < 2.5 && lat < 3.4 && lat > 2.1 && rel > 7 && !c.missCool && !c.stun && !c.free && !c.parked) { out.nearMiss++; c.missCool = 4; }
       // drafting: tucked in behind a car going the same way
       if (along > 4 && along < 16 && lat < 1.4 && cfx * fx + cfz * fz > 0.9 && c.speed > 8) out.draft = true;
       // overtake: it was ahead, now it's behind
       const wasAhead = c.ahead;
       c.ahead = along > 0;
-      if (wasAhead && !c.ahead && lat < 6 && cfx * fx + cfz * fz > 0.7 && !c.stun) out.overtakes++;
+      if (wasAhead && !c.ahead && lat < 6 && cfx * fx + cfz * fz > 0.7 && !c.stun && !c.free && !c.parked) out.overtakes++;
     }
     return out;
   }

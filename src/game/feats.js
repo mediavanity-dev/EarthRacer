@@ -15,6 +15,7 @@ export function count(key, profile) {
     case 'hoops': return s.hoops || 0;
     case 'cones': return s.cones || 0;
     case 'km': return Math.floor(s.km || 0);
+    case 'motorwayKm': return Math.floor(s.motorwayKm || 0);
     case 'trips': return s.trips || 0;
     case 'bailouts': return s.bailouts || 0;
     case 'streets': return Object.values(at.streets).reduce((a, l) => a + l.length, 0);
@@ -65,6 +66,7 @@ export const BADGES = [
   { id: 'd365', icon: '🗓️', name: 'A year on the road', what: 'Play on 365 different days', key: 'days', n: 365, reward: 8000, paint: 'pearl' },
   { id: 's7', icon: '🔥', name: 'On a roll', what: 'Play 7 days in a row', key: 'streak', n: 7, reward: 300 },
   { id: 's30', icon: '🔥', name: 'Unstoppable', what: 'Play 30 days in a row', key: 'streak', n: 30, reward: 2000, paint: 'neon' },
+  { id: 'motorway200', icon: '🤖', name: 'Hands off', what: 'Drive 200 km on motorways and highways', key: 'motorwayKm', n: 200, reward: 300, unlock: 'autopilot' },
   { id: 'km5000', icon: '🛣️', name: 'Continental', what: 'Drive 5,000 km', key: 'km', n: 5000, reward: 800 },
   { id: 'km10000', icon: '🛣️', name: 'Ten thousand', what: 'Drive 10,000 km', key: 'km', n: 10000, reward: 2000 },
   { id: 'km40075', icon: '🌐', name: 'Around the world', what: 'Drive 40,075 km, the distance round the Equator', key: 'km', n: 40075, reward: 10000, paint: 'chrome' },

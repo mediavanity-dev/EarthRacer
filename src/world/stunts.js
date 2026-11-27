@@ -44,13 +44,13 @@ const geos = {
   buoy: new THREE.CylinderGeometry(0.55, 0.7, 1.8, 10).translate(0, 0.6, 0),
   star: new THREE.OctahedronGeometry(1.1, 0),
   coin: new THREE.CylinderGeometry(0.7, 0.7, 0.14, 20).rotateX(Math.PI / 2),
-  boost: (() => { // boost arrows: four big chevrons painted on the road, pointing the way (local -z)
+  boost: (() => { // boost arrows: big chevrons painted on the road, two each way (a boost works whichever way you cross it)
     const parts = [];
-    for (let k = 0; k < 4; k++) {
+    for (const dir of [-1, 1]) for (let k = 0; k < 2; k++) {
       const sh = new THREE.Shape();
-      const z0 = -k * 2.4;
-      sh.moveTo(-1.9, z0); sh.lineTo(0, z0 - 1.9); sh.lineTo(1.9, z0); sh.lineTo(1.9, z0 + 0.8); sh.lineTo(0, z0 - 1.05); sh.lineTo(-1.9, z0 + 0.8); sh.closePath();
-      parts.push(new THREE.ShapeGeometry(sh).rotateX(Math.PI / 2).translate(0, 0, 3.6));
+      const z0 = dir * (0.9 + k * 2.4);
+      sh.moveTo(-1.9, z0); sh.lineTo(0, z0 + dir * 1.9); sh.lineTo(1.9, z0); sh.lineTo(1.9, z0 - dir * 0.8); sh.lineTo(0, z0 + dir * 1.05); sh.lineTo(-1.9, z0 - dir * 0.8); sh.closePath();
+      parts.push(new THREE.ShapeGeometry(sh).rotateX(Math.PI / 2));
     }
     return mergeGeometries(parts);
   })(),
@@ -217,7 +217,7 @@ export function rampAt(st, x, z) {
       const fx = Math.sin(o.a), fz = -Math.cos(o.a);
       const u = dx * fx + dz * fz, w = dx * -fz + dz * fx;
       if (u < 0 || u > o.L || Math.abs(w) > o.W / 2) continue;
-      return { y: o.y + (o.H * u) / o.L, slope: o.H / o.L, fx, fz };
+      return { y: o.y + (o.H * u) / o.L, slope: o.H / o.L, fx, fz, u, w, L: o.L, W: o.W, ox: o.x, oz: o.z };
     }
   }
   return null;
