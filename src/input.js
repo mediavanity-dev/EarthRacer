@@ -134,6 +134,11 @@ export class Input {
       } else if (this.mode === 'slider') { steer = t.steer; analog = true; }
       else steer = (t.right ? 1 : 0) - (t.left ? 1 : 0);
     }
+    // steering sensitivity, one setting for every way of steering: analog (stick, tilt, slider)
+    // reaches full lock sooner or later; keys and buttons turn less (Gentle) or reach lock faster (Sharp)
+    const sens = this.sens || 1;
+    steer = analog ? Math.sign(steer) * Math.min(1, Math.abs(steer) * sens) : steer * Math.min(1, sens);
+    s.sens = sens;
     if (!this.enabled) { throttle = 0; brake = 0; steer = 0; hand = false; }
     s.throttle = throttle; s.brake = brake; s.steer = steer; s.handbrake = hand; s.analog = analog;
     s.lookX = this.enabled ? lookX : 0; s.lookY = this.enabled ? lookY : 0; s.lookReset = lookReset;
@@ -166,7 +171,7 @@ export class Input {
       const set = (e) => {
         const r = pad.getBoundingClientRect();
         const v = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1));
-        this.touch.steer = Math.sign(v) * Math.min(1, Math.abs(v) * 1.15 * (this.sliderSens || 1));
+        this.touch.steer = Math.sign(v) * Math.min(1, Math.abs(v) * 1.15); // (sensitivity is applied in poll, for every control)
         knob.style.left = `${((v + 1) / 2) * 100}%`;
       };
       hold(pad, set, () => { this.touch.steer = 0; knob.style.left = '50%'; });

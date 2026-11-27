@@ -13,7 +13,7 @@ import { MODES, BOARD_RADIUS, CRUISE_PORTS, estimate, newTrip, progress, positio
 import { TripMap } from './ui/tripmap.js';
 import { BADGES, PAINTS, count as featCount } from './game/feats.js';
 import { PlaneView } from './world/planeView.js';
-import { startGame, GAMES, rivalTarget } from './ui/minigames.js';
+import { startGame, GAMES, gamesFor, rivalTarget } from './ui/minigames.js';
 import { profile, save, flush, resetProfile, randomLeft, nextWeekReset, RANDOM_PER_WEEK } from './game/profile.js';
 import { fetchWeather, whereIs, searchPlace, waveHeight, postcard, drivingSide, usesMph, flag } from './data/services.js';
 import { haversine, offsetGeo } from './geo.js';
@@ -134,7 +134,7 @@ const game = {
 
 const input = new Input($('#controls'), { onAction });
 input.tilt.cal = { ...(profile.settings.tiltCal || {}) }; // remembered per screen orientation
-input.sliderSens = profile.settings.sens ?? 1;
+input.sens = profile.settings.sens ?? 1;
 input.words = { ...L, recentre: isEnglish ? RECENTRE : L.recentre };
 const ctrlMode = profile.settings.controls || (isTouch ? 'slider' : 'slider');
 input.setMode(ctrlMode);
@@ -1049,7 +1049,7 @@ function renderTab(tab, body) {
   } else if (tab === 'settings') {
     body.innerHTML = `${isTouch ? `<h3>Steering</h3><div class="seg" id="ctl">${['tilt', 'slider', 'buttons'].map((m) => `<button data-m="${m}" class="${input.mode === m ? 'on' : ''}">${{ tilt: '📱 Tilt (wheel)', slider: '👍 Slider', buttons: '◀ ▶ Buttons' }[m]}</button>`).join('')}</div>${input.mode === 'tilt' ? '<button class="btn" id="cal">Recalibrate tilt</button>' : ''}` : ''}
       <h3>Play mode</h3><div class="seg" id="modeseg">${[['explorer', '🧭 Explorer', 'The real world, with a few stunts to find'], ['gamer', '🎮 Gamer', 'Ramps, coins, boosts and cones everywhere']].map(([k, n, d]) => `<button data-m="${k}" class="${(profile.settings.mode || 'explorer') === k ? 'on' : ''}">${n}<br><small>${d}</small></button>`).join('')}</div>
-      ${isTouch && input.mode === 'slider' ? `<h3>Slider sensitivity</h3><div class="seg" id="sensseg">${[['Gentle', 0.7], ['Normal', 1], ['Sharp', 1.4]].map(([n, k]) => `<button data-k="${k}" class="${(profile.settings.sens ?? 1) === k ? 'on' : ''}">${n}</button>`).join('')}</div>` : ''}
+      <h3>Steering sensitivity</h3><div class="seg" id="sensseg">${[['Gentle', 0.7], ['Normal', 1], ['Sharp', 1.4]].map(([n, k]) => `<button data-k="${k}" class="${(profile.settings.sens ?? 1) === k ? 'on' : ''}">${n}</button>`).join('')}</div><p class="note">For every way of steering: keys, a controller, tilt, the slider and the buttons.</p>
       <h3>Camera</h3><div class="seg" id="camseg">${['Chase', 'Far', 'Bumper', 'Top down'].map((n, i) => `<button data-c="${i}" class="${game.cam === i ? 'on' : ''}">${n}</button>`).join('')}</div>
       <h3>Traffic</h3><div class="seg" id="trf">${[['None', 0], ['Light', 0.5], ['Normal', 1], ['Busy', 1.5]].map(([n, d]) => `<button data-d="${d}" class="${traffic.density === d ? 'on' : ''}">${n}</button>`).join('')}</div>
       <h3>Sound</h3><div class="seg"><button id="snd" class="${profile.settings.mute ? '' : 'on'}">${profile.settings.mute ? '🔇 Off' : '🔊 On'}</button></div>
@@ -1059,7 +1059,7 @@ function renderTab(tab, body) {
     if (window.__tipJar) tipJar(body);
     body.querySelectorAll('#ctl button').forEach((b) => b.onclick = async () => { await setControls(b.dataset.m); openPanel('settings'); });
     const cal = body.querySelector('#cal'); if (cal) cal.onclick = () => { closePanel(); calibrateTilt(); };
-    body.querySelectorAll('#sensseg button').forEach((b) => b.onclick = () => { profile.settings.sens = +b.dataset.k; input.sliderSens = +b.dataset.k; save(); openPanel('settings'); });
+    body.querySelectorAll('#sensseg button').forEach((b) => b.onclick = () => { profile.settings.sens = +b.dataset.k; input.sens = +b.dataset.k; save(); openPanel('settings'); });
     body.querySelectorAll('#modeseg button').forEach((b) => b.onclick = () => { setMode(b.dataset.m); openPanel('settings'); });
     body.querySelectorAll('#camseg button').forEach((b) => b.onclick = () => { game.cam = +b.dataset.c; profile.settings.cam = game.cam; save(); openPanel('settings'); });
     body.querySelectorAll('#trf button').forEach((b) => b.onclick = () => { traffic.density = +b.dataset.d; profile.settings.traffic = traffic.density; if (!traffic.density) traffic.clear(); save(); openPanel('settings'); });
@@ -1456,7 +1456,7 @@ function tripScreen() {
     <p class="note">From ${esc(t.from.name)} · about ${fmtDist(t.km * 1000)} · arrives ${arrive.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}. You can close the app: the trip carries on without it.</p>
     ${watch ? `<button class="btn primary" id="twatch">${watch[0]}<small id="twatchs">${watch[1]}</small></button>` : ''}
     ${early ? `<button class="btn" id="toff">Get off here<small id="toffs">Be dropped where the ${m.name.toLowerCase()} has got to by now</small></button>` : ''}
-    <h3 class="tg-h">🕹️ Seatback games</h3><div class="row" id="tgame">${Object.entries(GAMES).map(([k, g]) => `<button class="btn" data-g="${k}">${g.icon} ${g.name}<small>Best ${profile.stats[`${k}Best`] || 0}</small></button>`).join('')}</div><p class="note">Play a fellow passenger for fun, or for coins: the higher the stakes, the better they are.</p>
+    <h3 class="tg-h">🕹️ Seatback games</h3><div class="row" id="tgame">${gamesFor(t.mode).map(([k, g]) => `<button class="btn" data-g="${k}">${g.icon} ${g.name}<small>Best ${profile.stats[`${k}Best`] || 0}</small></button>`).join('')}</div><p class="note">Play a fellow passenger for fun, or for coins: the higher the stakes, the better they are.</p>
     ${t.mode === 'plane' ? '<button class="quiet-link" id="tbail">Bail out…</button>' : ''}
     <div class="attrib">${ATTRIB}</div></div>`);
   const map = new TripMap(o.querySelector('#tmap'), t, m.icon);
@@ -1580,6 +1580,7 @@ function startSeatback(kind, rival, stake, level) {
   }, 1000);
   stop = startGame(o.querySelector('#mghost'), kind, {
     best, level, rival: rival.split(',')[0],
+    trip: { mode: t.mode, toName: t.to.name, here: positionAt(t) },
     onEnd: (k, sc, won) => {
       settled = true;
       if (sc > (profile.stats[`${k}Best`] || 0)) profile.stats[`${k}Best`] = sc;

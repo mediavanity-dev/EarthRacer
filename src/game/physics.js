@@ -131,7 +131,7 @@ export class VehicleState {
     }
 
     // ---------- steering ----------
-    const k8 = Math.min(1, dt * (input.analog ? 14 : 7));
+    const k8 = Math.min(1, dt * (input.analog ? 14 : 7) * (input.analog ? 1 : Math.max(0.7, input.sens || 1))); // Sharp: keys reach full lock sooner
     this.steer += (input.steer - this.steer) * k8;
     const maxAngle = s.steer / (1 + Math.abs(vf) / (this.kind === 'bike' ? 9 : 14));
     let yaw = (vf / s.wheelbase) * Math.tan(this.steer * maxAngle);
@@ -139,7 +139,10 @@ export class VehicleState {
     // drifting: a flick of the handbrake while turning at speed kicks the rear out, and the slide
     // holds (steer to set the angle, counter-steer to straighten) until you straighten up or slow down
     const canDrift = s.terrain === 'land' && this.grounded && this.kind !== 'cart';
-    if (canDrift && !this.drifting && input.handbrake && Math.abs(vf) > 6 && Math.abs(this.steer) > 0.25) this.drifting = true;
+    // a drift starts with the handbrake and steering together, or steering just after a handbrake tap:
+    // many keyboards can't report a third key (W + Space + an arrow), so the order mustn't matter
+    this.handT = input.handbrake ? 0 : (this.handT ?? 9) + dt;
+    if (canDrift && !this.drifting && this.handT < 0.6 && Math.abs(vf) > 6 && Math.abs(this.steer) > 0.25) this.drifting = true;
     if (this.drifting && (!canDrift || Math.abs(vf) < 4 || input.brake > 0.6 || (!input.handbrake && this.slip < 1.0 && Math.abs(this.steer) < 0.2))) this.drifting = false;
     if (this.drifting) yaw *= input.handbrake ? 1.55 : 1.2;
     else if (input.handbrake && Math.abs(vf) > 5 && !wet && !s.flaps) yaw *= 1.45;

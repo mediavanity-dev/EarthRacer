@@ -60,3 +60,36 @@ bare ground where OSM has no land-cover polygons (common outside Europe). Drawin
 decoder in the worker. Blocker: its S3 bucket sends no CORS header, so a browser can't read it
 directly. Options: a small caching relay (same as the Overpass/Nominatim proxy idea), or a native
 fetch in the iPhone app only (the website would then differ). Use it only where OSM has nothing.
+
+## Multiplayer: see other players and bump into them (to do, Nov 2026)
+
+- A small relay server (for example Cloudflare Durable Objects: pay per use, no machine to run).
+  Players in the same map tile join one "room" and send position, heading and speed about five times
+  a second; everyone else is drawn like traffic, smoothed between updates.
+- Bumps reuse the traffic crash physics (momentum by vehicle weight). Each phone settles its own
+  side of a bump: simple, and a rare disagreement doesn't matter in a casual game.
+- Needs anonymous player IDs, name moderation, a privacy policy update (live positions are shared)
+  and the App Privacy answers changed in App Store Connect and Play Console.
+
+## PC split screen (to do)
+
+- Two players on one computer: one on the keyboard, one on a controller (the input code already
+  tells them apart). Two vehicles, two cameras, the screen split side by side.
+- Drawing the world twice costs a lot: desktop only, with the Settings switch hidden on phones.
+
+## Wording that reads as AI-written (to do)
+
+- Players say some text sounds machine-written. Pull every player-facing string (toasts, menus,
+  help, feats, store listing) into one list, mark the usual tells (dash asides, "not X but Y",
+  lists of three, over-explaining, cute filler) and rewrite them in one plain, human voice, using
+  real player comments as the reference.
+- Then add a check that flags new strings with those patterns before a build.
+
+## Mainland China (to do)
+
+- Apple needs a security assessment and an AI-generated-content (AIGC) filing for China mainland
+  (existing apps by Jan 31, 2027). Games also need a government licence (an ISBN number), which in
+  practice means a Chinese publishing partner.
+- The big blocker for EarthRacer: maps shown in China must come from licensed map providers;
+  OpenStreetMap data isn't approved there. Research partner publishers and the map-licensing route
+  before anything else.
