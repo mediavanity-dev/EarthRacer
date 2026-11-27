@@ -162,8 +162,15 @@ export class Signs {
       if (c.p.facade === undefined) { // found once per place, then kept
         const r = c.ch.roadAt(c.p.x, c.p.z, 45, (q) => q.c <= 6);
         c.p.facade = r ? c.ch.facade(c.p.x, c.p.z, r.px, r.pz) : null;
+        // several businesses on the same stretch of wall: stack their signs instead of putting them
+        // in the same place (two signs in one spot flicker between each other)
+        if (c.p.facade) {
+          const f = c.p.facade;
+          c.p.stack = c.ch.pois.filter((o) => o !== c.p && o.facade && Math.hypot(o.facade.x - f.x, o.facade.z - f.z) < 3.5).length;
+        }
       }
       c.facade = c.p.facade;
+      if (c.facade && c.p.stack > 1) continue; // a third sign on the same bit of wall: leave it off
       if (c.facade) wantS.push(c); else if (extraTags.length < 2) extraTags.push(c);
     }
     this.assign(this.shops, wantS, (slot, c) => this.shopSign(slot, c, world), (slot) => { slot.mesh.visible = false; });
@@ -199,7 +206,7 @@ export class Signs {
     const x = ch.ox + (f.x + f.nx * 0.15) * ch.sx, z = ch.oz + f.z + f.nz * 0.15;
     const H = 0.95, W = H * 512 / 112;
     slot.mesh.scale.set(W, H, 1);
-    slot.mesh.position.set(x, (world.groundAt(x + f.nx, z + f.nz) ?? world.groundAt(x, z) ?? 0) + 3.4, z);
+    slot.mesh.position.set(x, (world.groundAt(x + f.nx, z + f.nz) ?? world.groundAt(x, z) ?? 0) + 3.4 + (c.p.stack || 0) * 1.15, z);
     slot.mesh.rotation.set(0, Math.atan2(f.nx, f.nz), 0);
     slot.mesh.visible = true;
     slot.key = c.key;

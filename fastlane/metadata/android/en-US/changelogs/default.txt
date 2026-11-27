@@ -1,6 +1,8 @@
-• New vehicles to earn: a 200 mph Speed Demon, a hang glider that rides the wind off hilltops, a rubber duck and a swimming dog.
-• Horn button: real horns, bicycle bell, bark and quack.
-• Swing and zoom the camera; bikes lean into turns.
-• Real street trees; shops, sheds, offices and homes each look the part.
-• Feats for long play, with coins and paint jobs.
-• Radio while you guess where you are; quieter weather.
+• Skydive from a flight, steer your fall and land under a canopy.
+• Cruises between real ports.
+• Earn an autopilot for motorways.
+• Cars you hit get shoved and dented; splashes into water; wakes on the water.
+• An odometer per vehicle; portals to 250 places.
+• Real horns every time.
+• Fixed: speed past the top speed when swerving, no-damage dents, getting off buses early, flickering buildings.
+• Cooler on the battery.

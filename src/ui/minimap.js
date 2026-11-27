@@ -32,7 +32,7 @@ function tileImage(ch) {
   return ch.mapImg;
 }
 
-export function drawMinimap(canvas, world, player, markers = [], { hideFuel = false, hubs = [], mph = false, portal = null } = {}) {
+export function drawMinimap(canvas, world, player, markers = [], { hideFuel = false, hubs = [], mph = false, portal = null, odo = null } = {}) {
   const g = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height, R = W / 2;
   const s = R / RADIUS_M;
@@ -128,4 +128,13 @@ export function drawMinimap(canvas, world, player, markers = [], { hideFuel = fa
   g.fillStyle = '#fff'; g.font = 'bold 13px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText('N', 0, 17);
   g.restore();
+  // the odometer: this vehicle's distance, small at the bottom of the map
+  if (odo) {
+    g.save();
+    g.font = '600 12px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const w = g.measureText(odo).width + 12;
+    g.fillStyle = '#0b1118aa'; g.beginPath(); g.roundRect?.(R - w / 2, H - 40, w, 17, 8); g.fill();
+    g.fillStyle = '#c9d3dc'; g.fillText(odo, R, H - 31.5);
+    g.restore();
+  }
 }

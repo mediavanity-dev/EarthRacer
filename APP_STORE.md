@@ -74,5 +74,9 @@ Wikimedia Commons (free licences only). Nothing about the player is sent anywher
 - 2026-11-25: 1.0 approved and live. Version bumped to **1.1** (`MARKETING_VERSION` in the Xcode
   project): build 19 is the first 1.1 build on TestFlight. A build for an approved version is refused
   ("train version '1.0' is closed"), so bump the version before the next round of builds.
+- 2026-11-25: **1.1 submitted with build 26**, automatic release (all users at once, rating kept).
+  What's New and the description were uploaded with the `store-listing` workflow (`app_version=1.1`).
+  The review notes describe the 7-tap tester box; the passphrase is typed only into App Store
+  Connect, never into this public repo. Bump `MARKETING_VERSION` to 1.2 once 1.1 is approved.
 - App Review contact is typed in App Store Connect (not kept in the repo).
 

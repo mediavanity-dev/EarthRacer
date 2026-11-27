@@ -9,7 +9,7 @@ import { VEHICLES, VEHICLE_ORDER, SPEED_CAP, buildModel, ratings, prepDamage, de
 import { Traffic } from './game/traffic.js';
 import { jobsFor, jobTime, jobReward, raceFor, isLandmark, isFuel, pruneRaces } from './game/activities.js';
 import { RANDOM_PLACES } from './game/places.js';
-import { MODES, BOARD_RADIUS, estimate, newTrip, progress, positionAt, fmtDuration } from './game/trips.js';
+import { MODES, BOARD_RADIUS, CRUISE_PORTS, estimate, newTrip, progress, positionAt, fmtDuration } from './game/trips.js';
 import { TripMap } from './ui/tripmap.js';
 import { BADGES, PAINTS, count as featCount } from './game/feats.js';
 import { PlaneView } from './world/planeView.js';
@@ -24,6 +24,7 @@ import { drawMinimap } from './ui/minimap.js';
 import { regionOf, regionStyle } from './world/region.js';
 import { Signs } from './world/signs.js';
 import { Smoke } from './world/smoke.js';
+import { Wake } from './world/wake.js';
 import { Debris, TreeHits } from './world/debris.js';
 import { roadFocus } from './world/materials.js';
 import { Radio } from './data/radio.js';
@@ -71,6 +72,7 @@ const sky = new Sky(scene);
 const signs = new Signs(scene);
 const smoke = new Smoke(scene);
 const debris = new Debris(scene);
+const wake = new Wake(scene);
 const treeHits = new TreeHits();
 const portalView = new PortalView(scene);
 // a tile refined with OSM building detail replaces the old one: same roads, so traffic carries on
@@ -111,6 +113,13 @@ function radioNext() {
   radio.next(game.country || 'US');
 }
 const traffic = new Traffic(scene);
+// a car you hit: glass and sparks where you met, the harder the more
+traffic.onHit = (c, J, at) => {
+  if (J < 2) return;
+  const y = (world.groundAt(at.x, at.z) ?? c.y) + 0.6;
+  debris.sparks(at.x, y, at.z, -at.nx, -at.nz, J);
+  if (J > 5) debris.bits(at.x, y - 0.4, at.z, -at.nx, -at.nz, J, '#d9eef5', { n: Math.min(12, Math.round(J)), size: 0.35, lift: 0.4 });
+};
 traffic.density = profile.settings.traffic ?? 1;
 const sound = new Sound();
 sound.setMuted(profile.settings.mute);
@@ -152,7 +161,7 @@ function spawnVehicle(kind, x, z, heading) {
   const prev = game.v;
   game.v = new VehicleState(kind, x, z, heading);
   game.v.fuel = profile.fuel[kind] ?? VEHICLES[kind].fuel;
-  game.v.damage = profile.damage[kind] ?? 0;
+  game.v.damage = cheats.noDamage ? 0 : profile.damage[kind] ?? 0;
   if (prev) { game.v.y = prev.y; }
   const paint = profile.paint?.[kind] && profile.paints?.[profile.paint[kind]] ? PAINTS[profile.paint[kind]].color : null;
   game.model = buildModel(kind, paint || (kind === 'bike' ? '#2f6fb0' : kind === 'truck' ? '#2f6fb0' : kind === 'demon' ? '#16171a' : '#d23a2e'));
@@ -224,7 +233,11 @@ function startScreen() {
     userGesture();
     const btn = o.querySelector('#here');
     btn.disabled = true; btn.innerHTML = 'Finding you…';
-    navigator.geolocation.getCurrentPosition((pos) => firstStart(pos.coords.latitude, pos.coords.longitude), () => { btn.disabled = false; btn.innerHTML = '📍 Start where I am<small>Location unavailable: search instead</small>'; }, { enableHighAccuracy: false, timeout: 12000 });
+    const failed = () => { btn.disabled = false; btn.innerHTML = '📍 Start where I am<small>Location unavailable: search instead</small>'; };
+    const web = () => navigator.geolocation.getCurrentPosition((pos) => firstStart(pos.coords.latitude, pos.coords.longitude), failed, { enableHighAccuracy: false, timeout: 12000 });
+    // in the app, ask iOS directly (its prompt names EarthRacer); elsewhere, or if that's missing, the browser's
+    if (window.__nativeLocate) window.__nativeLocate().then((r) => (r?.lat != null ? firstStart(r.lat, r.lon) : failed())).catch(web); // no native method (Android): the web view's
+    else web();
   };
   const q = o.querySelector('#q');
   let tmr;
@@ -471,6 +484,7 @@ function onAction(a, extra) {
   else if (!$('#panel').hidden) return;
   else if (a === 'camera') { game.cam = (game.cam + 1) % 4; profile.settings.cam = game.cam; save(); }
   else if (a === 'horn') honk();
+  else if (a === 'autopilot') toggleAutopilot();
   else if (a === 'reset') resetToRoad();
   else if (a === 'jobs') openPanel('jobs');
   else if (a === 'guess' && profile.random.active) openGuess();
@@ -482,6 +496,7 @@ $('#b-cam').onclick = () => onAction('camera');
 $('#b-radio').onclick = () => radioNext();
 $('#b-guess').onclick = () => openGuess();
 $('#b-trip').onclick = () => { if (game.nearStop) openTripPlanner(game.nearStop); };
+$('#b-auto').onclick = () => toggleAutopilot();
 $('#b-fuel').onclick = () => outOfFuel();
 // The horn: cars honk, the dog barks, the duck quacks, bicycles and the cart ring a bell.
 function honk() {
@@ -728,8 +743,9 @@ function checkUnlocks() {
     profile.feats[b.id] = Date.now();
     if (b.reward) profile.coins += b.reward;
     if (b.paint) (profile.paints ||= {})[b.paint] = true;
+    if (b.unlock === 'autopilot') profile.autopilot = true;
     save();
-    sound.chime(); toast(`🏆 Feat: <b>${b.icon} ${b.name}</b> · ${esc(b.what)}${b.reward ? ` · +${b.reward.toLocaleString()} coins` : ''}${b.paint ? `<br>🎨 New paint job: <b>${PAINTS[b.paint].name}</b> (pick it in the Garage)` : ''}`, { ms: 7000 });
+    sound.chime(); toast(`🏆 Feat: <b>${b.icon} ${b.name}</b> · ${esc(b.what)}${b.reward ? ` · +${b.reward.toLocaleString()} coins` : ''}${b.paint ? `<br>🎨 New paint job: <b>${PAINTS[b.paint].name}</b> (pick it in the Garage)` : ''}${b.unlock === 'autopilot' ? '<br>🤖 Autopilot unlocked: on a motorway or highway, tap 🤖 (or press P) and it drives for you.' : ''}`, { ms: 9000 });
   }
 }
 
@@ -795,6 +811,11 @@ function tickPassive(dt, moved) {
         const d = Math.hypot(c.ox + s.x * c.sx - v.x, c.oz + s.z - v.z);
         if (d < BOARD_RADIUS[s.kind] && d < bd) { bd = d; stop = s; }
       }
+    }
+    // a real cruise port: the ship wins over anything else here
+    for (const [name, la, lo] of CRUISE_PORTS) {
+      if (Math.abs(la - game.lat) > 0.05 || Math.abs(lo - game.lon) > 0.08) continue;
+      if (haversine(game.lat, game.lon, la, lo) < BOARD_RADIUS.cruise) { stop = cruiseStops[name] ||= { kind: 'cruise', name: `${name.split(',')[0]} cruise terminal`, port: name }; break; }
     }
   }
   if (stop !== game.nearStop) {
@@ -891,21 +912,37 @@ function fitHud() {
 let fitT = 0;
 // refit at once whenever a top button appears, goes or changes its label (not just every few frames)
 new MutationObserver(() => fitHud()).observe($('#topbtns'), { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden'] });
+// The HUD is drawn by the page, not WebGL: every write makes the browser re-check its layout, so
+// only write what actually changed since the last frame.
+const hudMemo = {};
+const hudSet = (key, val, apply) => { if (hudMemo[key] !== val) { hudMemo[key] = val; apply(val); } };
+// the odometer: this vehicle's own distance (shown small at the bottom of the minimap)
+function odoText(v) {
+  const d = (profile.odo?.[v.kind] || 0) / (game.mph ? 1.609 : 1);
+  return `${d < 1000 ? d.toFixed(1) : Math.round(d).toLocaleString()} ${game.mph ? 'mi' : 'km'}`;
+}
 function hudFrame() {
   const v = game.v;
-  if (++fitT % 10 === 0) fitHud();
+  if (++fitT % 60 === 0) fitHud(); // changes refit at once (the observer below); this is only a safety net
   const kmh = (game.gs ?? Math.abs(v.vf)) * 3.6;
-  $('#speed').innerHTML = `<b>${Math.round(game.mph ? kmh / 1.609 : kmh)}</b><span>${game.mph ? 'mph' : 'km/h'} ${v.spec.icon}</span>`;
+  const spd = `<b>${Math.round(game.mph ? kmh / 1.609 : kmh)}</b><span>${game.mph ? 'mph' : 'km/h'} ${v.spec.icon}</span>`;
+  if (spd !== game.spdHtml) { $('#speed').innerHTML = spd; game.spdHtml = spd; } // only touch the page when it changes
   const why = v.limitWhy;
   const limitV = v.limit * 3.6 / (game.mph ? 1.609 : 1);
   const posted = game.roadKmh ? `limit ${Math.round(game.mph ? game.roadKmh / 1.609 / 5 : game.roadKmh / 5) * 5}` : '';
-  if (v.spec.terrain === 'air') { $('#limit').textContent = `${v.flying ? `altitude ${Math.round(game.mph ? (v.y - (world.groundAt(v.x, v.z) ?? v.y)) * 3.281 : v.y - (world.groundAt(v.x, v.z) ?? v.y))} ${game.mph ? 'ft' : 'm'}` : 'on the ground'}${v.limitWhy ? ` · ${v.limitWhy}` : ''}`; } else
-  $('#limit').textContent = why && (Math.abs(v.vf) > v.limit * 0.85 || why === 'map loading ahead' || why === 'out of fuel' || why.startsWith('wrecked')) ? `${why} · max ${Math.round(limitV)}` : posted;
+  let lim;
+  if (v.spec.terrain === 'air') { lim = `${v.flying ? `altitude ${Math.round(game.mph ? (v.y - (world.groundAt(v.x, v.z) ?? v.y)) * 3.281 : v.y - (world.groundAt(v.x, v.z) ?? v.y))} ${game.mph ? 'ft' : 'm'}` : 'on the ground'}${v.limitWhy ? ` · ${v.limitWhy}` : ''}`; } else
+  lim = why && (Math.abs(v.vf) > v.limit * 0.85 || why === 'map loading ahead' || why === 'out of fuel' || why.startsWith('wrecked')) ? `${why} · max ${Math.round(limitV)}` : posted;
+  hudSet('limit', lim, (t) => ($('#limit').textContent = t));
   const fb = $('#fuelbar');
-  fb.hidden = !v.spec.fuel;
-  if (v.spec.fuel) { const f = v.fuel / v.spec.fuel; fb.firstChild.style.width = `${f * 100}%`; fb.firstChild.style.background = f < 0.15 ? 'var(--bad)' : 'var(--good)'; }
-  $('#dmgbar').firstChild.style.width = `${v.damage}%`;
-  $('#dmgbar').hidden = v.damage < 1;
+  hudSet('fuelOn', !!v.spec.fuel, (on) => (fb.hidden = !on));
+  if (v.spec.fuel) {
+    const f = v.fuel / v.spec.fuel;
+    hudSet('fuelW', Math.round(f * 200) / 2, (w) => (fb.firstChild.style.width = `${w}%`));
+    hudSet('fuelLow', f < 0.15, (low) => (fb.firstChild.style.background = low ? 'var(--bad)' : 'var(--good)'));
+  }
+  hudSet('dmgW', Math.round(v.damage * 2) / 2, (w) => ($('#dmgbar').firstChild.style.width = `${w}%`));
+  hudSet('dmgOn', v.damage >= 1, (on) => ($('#dmgbar').hidden = !on));
 }
 
 // ---------- menu panel ----------
@@ -929,9 +966,9 @@ function renderTab(tab, body) {
   const v = game.v;
   const ch = world.chunkAt(v.x, v.z);
   if (tab === 'garage') {
-    body.innerHTML = `<h3>Summon a vehicle</h3><p class="note">It turns up right where you are. Better vehicles are earned. Speeds are real-world: up to the posted limit plus 10 mph where the map knows it, otherwise ${game.mph ? `${Math.round(SPEED_CAP * 3.6 / 1.609)} mph` : `${Math.round(SPEED_CAP * 3.6)} km/h`}.</p><div class="list" id="vl"></div>
-      ${Object.keys(profile.paints || {}).length ? `<h3>🎨 Paint jobs</h3><p class="note">Earned with the biggest feats. For your ${esc(VEHICLES[v.kind].name.toLowerCase())}:</p><div class="chips" id="paints"><button class="chip" data-p="">Factory</button>${Object.keys(profile.paints).map((k) => `<button class="chip" data-p="${k}" style="border-color:${PAINTS[k].color}">${PAINTS[k].name}</button>`).join('')}</div>` : ''}
-      <h3>Service</h3><div class="list" id="svc"></div>`;
+    body.innerHTML = `<h3>Service</h3><div class="list" id="svc"></div>
+      <h3>Summon a vehicle</h3><p class="note">It turns up right where you are. Better vehicles are earned. Speeds are real-world: up to the posted limit plus 10 mph where the map knows it, otherwise ${game.mph ? `${Math.round(SPEED_CAP * 3.6 / 1.609)} mph` : `${Math.round(SPEED_CAP * 3.6)} km/h`}.</p><div class="list" id="vl"></div>
+      ${Object.keys(profile.paints || {}).length ? `<h3>🎨 Paint jobs</h3><p class="note">Earned with the biggest feats. For your ${esc(VEHICLES[v.kind].name.toLowerCase())}:</p><div class="chips" id="paints"><button class="chip" data-p="">Factory</button>${Object.keys(profile.paints).map((k) => `<button class="chip" data-p="${k}" style="border-color:${PAINTS[k].color}">${PAINTS[k].name}</button>`).join('')}</div>` : ''}`;
     body.querySelectorAll('#paints .chip').forEach((b) => b.onclick = () => {
       (profile.paint ||= {})[v.kind] = b.dataset.p || null; save();
       const { x, z, heading } = game.v; storeVehicle(); spawnVehicle(v.kind, x, z, heading); game.v.init = false;
@@ -1040,6 +1077,8 @@ function renderTab(tab, body) {
       <tr><td>Camera</td><td><span class="kbd">C</span> · Y</td></tr>
       <tr><td>Look around / zoom</td><td>drag · wheel · <span class="kbd">Q</span>/<span class="kbd">E</span> <span class="kbd">Z</span>/<span class="kbd">X</span> · right stick (click to recentre)</td></tr>
       <tr><td>Horn (honk, bark, quack, bell)</td><td><span class="kbd">H</span> · X on a controller · 📯 on a phone</td></tr>
+      <tr><td>Autopilot (earned: 200 km of motorway)</td><td><span class="kbd">P</span> · 🤖 on a motorway or major highway; steer or brake to take over</td></tr>
+      <tr><td>Skydiving (bail out of a flight)</td><td>arrows / <span class="kbd">W A S D</span> · left stick · drag on a phone</td></tr>
       <tr><td>Duck: flap to fly</td><td>hold the handbrake (<span class="kbd">Space</span> · A)</td></tr>
       <tr><td>Back on the road</td><td><span class="kbd">R</span> · B</td></tr>
       <tr><td>Menu</td><td><span class="kbd">Esc</span> · Menu button</td></tr>
@@ -1090,11 +1129,12 @@ async function updatePortal() {
   // an open portal stays yours until it closes or you use it, wherever you drive to find it
   const keep = game.portal && (Date.now() < game.portal.closes || (DEV && params.has('portal')));
   const w = keep ? null : await whereIs(game.lat, game.lon).catch(() => null);
-  const p = keep ? game.portal : w?.bbox ? portalNow({ key: w.areaKey, bbox: w.bbox }, { lat: game.lat, lon: game.lon }, Date.now(), DEV && params.has('portal')) : null;
+  const p = keep ? game.portal : w?.bbox ? portalNow({ key: w.areaKey, bbox: w.bbox }, { lat: game.lat, lon: game.lon }, Date.now(), DEV && params.has('portal'), profile.portalTrail || []) : null;
   if (!p || profile.portals?.[p.id]) return off();
   if (game.portal?.id !== p.id) {
     game.portal = { ...p, pos: null, placed: false };
-    if (!profile.stats.portalsSeen) toast('✨ Something has opened nearby… follow the star on the map.', { ms: 6000 });
+    const away = fmtDist(haversine(game.lat, game.lon, p.lat, p.lon));
+    toast(profile.stats.portalsSeen ? `✨ A portal has opened ${away} away. Follow the star on the map.` : `✨ Something has opened ${away} away… follow the star on the map.`, { ms: 6000 });
     profile.stats.portalsSeen = (profile.stats.portalsSeen || 0) + 1;
   }
   const gp = game.portal;
@@ -1154,6 +1194,7 @@ function tickPortal(dt) {
 function enterPortal(gp) {
   game.portal = null; portalView.hide(); portalSide = 0;
   (profile.portals ||= {})[gp.id] = Date.now();
+  profile.portalTrail = [gp.dest.name, ...(profile.portalTrail || []).filter((n) => n !== gp.dest.name)].slice(0, 40); // not back there for a while
   for (const [k, t] of Object.entries(profile.portals)) if (Date.now() - t > 3 * 864e5) delete profile.portals[k];
   profile.stats.portals = (profile.stats.portals || 0) + 1;
   profile.stats.style += PORTAL_POINTS; profile.coins += PORTAL_COINS;
@@ -1313,6 +1354,7 @@ function searchAround(x, z, maxR, ok) {
   return null;
 }
 
+const cruiseStops = {};
 // ---------- trips on public transport ----------
 // Board at a real stop, choose where to, then wait in real time. The trip is only a start time and
 // a duration, so the app (or the phone) can be off while you travel.
@@ -1321,6 +1363,7 @@ function openTripPlanner(stop) {
   if (game.activity) { toast('Finish or abandon your job or race first.'); return; }
   input.enabled = false;
   const from = { lat: game.lat, lon: game.lon, name: stop.name || `the ${m.stop}` };
+  if (stop.kind === 'cruise') { cruisePlanner(stop, from, m); return; }
   const o = overlay(`<div class="card"><h2>${m.icon} ${m.name} from ${esc(from.name)}</h2>
     <p>Where to? Pick a town, city or place. You'll travel in real time: the ${m.name.toLowerCase()} takes as long as it would really take, and the app can be closed while you wait.</p>
     <input type="search" id="tq" placeholder="Search a destination…" />
@@ -1357,7 +1400,7 @@ function openTripPlanner(stop) {
       <small>About ${fmtDist(est.km * 1000)} by ${m.name.toLowerCase()} · ${fmtDuration(est.minutes * 60000)} including boarding<br>
       Arrives ${arrive.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</small></div>
       <button id="tb">Board</button></div>
-      <p class="note">${m.canStopEarly === true ? 'You can get off before the end: you\'ll be dropped where you\'d have got to by then.' : m.canStopEarly === 'boat' ? 'You can only leave the ferry early if you have a boat to carry on in.' : 'You can\'t get off a plane mid-flight.'}</p>`;
+      <p class="note">${m.canStopEarly === true ? 'You can get off before the end: you\'ll be dropped where you\'d have got to by then.' : m.canStopEarly === 'boat' ? 'You can only leave the ferry early if you have a boat to carry on in.' : stop.kind === 'cruise' ? 'The ship doesn\'t stop between ports.' : 'You can\'t get off a plane mid-flight.'}</p>`;
     box.querySelector('#tb').onclick = () => {
       storeVehicle();
       if (game.v) profile.pos = { ...profile.pos, kind: game.v.spec.terrain === 'water' ? 'car' : game.v.kind };
@@ -1370,6 +1413,30 @@ function openTripPlanner(stop) {
   }
 }
 
+// A cruise: from this port to another real one, sailing in real time (days, for the long ones).
+function cruisePlanner(stop, from, m) {
+  const o = overlay(`<div class="card"><h2>🛳️ Cruise from ${esc(stop.port)}</h2>
+    <p>Pick a port. The ship sails in real time at about 20 knots, so a long cruise takes days. You can close the app while you're at sea, watch from the deck, or play cards with your table-mates.</p>
+    <div class="results" id="cr"></div><div id="te"></div><button class="btn" id="tx">Not now</button></div>`, 'dim');
+  o.querySelector('#tx').onclick = () => { hideOverlay(); input.enabled = true; };
+  const list = CRUISE_PORTS.filter((p) => p[0] !== stop.port).map((p) => ({ name: p[0], lat: p[1], lon: p[2], km: haversine(from.lat, from.lon, p[1], p[2]) / 1000 }))
+    .filter((p) => p.km >= m.min && p.km <= m.max).sort((a, b) => a.km - b.km).slice(0, 14);
+  const res = o.querySelector('#cr');
+  for (const p of list) {
+    const est = estimate('cruise', from, p);
+    const b = document.createElement('button'); b.className = 'btn';
+    b.innerHTML = `${esc(p.name)}<small>${fmtDist(est.km * 1000)} · ${fmtDuration(est.minutes * 60000)}</small>`;
+    b.onclick = () => {
+      storeVehicle();
+      if (game.v) profile.pos = { ...profile.pos, kind: game.v.spec.terrain === 'water' ? 'car' : game.v.kind };
+      profile.trip = newTrip('cruise', from, { lat: p.lat, lon: p.lon, name: p.name }, est);
+      save(true); sound.chime(); $('#hud').hidden = true; tripScreen();
+    };
+    res.appendChild(b);
+  }
+  if (!list.length) res.innerHTML = '<p class="note">No other cruise ports in reach from here.</p>';
+}
+
 let tripTimer = null;
 function tripScreen() {
   const t = profile.trip;
@@ -1380,7 +1447,7 @@ function tripScreen() {
   const m = MODES[t.mode];
   const arrive = new Date(t.start + t.duration);
   const early = m.canStopEarly === true || (m.canStopEarly === 'boat' && profile.unlocked.boat);
-  const watch = t.mode === 'plane' ? ['✈️ Window seat', 'Look out at the real ground below'] : t.mode === 'ferry' ? ['⛴️ Watch from the deck', 'Stand on deck as the ferry crosses'] : null;
+  const watch = t.mode === 'plane' ? ['✈️ Window seat', 'Look out at the real ground below'] : t.mode === 'ferry' ? ['⛴️ Watch from the deck', 'Stand on deck as the ferry crosses'] : t.mode === 'cruise' ? ['🛳️ Out on deck', 'Watch the coast go by from the top deck'] : null;
   const o = overlay(`<div class="card trip"><h2>${m.icon} On the ${m.name.toLowerCase()} to ${esc(t.to.name)}</h2>
     <canvas id="tmap" class="tmap" width="760" height="340"></canvas>
     <p class="note" id="tover">&nbsp;</p>
@@ -1402,8 +1469,13 @@ function tripScreen() {
     if (!bar) { clearInterval(tripTimer); return; }
     bar.style.width = `${(f * 100).toFixed(1)}%`;
     left.textContent = f >= 1 ? 'Arrived' : `${fmtDuration(t.start + t.duration - now)} to go`;
-    const ob = o.querySelector('#toff'); if (ob) ob.disabled = f < 0.02 || f >= 1;
     const p = positionAt(t, now);
+    const ob = o.querySelector('#toff');
+    if (ob && !ob.dataset.going) {
+      ob.disabled = p.f <= 0 || f >= 1;
+      const sub = o.querySelector('#toffs');
+      if (sub) sub.textContent = p.f <= 0 ? `Once the ${m.name.toLowerCase()} has left` : `Be dropped where the ${m.name.toLowerCase()} has got to by now`;
+    }
     map.update(p.lat, p.lon, p.f);
     const wb = o.querySelector('#twatch');
     if (wb) {
@@ -1421,7 +1493,7 @@ function tripScreen() {
       whereIs(p.lat, p.lon).then((w) => {
         if (!over.isConnected) return;
         if (w) over.textContent = `Now ${t.mode === 'plane' ? 'over' : 'near'} ${[w.place, w.region, w.country].filter(Boolean).join(', ')}`;
-        else if (t.mode === 'plane' || t.mode === 'ferry') over.textContent = 'Now over open water';
+        else if (t.mode === 'plane' || t.mode === 'ferry' || t.mode === 'cruise') over.textContent = t.mode === 'cruise' ? 'At sea' : 'Now over open water';
       });
     }
     if (f >= 1) { clearInterval(tripTimer); arriveTrip(); }
@@ -1446,14 +1518,15 @@ function tripScreen() {
         return;
       }
       bail.disabled = true; bail.textContent = "Checking what's below…";
-      const below = await whereIs(p.lat, p.lon).catch(() => null);
+      const below = await Promise.race([whereIs(p.lat, p.lon).catch(() => null), new Promise((r) => setTimeout(() => r({ timeout: true }), 6000))]);
+      if (below?.timeout) { bail.disabled = false; armed = 0; bail.classList.remove('armed'); bail.textContent = "Couldn't see the ground. Try again in a moment."; setTimeout(label, 4000); return; }
       if (!below?.cc) { bail.disabled = false; armed = 0; bail.classList.remove('armed'); bail.textContent = 'Only open water below. Best stay in your seat.'; setTimeout(label, 4000); return; }
       const now = Date.now(), wait = MODES.plane.wait * 60000, after = (MODES.plane.after || 0) * 60000;
       const alt = Math.round(PlaneView.altitude(Math.max(0, now - t.start - wait), t.duration - wait - after));
       const kind = profile.pos?.kind && VEHICLES[profile.pos.kind]?.terrain === 'land' ? profile.pos.kind : 'car';
       const where = below.place ? `near ${esc(below.place)}` : `in ${esc(below.country || 'the countryside')}`;
       profile.stats.bailouts = (profile.stats.bailouts || 0) + 1;
-      finishTrip(p.lat, p.lon, null, `🪂 You jumped from ${alt.toLocaleString()} m and floated down ${where}. Your ${VEHICLES[kind].name.toLowerCase()} was somehow waiting.`, Math.round(t.km * p.f), '🪂 Floating down…');
+      startSkydive({ lat: p.lat, lon: p.lon, alt, bearing: bearingNow(t).b, kind, km: Math.round(t.km * p.f), where });
     };
   }
   clearInterval(tripTimer);
@@ -1463,8 +1536,9 @@ function tripScreen() {
   if (off) off.onclick = async () => {
     const p = positionAt(t);
     if (p.f <= 0) { toast('You haven\'t left yet.'); return; }
-    off.disabled = true; off.innerHTML = 'Getting off…';
-    const near = await whereIs(p.lat, p.lon).catch(() => null);
+    off.disabled = true; off.dataset.going = '1'; off.innerHTML = 'Getting off…';
+    // the place name is a nicety: never wait more than a few seconds for it
+    const near = await Promise.race([whereIs(p.lat, p.lon).catch(() => null), new Promise((r) => setTimeout(() => r(null), 3000))]);
     finishTrip(p.lat, p.lon, t.mode === 'ferry' ? 'boat' : null, `${m.icon} You got off ${near?.place ? `near ${esc(near.place)}` : 'part-way'}.`, Math.round(t.km * p.f));
   };
 }
@@ -1544,6 +1618,76 @@ function finishTrip(lat, lon, kindOverride, msg, km, loading = null) {
   begin(lat, lon, 0, kind, { snap: VEHICLES[kind].terrain !== 'water', teleport: true, loading }).then(() => toast(msg, { ms: 7000 }));
 }
 
+// ---------- skydiving: bailing out of a flight ----------
+// About 25 seconds of freefall looking straight down at the real ground (low-detail map tiles, the
+// real cloud cover): steer with the arrows, WASD, a stick or by dragging. The canopy opens by itself
+// low down, five seconds under it, and you land (and drive on) where you steered to.
+const FALL_S = 25, CHUTE_S = 5, CHUTE_AT = 900;
+let skyView = null;
+function startSkydive({ lat, lon, alt, bearing, kind, km, where }) {
+  clearInterval(tripTimer);
+  endWatchUI(); hideOverlay();
+  skyView ||= new PlaneView({ z: 12, noWing: true });
+  skyView.setSize(innerWidth, innerHeight);
+  game.sky = { lat, lon, alt0: Math.max(alt, CHUTE_AT + 600), t: 0, bearing, kind, km, where, vx: 0, vz: 0, drag: null, chute: false, hudT: 0 };
+  game.state = 'skydive';
+  input.enabled = true;
+  const el = $('#skydive');
+  el.hidden = false; el.className = 'fall';
+  $('#skhint').textContent = isTouch ? 'Drag to steer your landing spot' : 'Arrows / WASD (or a stick) to steer';
+  say('Geronimo!', 1600);
+  sound.whoosh();
+}
+function say(text, ms) { const s = $('#sksay'); s.textContent = text; s.classList.add('on'); clearTimeout(say.t); say.t = setTimeout(() => s.classList.remove('on'), ms); }
+{
+  const el = $('#skydive');
+  const aim = (e) => {
+    if (!game.sky) return;
+    const r = el.getBoundingClientRect(), k = Math.min(r.width, r.height) * 0.3;
+    game.sky.drag = { x: Math.max(-1, Math.min(1, (e.clientX - r.width / 2) / k)), y: Math.max(-1, Math.min(1, -(e.clientY - r.height / 2) / k)) };
+  };
+  el.addEventListener('pointerdown', (e) => { try { el.setPointerCapture(e.pointerId); } catch { /* gone */ } aim(e); });
+  el.addEventListener('pointermove', (e) => { if (game.sky?.drag) aim(e); });
+  const up = () => { if (game.sky) game.sky.drag = null; };
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+}
+function skydiveFrame(dt) {
+  const s = game.sky;
+  if (!s) return;
+  s.t += dt;
+  const inp = input.poll();
+  const ix = s.drag ? s.drag.x : inp.steer, iy = s.drag ? s.drag.y : (inp.throttle || 0) - (inp.brake || 0);
+  const chute = s.t >= FALL_S;
+  if (chute && !s.chute) {
+    s.chute = true;
+    $('#skydive').className = 'chute';
+    say(['Wheee!', 'Phew!', 'Ta-da!', 'Hello down there!'][Math.floor(Math.random() * 4)], 1800);
+    sound.burst(0.2, 300, 0.25); input.rumble(0.5, 0.5, 180);
+  }
+  // drift across the ground: fast in freefall, gentle under the canopy (forward = up the screen)
+  const top = chute ? 9 : 55, k = Math.min(1, dt * 1.6);
+  s.vx += (ix * top - s.vx) * k; s.vz += (iy * top - s.vz) * k;
+  const b = s.bearing, east = Math.sin(b) * s.vz + Math.cos(b) * s.vx, north = Math.cos(b) * s.vz - Math.sin(b) * s.vx;
+  const g = offsetGeo(s.lat, s.lon, east * dt, north * dt); s.lat = g.lat; s.lon = g.lon;
+  const alt = chute ? 8 + (CHUTE_AT - 8) * Math.pow(Math.max(0, 1 - (s.t - FALL_S) / CHUTE_S), 1.25)
+    : CHUTE_AT + (s.alt0 - CHUTE_AT) * Math.pow(1 - s.t / FALL_S, 1.6);
+  skyView.lookDown(s.lat, s.lon, alt, b, DEV_HOUR != null ? new Date(new Date().setUTCHours(DEV_HOUR, 0, 0)) : new Date());
+  renderer.render(skyView.scene, skyView.camera);
+  if ((s.hudT += dt) > 0.1) {
+    s.hudT = 0;
+    $('#skalt').textContent = `${Math.round(game.mph ? alt * 3.281 : alt).toLocaleString()} ${game.mph ? 'ft' : 'm'}`;
+    $('#sktime').style.width = `${Math.min(100, (s.t / (FALL_S + CHUTE_S)) * 100).toFixed(1)}%`;
+  }
+  if (s.t >= FALL_S + CHUTE_S) landSkydive();
+}
+function landSkydive() {
+  const s = game.sky;
+  game.sky = null;
+  say('Oof!', 900);
+  setTimeout(() => { $('#skydive').hidden = true; }, 500);
+  finishTrip(s.lat, s.lon, null, `🪂 You jumped from ${Math.round(s.alt0).toLocaleString()} m and landed ${s.where}. Your ${VEHICLES[s.kind].name.toLowerCase()} was somehow waiting.`, s.km, '🪂 Landing…');
+}
+
 // ---------- watching a trip: the window seat (plane) and the deck (ferry) ----------
 let planeView = null, ferry = null, watchInfoAt = 0, watchWorldT = 0, orbit = 0;
 function bearingNow(t) {
@@ -1570,7 +1714,8 @@ function startWatch(mode) {
   if (game.model) game.model.group.visible = false;
   shadow.visible = false; arrow.visible = false; beacon.visible = false;
   traffic.clear();
-  ferry ||= buildFerry();
+  if (ferry && !!ferry.userData.cruise !== (mode === 'cruise')) { scene.remove(ferry); ferry = null; }
+  ferry ||= buildFerry(mode === 'cruise');
   scene.add(ferry);
   const { p } = bearingNow(t);
   game.lat = p.lat; game.lon = p.lon;
@@ -1622,8 +1767,8 @@ function watchFrame(dt) {
   ferry.rotation.set(Math.sin(now / 1700) * 0.01, -b, Math.sin(now / 2100) * 0.015);
   // a slow swing around the ferry
   orbit += dt * 0.04;
-  const a = -b + Math.PI + Math.sin(orbit) * 1.2, dist = 85;
-  camera.position.set(q.x + Math.sin(a) * dist, gy + 28, q.z - Math.cos(a) * dist);
+  const big = ferry.userData.cruise, a = -b + Math.PI + Math.sin(orbit) * 1.2, dist = big ? 130 : 85;
+  camera.position.set(q.x + Math.sin(a) * dist, gy + (big ? 44 : 28), q.z - Math.cos(a) * dist);
   camera.up.set(0, 1, 0);
   camera.lookAt(q.x, gy + 8, q.z);
   if (Math.abs(camera.fov - 55) > 0.1) { camera.fov = 55; camera.updateProjectionMatrix(); }
@@ -1702,8 +1847,9 @@ function updateDeckLabels(dt, x, z, show, bearing = 0) {
   }
 }
 
-function buildFerry() {
+function buildFerry(cruise = false) {
   const g = new THREE.Group();
+  g.userData.cruise = cruise;
   const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
   const glass = new THREE.MeshLambertMaterial({ color: '#2a3440', emissive: '#000000' }); // windows light up after dark
   g.userData.glass = glass;
@@ -1718,6 +1864,16 @@ function buildFerry() {
   box(3, 5, 3, '#c8102e', 0, 15.5, 10);           // funnel
   const bow = new THREE.Mesh(new THREE.ConeGeometry(8, 14, 4).rotateX(-Math.PI / 2).rotateY(Math.PI / 4).scale(1, 0.36, 1), lam('#f2f2ee'));
   bow.position.set(0, 2.5, -42); g.add(bow);
+  if (cruise) { // a liner: more decks of cabins with balconies, lifeboats, a pool deck and a second funnel
+    for (let k = 0; k < 4; k++) {
+      box(15, 2.8, 58 - k * 6, '#f8f8f4', 0, 13.8 + k * 2.9, 1 + k);
+      box(15.2, 0.9, 58.2 - k * 6, '#2a3440', 0, 13.9 + k * 2.9, 1 + k);
+    }
+    for (let k = -3; k <= 3; k++) for (const sx of [-8.2, 8.2]) box(0.9, 1.4, 4.4, '#ff8a1f', sx, 9.2, k * 7);
+    box(9, 0.3, 14, '#3fb6d9', 0, 25.6, 14);   // the pool
+    box(3.4, 6, 3.4, '#1f4fa0', 0, 28.5, 22);  // second funnel
+    g.scale.setScalar(1.45);
+  }
   return g;
 }
 
@@ -1880,6 +2036,95 @@ function updateCamera(dt) {
   if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix(); }
 }
 
+// ---------- autopilot (a feat reward) ----------
+// On a motorway or major highway it takes the wheel: it finds the road (pulling you onto it if
+// you're beside it), keeps to a lane on the side your country drives on, follows the bends, holds
+// the speed limit and slows behind traffic. Steer or brake and you have the wheel back.
+const AUTO_KINDS = new Set(['car', 'truck', 'pickup', 'moto', 'demon', 'solar']);
+const isHighway = (rd) => rd.c <= 1;
+function autopilotHere(v) {
+  if (!profile.autopilot || !AUTO_KINDS.has(v.kind) || v.flying || game.activity?.type === 'race') return null;
+  return world.roadAt(v.x, v.z, 25, isHighway);
+}
+function showAutopilotButton(v) {
+  const b = $('#b-auto'), here = !!autopilotHere(v);
+  if (game.autopilot && !here) { game.autopilot = false; toast('🤖 Autopilot off: the highway ends here. Your wheel.'); }
+  const show = here || game.autopilot;
+  if (b.hidden === show) b.hidden = !show;
+  b.classList.toggle('on', !!game.autopilot);
+}
+function toggleAutopilot() {
+  if (game.state !== 'driving' || !game.v) return;
+  if (game.autopilot) { game.autopilot = false; toast('🤖 Autopilot off.'); showAutopilotButton(game.v); return; }
+  if (!profile.autopilot) { toast('🤖 Autopilot is earned: drive 200 km on motorways and highways.'); return; }
+  if (!autopilotHere(game.v)) { toast('🤖 Autopilot works on motorways and major highways. Find one first.'); return; }
+  game.autopilot = true; game.autoGrace = 0.6; game.apRoad = null;
+  toast('🤖 Autopilot on. Steer or brake to take back the wheel.', { ms: 4000 });
+  showAutopilotButton(game.v);
+}
+function autopilotInput(v, inp) {
+  // you take over: any real steering or braking
+  game.autoGrace = Math.max(0, (game.autoGrace || 0) - 1 / 60);
+  if (!game.autoGrace && (Math.abs(inp.steer) > (input.mode === 'tilt' && input.tilt.on ? 0.55 : 0.3) || inp.brake > 0.2 || inp.handbrake)) { game.autopilot = false; toast('🤖 Autopilot off. Your wheel.'); showAutopilotButton(v); return null; }
+  const [fx, fz] = v.fwd();
+  // stay on *this* road: the one we're on, or one carrying straight on from it (not a slip road,
+  // the other carriageway or a road alongside)
+  // the nearest highway going our way: skip the other carriageway, crossing roads and slip roads
+  // turning off (roadAt can only filter whole roads, so try, reject and try again)
+  const pick = (x, z, maxD, ux, uz) => {
+    const no = new Set();
+    let best = null, bestScore = -Infinity;
+    for (let k = 0; k < 6; k++) {
+      const q = world.roadAt(x, z, maxD, (rd) => isHighway(rd) && !no.has(rd));
+      if (!q) break;
+      no.add(q.road);
+      const d = q.dirX * ux + q.dirZ * uz;
+      if (Math.abs(d) < 0.8 || ((q.road.f & 4) && d < 0)) continue;
+      const score = Math.abs(d) * 3 - Math.max(0, q.d) / 10; // straight on beats a slip road peeling away
+      if (score > bestScore) { bestScore = score; best = q; }
+    }
+    return best;
+  };
+  const go = game.apRoad ? [game.apRoad.dirX * game.apRoad.dir, game.apRoad.dirZ * game.apRoad.dir] : [fx, fz];
+  // past the end of a road (it carries on as the next one): don't hang on to its last point
+  const pastEnd = (q, dir) => { const n = q.road.p.length / 3; return dir > 0 ? q.seg === n - 1 && q.t > 0.97 : q.seg === 1 && q.t < 0.03; };
+  let mine = game.apRoad && world.roadAt(v.x, v.z, 10, (q) => q === game.apRoad.road);
+  if (mine && pastEnd(mine, game.apRoad.dir)) mine = null;
+  const r = mine || pick(v.x + go[0] * 6, v.z + go[1] * 6, 25, go[0], go[1]);
+  const handBack = (why) => { game.autopilot = false; toast(`🤖 Autopilot off: ${why}. Your wheel.`); showAutopilotButton(v); return null; };
+  if (!r) return handBack("can't see where the highway goes");
+  const dir = r.dirX * fx + r.dirZ * fz >= 0 ? 1 : -1; // follow the road the way we're facing
+  if ((r.road.f & 4) && dir < 0) { game.autopilot = false; toast('🤖 Autopilot off: wrong way down a one-way road.'); showAutopilotButton(v); return null; }
+  game.apRoad = { road: r.road, dirX: r.dirX, dirZ: r.dirZ, dir };
+  const ux = r.dirX * dir, uz = r.dirZ * dir; // the way we're going along it
+  const sp = Math.max(0, v.vf);
+  // a point further along the road (it bends), and our lane there: right of travel, or left where they drive on the left
+  const look = 14 + sp * 1.1;
+  const ax = r.px + ux * look, az = r.pz + uz * look;
+  let ra = world.roadAt(ax, az, 12, (q) => q === r.road);
+  if (!ra || pastEnd(ra, dir)) ra = pick(ax, az, 14, ux, uz) || r;
+  const along = ra.dirX * ux + ra.dirZ * uz >= 0 ? 1 : -1;
+  const tdx = ra.dirX * along, tdz = ra.dirZ * along;
+  const oneWay = !!(ra.road.f & 4), w = ra.road.w;
+  const lane = oneWay ? (w >= 9 ? w / 4 : 0) : Math.min(w / 4, 1.9);
+  const side = traffic.side === 'left' ? -1 : 1; // right of travel = (-tdz, tdx)
+  const tx = ra.px + -tdz * lane * side, tz = ra.pz + tdx * lane * side;
+  const want = Math.atan2(tx - v.x, -(tz - v.z));
+  let err = want - v.heading; err = Math.atan2(Math.sin(err), Math.cos(err));
+  if (Math.abs(err) > 0.9 && sp > 5) return handBack('a junction it can’t read'); // never a wild swerve: give the wheel back
+  const steer = Math.max(-1, Math.min(1, err * (2.2 + 8 / (4 + sp))));
+  // speed: the limit (posted, or the vehicle's own), easing off for bends and for cars ahead
+  let target = Math.min(v.limit, game.roadKmh ? game.roadKmh / 3.6 : v.limit) * 0.97;
+  target = Math.min(target, Math.max(12, target * (1 - Math.min(0.5, Math.abs(err) * 1.5))));
+  for (const c of traffic.cars) {
+    const dx = c.x - v.x, dz = c.z - v.z, along = dx * fx + dz * fz, lat = Math.abs(dx * -fz + dz * fx);
+    if (along > 3 && along < 20 + sp * 1.5 && lat < 2.2) target = Math.min(target, Math.max(0, (c.free || c.parked ? 0 : c.speed) + (along - 12) * 0.35));
+  }
+  const throttle = sp < target - 0.3 ? Math.min(1, (target - sp) / 4 + 0.3) : 0;
+  const brake = sp > target + 1.5 ? Math.min(1, (sp - target) / 6) : 0;
+  return { ...inp, throttle, brake, steer, handbrake: false, analog: true };
+}
+
 // ---------- looking around ----------
 // Phone: drag on the open view to swing the camera round, pinch to zoom; it drifts back behind you
 // a couple of seconds after you let go. Computer: drag with the mouse, wheel to zoom, Q/E and Z/X.
@@ -2009,20 +2254,35 @@ let last = performance.now(), worldT = 0, mapT = 0, saveT = 0, waveT = 0;
 const STEP = 1 / 60;
 const DEV_HOUR = DEV && params.get('hour') ? +params.get('hour') : null; // UTC hour, for testing light
 const TIMER = DEV && params.has('timer'); // testing in a background window, where animation frames are throttled
+// How often to draw (ms). Phones with 120 Hz screens would otherwise draw twice as often as anyone
+// can use; nothing needs 60 frames a second behind a full-screen card or while you're parked.
+// Fewer frames = a cooler phone and a longer battery, with no change to how driving looks.
+const overlayEl = document.getElementById('overlay'), panelEl = document.getElementById('panel');
+function frameBudget() {
+  if (game.state === 'watch-plane' || game.state === 'watch-ferry' || game.state === 'skydive') return 1000 / 60;
+  if (!overlayEl.hidden && overlayEl.className === '') return 250; // an opaque card covers the world (trips, start)
+  if (game.state !== 'driving') return 1000 / 20;
+  if (!panelEl.hidden || (game.stillT || 0) > 2) return 1000 / 30; // a menu open, or parked and idle
+  return 1000 / 60;
+}
 function frame(now) {
   if (TIMER) setTimeout(() => frame(performance.now()), 16); else requestAnimationFrame(frame);
+  if (!TIMER && now - last < frameBudget() - 3) return; // not time for the next frame yet
   // a slow frame still counts in full (up to 1/4 s; physics runs in 1/60 s steps), so the game
   // never drifts into slow motion while the speedometer shows the real speed
   const dt = Math.min(0.25, (now - last) / 1000);
   last = now;
   if (game.state === 'watch-plane' || game.state === 'watch-ferry') { watchFrame(dt); return; }
+  if (game.state === 'skydive') { skydiveFrame(dt); return; }
   if (game.state !== 'driving' || !game.v) {
     renderer.render(scene, camera);
     return;
   }
   const v = game.v;
-  const inp = input.poll();
+  let inp = input.poll();
   input.drawWheel();
+  if (game.autopilot) { const a = autopilotInput(v, inp); if (a) inp = a; }
+  game.stillT = Math.abs(v.vf) < 0.3 && !v.flying && !inp.throttle && !inp.brake && Math.abs(inp.steer) < 0.05 && !camCtl.held ? (game.stillT || 0) + dt : 0;
   game.braking = inp.brake > 0 && v.vf > 0.5;
   game.reversing = inp.brake > 0 && v.vf < -0.2;
   // map loading governor: never outrun the map
@@ -2045,6 +2305,9 @@ function frame(now) {
   }
   moved = Math.hypot(v.x - x0, v.z - z0);
   profile.stats.km += moved / 1000;
+  (profile.odo ||= {})[v.kind] = (profile.odo[v.kind] || 0) + moved / 1000; // each vehicle's own odometer (km)
+  if (v.road && v.road.road.c <= 1) profile.stats.motorwayKm = (profile.stats.motorwayKm || 0) + moved / 1000;
+  if ((game.autoT = (game.autoT || 0) + dt) > 0.5) { game.autoT = 0; showAutopilotButton(v); }
   if (moved > 0.01 || Math.abs(v.vf) > 0.5) profile.stats.playS = (profile.stats.playS || 0) + dt; // time actually driving
   const geo = world.toGeo(v.x, v.z);
   game.lat = geo.lat; game.lon = geo.lon;
@@ -2079,7 +2342,7 @@ function frame(now) {
   sound.update(v, { rain: env.raining ? 1 : 0 });
   hudFrame();
   mapT += dt;
-  if (mapT > 0.12) { mapT = 0; drawMinimap($('#minimap'), world, v, markers(), { hideFuel: false, hubs: nearestHubs(), mph: game.mph, portal: game.portal?.pos || null }); }
+  if (mapT > 0.12) { mapT = 0; drawMinimap($('#minimap'), world, v, markers(), { hideFuel: false, hubs: nearestHubs(), mph: game.mph, portal: game.portal?.pos || null, odo: odoText(v) }); }
   saveT += dt;
   if (saveT > 1) {
     saveT = 0;
@@ -2199,6 +2462,7 @@ function tickGamer(dt, chunks) {
   }
   signs.animate(dt);
   debris.update(dt, (x, z) => world.groundAt(x, z));
+  if (game.v) wake.update(dt, game.v, world.isWater(game.v.x, game.v.z) ? world.groundAt(game.v.x, game.v.z) : null);
   // one pop per burst, not one per cone or coin
   if (coneAcc) { coneT -= dt; if (coneT <= 0) { profile.stats.cones = (profile.stats.cones || 0) + coneAcc; stylePop(coneAcc > 1 ? `Cone smash ×${coneAcc}` : 'Cone smash', 15 * coneAcc); sound.crash(2); coneAcc = 0; } }
   if (coinAcc) { coinT -= dt; if (coinT <= 0) { stylePop(coinAcc >= 8 ? 'Coin trail!' : `Coins ×${coinAcc}`, coinAcc * 10 + (coinAcc >= 8 ? 120 : 0)); coinAcc = 0; } }
@@ -2282,10 +2546,14 @@ function handleEvent(e) {
     if (e.impact > 2) { sound.crash(e.impact); game.shake = Math.min(1.2, e.impact * 0.06); input.rumble(Math.min(1, e.impact / 12), 0.3, 200); }
     if (e.impact > 3) { breakCombo(); game.style.driftT = 0; game.style.drift = 0; }
     if (e.impact > 3 && game.model) {
-      dent(game.model, e.impact); if (e.impact > 7) dent(game.model, e.impact * 0.7); if (e.impact > 12) dent(game.model, e.impact * 0.5);
-      flashHit(game.model, Math.min(1, e.impact / 10));
       const [fx, fz] = v.fwd(), at = e.at || { x: v.x + fx * v.spec.radius, z: v.z + fz * v.spec.radius, nx: -fx, nz: -fz, y: v.y };
       if (v.spec.terrain === 'land' && v.kind !== 'dog') debris.sparks(at.x, (at.y ?? v.y) + 0.5, at.z, at.nx, at.nz, e.impact);
+    }
+    // no-damage mode: walls, signs, trees and other cars still take the hit; your vehicle doesn't
+    if (e.impact > 3 && game.model && !cheats.noDamage) {
+      const [fx, fz] = v.fwd();
+      dent(game.model, e.impact); if (e.impact > 7) dent(game.model, e.impact * 0.7); if (e.impact > 12) dent(game.model, e.impact * 0.5);
+      flashHit(game.model, Math.min(1, e.impact / 10));
       const lost = grime(game.model, v.damage);
       if (lost) { debris.bits(v.x + fx * 2, v.y + 0.4, v.z + fz * 2, fx, fz, 6, lost === 'bumper' ? '#1d1f22' : '#fff6d8', { n: 7, size: 0.7, lift: 0.3 }); toast(lost === 'bumper' ? '💥 There goes the bumper.' : '💥 A headlight is out.', { ms: 2500 }); }
       // the damage bar: a pulse and how much that cost
@@ -2317,7 +2585,10 @@ function handleEvent(e) {
     if (e.why === 'water' && !profile.shore) { profile.shore = true; save(); checkUnlocks(); }
     if (e.why === 'water' && !game.waterHint) { game.waterHint = true; toast(profile.unlocked.boat ? '🚤 Water ahead. Summon your boat from the Garage to go on.' : 'Water ahead. You can\'t drive on that.'); setTimeout(() => (game.waterHint = false), 8000); }
     if (e.why === 'shore' && !game.waterHint) { game.waterHint = true; toast('Land ahead. Summon a land vehicle from the Garage.'); setTimeout(() => (game.waterHint = false), 8000); }
-    if (e.impact > 3) { sound.crash(e.impact * 0.6); game.shake = 0.3; }
+    if (e.why === 'water' && e.impact > 2 && e.at) {
+      debris.splash(e.at.x, (world.groundAt(e.at.x, e.at.z) ?? v.y) + 0.2, e.at.z, e.at.nx, e.at.nz, e.impact);
+      sound.burst(Math.min(0.3, 0.08 + e.impact * 0.015), 1600, 0.5); game.shake = Math.min(0.4, e.impact * 0.02);
+    } else if (e.impact > 3) { sound.crash(e.impact * 0.6); game.shake = 0.3; }
   }
 }
 
@@ -2439,7 +2710,7 @@ function tickStyle(dt, inp) {
 const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences). Sounds (trimmed), via Wikimedia Commons: car horn by 15HPanska_Ruttner_Jan (CC0), truck horn from a city bus by Work With Sounds / Technical Museum of Slovenia (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>), ship horn by Tvabutzku1234 (CC0) and dog bark by Amada44 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>).';
 
 // ---------- boot ----------
-if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, radio, sound, camCtl, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
+if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, radio, sound, camCtl, wake, debris, startSkydive, toggleAutopilot, frameBudget, cheats, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
 pruneRaces();
 world.stuntMode = profile.settings.mode || 'explorer';
 cheats.noDamage = !!profile.settings.noDamage;

@@ -32,6 +32,8 @@ async function startNative() {
       window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape' }));
     }).catch(() => {});
   }
+  // one location fix through iOS itself, so its prompt names the app (the web view's says "localhost")
+  window.__nativeLocate = () => raw.locate();
 }
 
 (native ? startNative().catch((e) => console.warn('native start', e)) : Promise.resolve()).then(() => import('./main.js'));

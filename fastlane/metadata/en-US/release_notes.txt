@@ -1,26 +1,24 @@
-New vehicles
-• Speed Demon: 200 mph, no speed limits, and it stays planted on the road.
-• Hang glider: launch from a hilltop and ride the wind up a ridge.
-• A rubber duck that's faster than the boats, waddles ashore and flaps into short flights.
-• A dog that paddles across water (and has a habit with trees).
+New
+• Skydiving: bail out of a flight and steer your freefall over the real ground, then float down under a canopy and drive on from where you land.
+• Cruises: sail between real cruise ports in real time, and watch the coast from the top deck.
+• Autopilot, earned with 200 km of motorway driving: it holds your lane and the speed limit on motorways and major highways.
+• An odometer for each vehicle, at the bottom of the minimap.
+• Portals now lead to about 250 places, and won't send you back somewhere you've just been.
 
-Better driving
-• Swing and zoom the camera: drag or pinch, the mouse wheel, Q/E and Z/X, or a controller's right stick.
-• Bikes now lean into turns.
-• The speedometer shows your real speed over the ground.
-• Wheels steer and roll smoothly. The handbrake button now says what it's for: handbrake / drift.
-• A short drift is free; hold one for more than 5 seconds and your tyres wear.
+Better
+• Crash into a car and it gets shoved, spins and dents, by weight: a truck sends it flying, a bike barely moves it.
+• Driving into water makes a big splash and stops you, instead of bouncing you off like a wall.
+• The duck, the dog, the boats and the jet ski leave a wake.
+• The back of a stunt ramp is solid now.
+• Boost arrows point both ways, because they work both ways.
+• Real horn recordings every time you press the horn, including right after switching apps, and a fuller double honk for cars.
+• Service is at the top of the Garage.
+• A new portal tells you how far away it is.
 
-Sounds
-• Horn button (H key, or X on a controller): a real recorded horn pitched for each vehicle, a bicycle bell, a bark, and a cartoon quack.
-• Radio while you guess where you are after a random drop (the station's name stays hidden until you guess).
-• Quieter rain and wind.
-
-A truer world
-• Real, individually mapped trees, including street trees along the kerb.
-• Buildings show what they're used for: shopfronts with sign bands on shops and cafés (even in industrial estates), ribbed metal sheds, office glazing, schools and hospitals, and homes.
-• Truer roof shapes, and paths that cross water on decks.
-• Roads no longer draw over your vehicle.
-
-Long play
-• New feats for many hours, days and streaks, with coin rewards and paint jobs for your vehicles.
+Fixed
+• Swerving could push vehicles past their top speed (the Speed Demon past 400 mph). Top speeds are now firm.
+• No-damage mode no longer dents your vehicle.
+• Getting off a bus or train early works every time.
+• Buildings and shop signs no longer flicker where two were drawn in the same place.
+• "Start where I am" asks for your location as EarthRacer, not "localhost".
+• Cooler and kinder to the battery: the game no longer draws faster than it needs to.

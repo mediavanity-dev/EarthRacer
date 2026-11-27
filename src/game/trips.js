@@ -24,6 +24,10 @@ export const MODES = {
     name: 'Ferry', icon: '⛴️', stop: 'ferry terminal', detour: 1.1, wait: 20, min: 1, max: 1200, canStopEarly: 'boat',
     speed: () => 30,
   },
+  cruise: {
+    name: 'Cruise', icon: '🛳️', stop: 'cruise terminal', detour: 1.3, wait: 45, min: 20, max: 20000, canStopEarly: false,
+    speed: () => 37, // about 20 knots
+  },
   plane: {
     name: 'Flight', icon: '✈️', stop: 'airport', detour: 1.05, wait: 10, after: 10, min: 120, max: 16000, canStopEarly: false,
     speed: (km) => (km < 600 ? 550 : 800),
@@ -31,7 +35,25 @@ export const MODES = {
 };
 
 // how close you must be to board (airport labels sit in the middle of the airfield)
-export const BOARD_RADIUS = { bus: 30, train: 90, ferry: 120, plane: 1500 };
+export const BOARD_RADIUS = { bus: 30, train: 90, ferry: 120, cruise: 1200, plane: 1500 };
+
+// Real cruise ports (the cruise terminal or the quay ships use), for the cruise ship.
+export const CRUISE_PORTS = [
+  ['Miami, USA', 25.7781, -80.1747], ['Port Canaveral, USA', 28.4108, -80.6267], ['Fort Lauderdale, USA', 26.0921, -80.1197], ['Galveston, USA', 29.3091, -94.7930],
+  ['New Orleans, USA', 29.9415, -90.0633], ['New York, USA', 40.7700, -74.0010], ['Boston, USA', 42.3480, -71.0360], ['Seattle, USA', 47.6120, -122.3540],
+  ['San Francisco, USA', 37.8010, -122.3980], ['Los Angeles, USA', 33.7430, -118.2770], ['Honolulu, USA', 21.3080, -157.8660], ['Juneau, USA', 58.2980, -134.4060],
+  ['Vancouver, Canada', 49.2888, -123.1111], ['Québec City, Canada', 46.8159, -71.2016], ['Halifax, Canada', 44.6420, -63.5680], ['Nassau, Bahamas', 25.0790, -77.3430],
+  ['Cozumel, Mexico', 20.5010, -86.9580], ['San Juan, Puerto Rico', 18.4620, -66.1130], ['Bridgetown, Barbados', 13.1050, -59.6310], ['Cartagena, Colombia', 10.4080, -75.5300],
+  ['Rio de Janeiro, Brazil', -22.8940, -43.1800], ['Buenos Aires, Argentina', -34.5850, -58.3700], ['Ushuaia, Argentina', -54.8070, -68.2990], ['Valparaíso, Chile', -33.0330, -71.6260],
+  ['Southampton, UK', 50.8960, -1.4060], ['Dover, UK', 51.1160, 1.3270], ['Copenhagen, Denmark', 55.7000, 12.6080], ['Stockholm, Sweden', 59.3240, 18.0900],
+  ['Bergen, Norway', 60.3980, 5.3150], ['Hamburg, Germany', 53.5440, 9.9370], ['Amsterdam, Netherlands', 52.3780, 4.9180], ['Lisbon, Portugal', 38.7130, -9.1200],
+  ['Barcelona, Spain', 41.3700, 2.1770], ['Palma de Mallorca, Spain', 39.5550, 2.6350], ['Marseille, France', 43.3200, 5.3600], ['Genoa, Italy', 44.4090, 8.9170],
+  ['Civitavecchia (Rome), Italy', 42.0960, 11.7860], ['Naples, Italy', 40.8400, 14.2560], ['Venice, Italy', 45.4320, 12.3220], ['Dubrovnik, Croatia', 42.6590, 18.0850],
+  ['Piraeus (Athens), Greece', 37.9420, 23.6370], ['Santorini, Greece', 36.4160, 25.4320], ['Istanbul, Türkiye', 41.0270, 28.9850], ['Valletta, Malta', 35.8930, 14.5150],
+  ['Dubai, UAE', 25.2690, 55.2790], ['Singapore', 1.2650, 103.8210], ['Hong Kong', 22.3040, 114.1690], ['Shanghai, China', 31.2470, 121.5000],
+  ['Yokohama, Japan', 35.4540, 139.6420], ['Sydney, Australia', -33.8580, 151.2100], ['Auckland, New Zealand', -36.8420, 174.7700], ['Cape Town, South Africa', -33.9070, 18.4280],
+];
+
 
 /** Estimate a trip: { km, minutes } or { error } */
 export function estimate(mode, from, to) {

@@ -100,24 +100,34 @@ export class Sound {
   // Loaded once: a decoded clip isn't tied to one audio engine, so it survives a rebuild.
   // Each new sound engine decodes its own copy from the bytes already in memory (a few ms): iOS can
   // play a clip decoded by an engine it has since closed as silence.
+  // The recordings stay usable across engine rebuilds (a decoded clip isn't tied to one engine);
+  // each new engine also decodes its own copy in the background and swaps it in when ready.
   loadSamples(ctx) {
-    this.samples = {};
     const base = import.meta.env.BASE_URL || './';
-    for (const name of CLIPS) {
-      const bytes = this.raw[name] || (this.raw[name] = fetchClip(base, name));
-      bytes
-        .then((b) => new Promise((ok, no) => { const p = ctx.decodeAudioData(b.slice(0), ok, no); p?.catch?.(no); })) // callback form too: older WebKit
-        .then((buf) => { if (this.ctx === ctx) this.samples[name] = buf; })
-        .catch(() => { if (this.raw[name] === bytes) delete this.raw[name]; }); // fetch again next time
-    }
+    for (const name of CLIPS) this.decode(name, ctx, base).catch(() => {});
   }
-  sample(name, gain = 0.8, rate = 1) {
+  decode(name, ctx, base = import.meta.env.BASE_URL || './') {
+    const bytes = this.raw[name] || (this.raw[name] = fetchClip(base, name));
+    return bytes
+      .then((b) => new Promise((ok, no) => { const p = ctx.decodeAudioData(b.slice(0), ok, no); p?.catch?.(no); })) // callback form too: older WebKit
+      .then((buf) => { if (this.ctx === ctx || !this.samples[name]) this.samples[name] = buf; return buf; })
+      .catch((e) => { if (this.raw[name] === bytes) delete this.raw[name]; throw e; }); // fetch again next time
+  }
+  /** Play a recording. If it isn't decoded yet (just after the sound restarted), wait the few
+   *  milliseconds for it rather than playing a synthesised stand-in; false only if there's no recording at all. */
+  sample(name, gain = 0.8, rate = 1, fallback = null) {
+    if (!this.ctx) return false;
+    const play = (buf) => {
+      const src = this.ctx.createBufferSource(); src.buffer = buf;
+      src.playbackRate.value = rate * (0.96 + Math.random() * 0.08); // never quite the same twice
+      const g = this.ctx.createGain(); g.gain.value = gain;
+      src.connect(g).connect(this.fx || this.master); src.start();
+    };
     const buf = this.samples?.[name];
-    if (!this.ctx || !buf) return false;
-    const src = this.ctx.createBufferSource(); src.buffer = buf;
-    src.playbackRate.value = rate * (0.96 + Math.random() * 0.08); // never quite the same twice
-    const g = this.ctx.createGain(); g.gain.value = gain;
-    src.connect(g).connect(this.fx || this.master); src.start();
+    if (buf) { play(buf); return true; }
+    if (!this.raw[name] && !CLIPS.includes(name)) return false;
+    const ctx = this.ctx, t0 = performance.now();
+    this.decode(name, ctx).then((b) => { if (this.ctx === ctx && performance.now() - t0 < 1500) play(b); }).catch(() => fallback?.());
     return true;
   }
   setMuted(m) { this.muted = m; this.applyLevel(); }
@@ -192,7 +202,10 @@ export class Sound {
   checkpoint() { this.tone([880, 1175], 0.1, 'square', 0.07); }
   fail() { this.tone([330, 247], 0.18, 'sawtooth', 0.08); }
   /** A real horn: a car's, a heavy vehicle's air horn (a city bus) or a ship's, pitched for the vehicle. */
-  horn(rate = 1, clip = 'horn') { if (!this.sample(clip, 0.7, rate) && !this.sample('horn', 0.7, rate)) this.tone([392, 494], 0.35, 'square', 0.08); }
+  horn(rate = 1, clip = 'horn') {
+    const beep = () => this.tone([392, 494], 0.35, 'square', 0.08); // only if the recordings can't be had at all
+    if (!this.sample(clip, 0.7, rate, () => (clip !== 'horn' ? this.sample('horn', 0.7, rate, beep) : beep()))) beep();
+  }
   /** A bicycle bell: two quick strikes of a small brass dome (bright, inharmonic partials that ring on). */
   bell() {
     if (!this.ctx) return;
@@ -206,7 +219,7 @@ export class Sound {
     };
     strike(0, 1); strike(0.16, 0.85); // ring-ring
   }
-  bark() { if (!this.sample('bark', 0.85)) { this.tone([520, 380], 0.09, 'sawtooth', 0.12); setTimeout(() => this.tone([560, 400], 0.09, 'sawtooth', 0.1), 180); } }
+  bark() { if (!this.sample('bark', 0.85, 1, () => this.tone([520, 380], 0.09, 'sawtooth', 0.12))) { this.tone([520, 380], 0.09, 'sawtooth', 0.12); setTimeout(() => this.tone([560, 400], 0.09, 'sawtooth', 0.1), 180); } }
   squeak() { this.tone([1900, 2400, 1700], 0.07, 'sine', 0.1); }
   /** A cartoon quack: a buzzy, nasal, kazoo-like "WAK" that drops in pitch, with a wobble. */
   quack() {

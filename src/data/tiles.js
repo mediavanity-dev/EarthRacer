@@ -187,6 +187,9 @@ export function normalizeTile(vt) {
       const f = bl.feature(i);
       if (f.type !== 3) continue;
       const p = f.properties;
+      // the outline of a building that is also mapped in parts (building:part): the parts are drawn
+      // instead. Drawing both put two walls in the same place, flickering between their two looks.
+      if (p.hide_3d) continue;
       const height = Math.min(600, Math.max(3, +p.render_height || 8));
       const minHeight = Math.max(0, +p.render_min_height || 0);
       for (const poly of classifyRings(f.loadGeometry())) {

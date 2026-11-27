@@ -39,10 +39,31 @@
       <button id="b-guess" hidden title="Guess where you are (G)">🎲<span> Guess</span></button>
       <button id="b-trip" hidden title="Take a trip (T)">🚉<span> Take a trip</span></button>
       <button id="b-fuel" hidden title="Out of fuel">⛽<span> Help</span></button>
+      <button id="b-auto" hidden title="Autopilot (P)">🤖<span> Autopilot</span></button>
     </div>
     <div id="controls"></div>
   </div>
 
+  <div id="skydive" hidden>
+    <svg class="diver" viewBox="-60 -70 120 140" aria-hidden="true">
+      <g class="canopy">
+        <path d="M-54,-62 Q0,-76 54,-62 L50,-36 Q0,-46 -50,-36 Z" fill="#e8453c" stroke="#7a1f1a" stroke-width="2"/>
+        <path d="M-32,-67 L-30,-40 M-11,-70 L-10,-43 M11,-70 L10,-43 M32,-67 L30,-40" stroke="#ffd84a" stroke-width="7" opacity="0.9"/>
+        <path d="M-48,-38 L-8,8 M48,-38 L8,8 M-20,-44 L-5,8 M20,-44 L5,8" stroke="#f4f4f4" stroke-width="1" opacity="0.8"/>
+      </g>
+      <g class="jumper">
+        <g class="arm l"><path d="M-6,-6 L-30,-22" stroke="#2f6fb0" stroke-width="9" stroke-linecap="round"/><circle cx="-31" cy="-23" r="5" fill="#d7a985"/></g>
+        <g class="arm r"><path d="M6,-6 L30,-22" stroke="#2f6fb0" stroke-width="9" stroke-linecap="round"/><circle cx="31" cy="-23" r="5" fill="#d7a985"/></g>
+        <g class="leg l"><path d="M-5,18 L-20,44" stroke="#22303f" stroke-width="10" stroke-linecap="round"/><ellipse cx="-21" cy="47" rx="6" ry="4" fill="#111"/></g>
+        <g class="leg r"><path d="M5,18 L20,44" stroke="#22303f" stroke-width="10" stroke-linecap="round"/><ellipse cx="21" cy="47" rx="6" ry="4" fill="#111"/></g>
+        <rect x="-12" y="-12" width="24" height="34" rx="11" fill="#2f6fb0"/>
+        <rect x="-9" y="-4" width="18" height="16" rx="4" fill="#f2b632"/>
+        <circle cx="0" cy="-17" r="10" fill="#e8453c"/><circle cx="0" cy="-17" r="10" fill="none" stroke="#7a1f1a" stroke-width="1.5"/>
+      </g>
+    </svg>
+    <div class="say" id="sksay"></div>
+    <div class="skbar"><b id="skalt"></b><span id="skhint"></span><i><em id="sktime"></em></i></div>
+  </div>
   <div id="watch" hidden><div class="porthole"></div><div class="wbar"><span id="winfo"></span><button id="wback">Back to the trip</button></div></div>
   <div id="overlay"></div>
   <div id="panel" hidden></div>
