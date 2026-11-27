@@ -4,6 +4,8 @@ New
 • Autopilot, earned with 200 km of motorway driving: it holds your lane and the speed limit on motorways and major highways.
 • An odometer for each vehicle, at the bottom of the minimap.
 • Portals now lead to about 250 places, and won't send you back somewhere you've just been.
+• Nine new seatback games, each for its kind of trip. Train: Spot it, Timetable. Plane: Country quiz, Which way? Bus: Next stop. Cruise: Shuffleboard, Bingo night, Port quiz. Bus, train and ferry: Higher or lower.
+• One steering sensitivity setting for every way of steering: keys, controller, tilt, slider and buttons.
 
 Better
 • Crash into a car and it gets shoved, spins and dents, by weight: a truck sends it flying, a bike barely moves it.
@@ -19,6 +21,7 @@ Fixed
 • Swerving could push vehicles past their top speed (the Speed Demon past 400 mph). Top speeds are now firm.
 • No-damage mode no longer dents your vehicle.
 • Getting off a bus or train early works every time.
+• A drift starts even if you press the handbrake before steering (some keyboards drop a third key held at once).
 • Buildings and shop signs no longer flicker where two were drawn in the same place.
 • "Start where I am" asks for your location as EarthRacer, not "localhost".
 • Cooler and kinder to the battery: the game no longer draws faster than it needs to.

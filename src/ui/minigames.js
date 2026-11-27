@@ -3,21 +3,36 @@
 // passenger at a level (1-4): the stakes decide the level. Touch: drag (Pong, Bricks) or swipe
 // (Snake); keyboard: arrows. Plain canvas.
 
+import { runTripGame } from './tripgames.js';
+
 const W = 400, H = 260;
 const GREEN = '#7dffa8', DIM = '#1f5a36', BG = '#06140c', GOLD = '#ffd23f';
 export const GAMES = {
   pong: { name: 'Pong', icon: '🏓', goal: (lv) => 'First to 7 points', help: 'Drag (or ↑ ↓) to move your paddle. First to 7.' },
   snake: { name: 'Snake', icon: '🐍', goal: (lv, target) => `Beat ${target} dots`, help: 'Swipe (or arrow keys) to turn. Eat the dots; miss your tail and the blocks.' },
   bricks: { name: 'Bricks', icon: '🧱', goal: (lv, target) => `Clear ${target} bricks`, help: 'Drag (or ← →) to move the paddle. Three balls.' },
+  // games for particular trips (modes): see tripgames.js
+  spot: { name: 'Spot it', icon: '🔭', modes: ['train'], goal: (lv, t) => `Spot ${t}`, help: 'Tap the thing called out as it goes past the window. Five misses ends it.' },
+  timetable: { name: 'Timetable', icon: '🕰️', modes: ['train'], goal: (lv, t) => `${t} of 8 right`, help: 'Read the departures and pick the right train. Tap an answer (or 1-4).' },
+  trivia: { name: 'Country quiz', icon: '🌍', modes: ['plane'], goal: (lv, t) => `${t} of 8 right`, help: 'Capitals, money, flags, which side of the road. Your destination comes up first. Tap an answer (or 1-4).' },
+  compass: { name: 'Which way?', icon: '🧭', modes: ['plane'], goal: (lv, t) => `Score ${t}`, help: 'From where the plane is now, point at the city: drag round the dial, then tap outside it (or ← → and Space).' },
+  stops: { name: 'Next stop', icon: '🚏', modes: ['bus'], goal: (lv, t) => `Remember ${t} rounds`, help: 'Watch the stops light up, then tap them in order. One more each round.' },
+  cards: { name: 'Higher or lower', icon: '🃏', modes: ['bus', 'train', 'ferry'], goal: (lv, t) => `A run of ${t}`, help: 'Will the next card be higher or lower? Tap the top or bottom (or ↑ ↓). Same counts as right.' },
+  shuffle: { name: 'Shuffleboard', icon: '🥌', modes: ['cruise', 'ferry'], goal: () => 'Outscore them', help: 'Four pucks each. Drag back from the bottom and let go: further back, harder slide. 10, 8 and 7 zones.' },
+  bingo: { name: 'Bingo night', icon: '🎱', modes: ['cruise'], goal: () => 'A line before their card', help: 'Tap the numbers on your card as they are called. Any line (across, down or corner to corner) wins.' },
+  ports: { name: 'Port quiz', icon: '⚓', modes: ['cruise'], goal: (lv, t) => `${t} of 8 right`, help: 'Where in the world are the cruise ports? Tap an answer (or 1-4).' },
 };
+/** The games offered on a trip of this kind (the classics on every trip). */
+export const gamesFor = (mode) => Object.entries(GAMES).filter(([, g]) => !g.modes || g.modes.includes(mode));
 /** What the rival has to beat at a level (Snake: their score; Bricks: bricks to clear). */
-export function rivalTarget(kind, level) { return kind === 'snake' ? [6, 12, 18, 26][level - 1] : kind === 'bricks' ? [14, 22, 30, 40][level - 1] : 7; }
+const TARGETS = { snake: [6, 12, 18, 26], bricks: [14, 22, 30, 40], spot: [8, 11, 14, 17], timetable: [4, 5, 6, 7], trivia: [4, 5, 6, 7], ports: [4, 5, 6, 7], compass: [220, 300, 370, 430], stops: [3, 5, 7, 9], cards: [4, 6, 8, 10] };
+export function rivalTarget(kind, level) { return TARGETS[kind]?.[level - 1] ?? 7; }
 
 /**
  * Open a game in `host` (an element). Returns a stop() function.
  * opts: { best, level 1-4, rival (a name), onEnd(kind, score, won), onExit() }
  */
-export function startGame(host, kind, { best = 0, level = 1, rival = 'The seat in front', onEnd = () => {}, onExit = () => {} } = {}) {
+export function startGame(host, kind, { best = 0, level = 1, rival = 'The seat in front', trip = null, onEnd = () => {}, onExit = () => {} } = {}) {
   const G = GAMES[kind], target = rivalTarget(kind, level);
   host.innerHTML = `<div class="mg"><div class="mg-top"><b>${G.name.toUpperCase()}</b><span class="mg-score">0</span><span class="mg-best">VS ${rival.toUpperCase()} · ${G.goal(level, target).toUpperCase()}</span><button class="mg-x">✕</button></div>
     <canvas width="${W}" height="${H}"></canvas><div class="mg-help">${G.help}${best ? ` Best ${best}.` : ''}</div></div>`;
@@ -38,7 +53,9 @@ export function startGame(host, kind, { best = 0, level = 1, rival = 'The seat i
   const finish = (score, won) => { if (ended) return; ended = true; onEnd(kind, score, won); };
   const result = (won) => { text(won ? 'YOU WIN!' : `${rival.toUpperCase()} WINS`, 20, H / 2 - 8, won ? GOLD : GREEN); text(ended ? 'close ✕ to settle up' : 'tap to play again', 13, H / 2 + 18); };
 
-  if (kind === 'pong') {
+  if (G.modes) {
+    runTripGame(kind, { g, W, H, text, frame, finish, result, keys, setKey: (fn) => { onKey = fn; }, cv, toCanvas, level, target, scoreEl, trip, rival, ended: () => ended });
+  } else if (kind === 'pong') {
     const P = { h: 54, w: 8, sp: 260 };
     const cpuSp = [170, 215, 260, 310][level - 1], wobble = [26, 18, 11, 6][level - 1], serveSp = [200, 220, 245, 270][level - 1];
     let you = H / 2, cpu = H / 2, bx = W / 2, by = H / 2, vx = serveSp, vy = 90, sy = 0, sc = 0, pause = 1, over = false;
