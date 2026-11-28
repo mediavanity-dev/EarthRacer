@@ -11,6 +11,7 @@ THINGS TO DO
 • Postcards of landmarks, a street atlas, bridges crossed, and feats for long play with coin rewards and paint jobs.
 • Seatback games on trips: quizzes on flights, bingo and shuffleboard on cruises, cards on the bus.
 • Bail out of a flight and steer your skydive down to the ground.
+• Street view: see street photos of where you're standing.
 
 VEHICLES
 Bicycle, car, pickup, motorcycle, delivery truck, speedboat, jet ski and paramotor, each with its own speed, handling, toughness and fuel range. Some are earned: a 200 mph Speed Demon, a hang glider for hilltops, a rubber duck that swims, waddles and flies, and a dog that swims across rivers. Long motorway drives earn an autopilot.
@@ -20,7 +21,7 @@ EXPLORER OR GAMER
 • Gamer: ramps, coins, boost arrows, cones, signs to knock down and trees to topple.
 
 CONDITIONS
-Rain and snow cut grip, fog closes in, headwinds slow you down and night falls when the sun sets. Traffic drives on the correct side for the country. If you run out of fuel you'll need a tow truck, another vehicle or the solar buggy.
+Rain and snow cut grip, fog closes in, headwinds slow you down and night falls when the sun sets. Traffic drives on the correct side for the country. Trains run on the railway lines about as often as real ones, and they don't stop for you. If you run out of fuel you'll need a tow truck, another vehicle or the solar buggy.
 
 CONTROLS
 Tilt the phone like a steering wheel, or use the slider or buttons. A keyboard or game controller works too, and on a computer two players can share the screen. Drag to turn the camera and pinch to zoom. Local radio stations play wherever you are.
