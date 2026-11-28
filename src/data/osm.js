@@ -6,7 +6,7 @@ import { cacheGet, cachePut } from './cache.js';
 import { request, backoff } from './net.js';
 
 const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter']; // (openstreetmap.fr refuses requests from web pages: no CORS)
-const VERSION = 3; // 2: plus the real, individually mapped trees; 3: what each building is used for
+const VERSION = 4; // 2: plus the real, individually mapped trees; 3: what each building is used for; 4: roof shapes of building parts (spires, domes)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let good = 0;
@@ -54,6 +54,9 @@ export async function loadBuildingDetail(key, b) {
     const raw = await overpass(`[out:json][timeout:60][bbox:${b.s},${b.w},${b.n},${b.e}];
 (
   way["building"]["roof:shape"];
+  way["building:part"]["roof:shape"];
+  way["building:part"]["roof:colour"];
+  way["building:part"]["building:colour"];
   way["building"]["building:colour"];
   way["building"]["roof:colour"];
   way["building"]["building:material"];

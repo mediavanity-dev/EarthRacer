@@ -9,6 +9,7 @@ export const env = {
   uSnow: { value: 0 },  // 0..1
   uWet: { value: 0 },   // 0..1
   uNight: { value: 0 }, // 0..1
+  uSnowLine: { value: 1e5 }, // ground above this height (m) lies under snow
 };
 
 function hook(material, key, { vertex, fragment, after = '#include <map_fragment>' }) {
@@ -24,10 +25,27 @@ function hook(material, key, { vertex, fragment, after = '#include <map_fragment
   return material;
 }
 
+// Snow on high ground (above uSnowLine): patchy at its edge, thinner on steep slopes, where it slides off.
+const SNOWLINE = `
+    { float hN = fract(sin(dot(floor(vSnowP.xz * 0.15), vec2(12.9898, 78.233))) * 43758.5453);
+      vec3 sn = normalize(cross(dFdx(vSnowP), dFdy(vSnowP)));
+      float flat_ = smoothstep(0.55, 0.85, abs(sn.y));
+      float cover = smoothstep(uSnowLine - 120.0, uSnowLine + 120.0, vSnowP.y + (hN - 0.5) * 140.0) * mix(0.35, 1.0, flat_);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.95, 0.98), cover * SNOWK); }`;
+export function withSnowLine(material, k, after = '#include <map_fragment>') {
+  const prev = material.onBeforeCompile;
+  material.onBeforeCompile = (sh, r) => {
+    prev?.(sh, r);
+    sh.uniforms.uSnowLine = env.uSnowLine;
+    sh.vertexShader = 'varying vec3 vSnowP;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  vSnowP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = 'uniform float uSnowLine; varying vec3 vSnowP;\n' + sh.fragmentShader.replace(after, after + '\n' + SNOWLINE.replace('SNOWK', k));
+  };
+  return material;
+}
 export function terrainMat(map) {
-  return hook(new THREE.MeshLambertMaterial({ map }), 'er-terrain', {
+  return withSnowLine(hook(new THREE.MeshLambertMaterial({ map }), 'er-terrain', {
     fragment: 'diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.95, 0.98), uSnow * 0.8); diffuseColor.rgb *= 1.0 - uWet * 0.18;',
-  });
+  }), '0.92');
 }
 
 // Roads: vertex colours, drawn on top of the ground; wet roads go darker and a little glossy-looking.
@@ -55,6 +73,7 @@ roadMat.onBeforeCompile = ((prev) => (sh, r) => {
       mvPosition.xyz -= mvPosition.xyz / max(d, 0.001) * clamp(d * 0.012 - 0.1, 0.0, 1.4) * near;
       gl_Position = projectionMatrix * mvPosition; }`);
 })(roadMat.onBeforeCompile);
+withSnowLine(roadMat, '0.4', '#include <color_fragment>');
 roadMat.customProgramCacheKey = () => 'er-road-front-2';
 
 const SWAY = `
@@ -64,11 +83,11 @@ const SWAY = `
   transformed.x += sin(uTime * 1.7 + ph) * 0.07 * bend;
   transformed.z += cos(uTime * 1.3 + ph) * 0.05 * bend;
 #endif`;
-export const treeMat = hook(new THREE.MeshLambertMaterial({ flatShading: true }), 'er-tree', {
+export const treeMat = withSnowLine(hook(new THREE.MeshLambertMaterial({ flatShading: true }), 'er-tree', {
   vertex: SWAY,
   fragment: 'diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.94, 0.97), uSnow * 0.45);',
   after: '#include <color_fragment>',
-});
+}), '0.55', '#include <color_fragment>');
 export const trunkMat = new THREE.MeshLambertMaterial({ color: '#7a5c42' });
 // Buildings: windows drawn by the shader (floor height by use), some lit at night. No extra geometry.
 export const buildingMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
@@ -142,3 +161,23 @@ export function setNight(n) {
   lampHeadMat.color.setRGB(0.79 + n * 0.21, 0.78 + n * 0.17, 0.73 - n * 0.08);
   postMat.emissive.setRGB(n * 0.35, n * 0.33, n * 0.25);
 }
+
+// Railway track: one small texture for the whole bed. Across (u): 0-0.1 plain ballast for the
+// shoulders, 0.1-0.7 ballast with a sleeper across it every 0.62 m (v), 0.8-1 steel for the rails.
+function trackTexture() {
+  const W = 64, H = 32, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  g.fillStyle = '#7b756c'; g.fillRect(0, 0, W, H);
+  for (let k = 0; k < 900; k++) { const v = 90 + rnd() * 60; g.fillStyle = `rgb(${v + 8},${v + 2},${v - 6})`; g.fillRect(rnd() * W * 0.75, rnd() * H, 1, 1); }
+  g.fillStyle = '#5a4636'; g.fillRect(W * 0.15, 0, W * 0.5, H * 0.38); // a sleeper
+  g.fillStyle = '#4a3a2e'; g.fillRect(W * 0.15, H * 0.3, W * 0.5, H * 0.08);
+  g.fillStyle = '#b9bec4'; g.fillRect(W * 0.8, 0, W * 0.2, H);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.ClampToEdgeWrapping; t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4; t.magFilter = THREE.NearestFilter;
+  return t;
+}
+export const trackMat = hook(new THREE.MeshLambertMaterial({ map: typeof document !== 'undefined' ? trackTexture() : null, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }), 'er-track', {
+  fragment: 'diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.92, 0.95), uSnow * 0.5); diffuseColor.rgb *= 1.0 - uWet * 0.2;',
+});

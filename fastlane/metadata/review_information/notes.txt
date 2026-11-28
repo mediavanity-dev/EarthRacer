@@ -13,7 +13,7 @@ The in-game radio plays real live internet radio stations of the country you're 
 
 New in 1.1: the horn button (📯 on screen, H on a keyboard, X on a controller) and more vehicles (Speed Demon, hang glider, rubber duck, dog); they are earned through play and listed with their goals in ☰ → Garage.
 
-Tester shortcut (unlocks nothing paid): while stopped, tap the speed readout 7 times to open a passphrase box. The passphrase "[TYPED IN APP STORE CONNECT ONLY: not kept in this public repo]" unlocks every vehicle; with a 2 on the end it also turns off damage.
+Tester shortcut (unlocks nothing paid): while stopped, tap the speed readout 7 times to open a passphrase box. The passphrase "[TYPED IN APP STORE CONNECT ONLY: not kept in this public repo]" unlocks every vehicle, makes random placements unlimited and switches off damage (entering it again switches damage back on).
 
 In-app purchases: three optional consumable tips (com.mediavanity.earthracer.tip.small, .tip.medium, .tip.large). They unlock nothing. Find them at the bottom of ☰ → Settings → "Support EarthRacer". No restore is needed for consumables.
 

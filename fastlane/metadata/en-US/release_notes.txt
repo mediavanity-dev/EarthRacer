@@ -10,6 +10,9 @@ New
 • Trains run on the railway lines, about as often as real ones: main-line trains, metros, light rail and trams. They don't stop for you, so look both ways at level crossings.
 • Street view: tap 📷 to see street photos of where you are (from Mapillary), or open Google Street View there.
 • Outrun the map and a giant quarter-pipe turns you round while it catches up.
+• Railway track you can see: ballast, sleepers and rails. Trains follow the time of day, busiest at rush hour and rare in the small hours.
+• Snow on high mountains, and weather corrected for your height, so a summit is cold and snowy.
+• Church towers with spires, and domes and onion domes where the map has them.
 
 Better
 • Crash into a car and it gets shoved, spins and dents, by weight: a truck sends it flying, a bike barely moves it.
@@ -19,6 +22,12 @@ Better
 • Boost arrows point both ways, because they work both ways.
 • Real horn recordings every time you press the horn, including right after switching apps, and a fuller double honk for cars.
 • Service is at the top of the Garage.
+• Rain falls in streaks and snow in soft flakes.
+• Name the right town in a random placement and it ends there with your score; naming the right country or region tells you so and lets you narrow it down.
+• The camera no longer pumps in and out passing buildings.
+• Vehicles tilt with the slope, so wheels stay out of hillsides and road edges.
+• Street view looks up to 300 m away for photos, and says plainly when there are none.
+• Radio stations that play adverts for where you really are (not where you're driving) come after the others.
 • A new portal tells you how far away it is.
 
 Fixed

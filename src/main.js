@@ -15,7 +15,7 @@ import { TripMap } from './ui/tripmap.js';
 import { BADGES, PAINTS, count as featCount } from './game/feats.js';
 import { PlaneView } from './world/planeView.js';
 import { startGame, GAMES, gamesFor, rivalTarget } from './ui/minigames.js';
-import { profile, save, flush, resetProfile, randomLeft, nextWeekReset, RANDOM_PER_WEEK } from './game/profile.js';
+import { profile, save, flush, resetProfile, randomLeft, randomUnlimited, nextWeekReset, RANDOM_PER_WEEK } from './game/profile.js';
 import { fetchWeather, whereIs, searchPlace, waveHeight, postcard, drivingSide, usesMph, flag } from './data/services.js';
 import { haversine, offsetGeo } from './geo.js';
 import { Input } from './input.js';
@@ -211,7 +211,7 @@ function startScreen() {
       <h1>Earth<em>Racer</em></h1>
       <p>You carry on from exactly where you stopped last time.</p>
       <button class="btn primary" id="go">▶ Carry on<small id="lastwhere">${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}</small></button>
-      <button class="btn purple" id="rnd" ${randomLeft() ? '' : 'disabled'}>🎲 Random placement<small>${randomLeft()} of ${RANDOM_PER_WEEK} left this week. Get dropped somewhere on Earth and work out where you are.</small></button>
+      <button class="btn purple" id="rnd" ${randomLeft() ? '' : 'disabled'}>🎲 Random placement<small>${randomUnlimited() ? 'Unlimited' : `${randomLeft()} of ${RANDOM_PER_WEEK} left this week`}. Get dropped somewhere on Earth and work out where you are.</small></button>
       ${modeChooser()}
       ${controlsChooser()}
       <div class="attrib">${ATTRIB}</div></div>`);
@@ -229,7 +229,7 @@ function startScreen() {
     <div class="row" style="margin-top:8px"><input type="search" id="q" placeholder="Or search a town, street or landmark…" /></div>
     <div class="results" id="res"></div>
     <div class="chips" id="pre"></div>
-    <button class="btn purple" id="rnd">🎲 Surprise me<small>Start with a random placement (uses 1 of this week's ${RANDOM_PER_WEEK})</small></button>
+    <button class="btn purple" id="rnd">🎲 Surprise me<small>Start with a random placement${randomUnlimited() ? '' : ` (uses 1 of this week's ${RANDOM_PER_WEEK})`}</small></button>
     ${modeChooser()}
     ${controlsChooser()}
     <div class="attrib">${ATTRIB}</div></div>`);
@@ -375,7 +375,7 @@ function confirmRandom() {
   const o = overlay(`<div class="card"><h2>🎲 Random placement</h2>
     <p>You'll be dropped somewhere on Earth with no map labels. Read the street names, signs and shop names, notice which side people drive on, then guess where you are. The closer and the sooner, the more you score.</p>
     <p><b>This is a one-way trip:</b> wherever you end up becomes your new spot. You can't go back to where you were.</p>
-    <p class="note">${randomLeft()} of ${RANDOM_PER_WEEK} left this week (resets ${new Date(nextWeekReset()).toLocaleDateString(undefined, { weekday: 'long' })}).</p>
+    <p class="note">${randomUnlimited() ? 'Unlimited placements.' : `${randomLeft()} of ${RANDOM_PER_WEEK} left this week (resets ${new Date(nextWeekReset()).toLocaleDateString(undefined, { weekday: 'long' })}).`}</p>
     <div class="row"><button class="btn" id="no">Cancel</button><button class="btn purple" id="yes" ${randomLeft() ? '' : 'disabled'}>Drop me somewhere</button></div></div>`);
   o.querySelector('#no').onclick = () => (game.state === 'driving' ? hideOverlay() : startScreen());
   o.querySelector('#yes').onclick = () => startRandom();
@@ -536,9 +536,8 @@ const HORN_ICON = { dog: '🐕', duck: '🦆', bike: '🔔', cart: '🔔' };
 
 // ---------- a hidden developer unlock ----------
 // Seven quick taps on the speed while stopped open an unlabelled box; the right phrase unlocks every
-// vehicle, tops up coins and resets the week's random placements. Only a hash of the phrase is in
-// the code (the repo is public).
-const NODAMAGE_HASH = '784b61a9288c8997518588c8b598614534d6ca0ac00ad67eb120cfb8df013d0f'; // also unlocks everything, and toggles no-damage
+// vehicle, tops up coins, makes random placements unlimited and toggles no-damage mode. Only a hash
+// of the phrase is in the code (the repo is public).
 const UNLOCK_HASH = '70136d52dd9119ae293897bbfc35454bca1896ba81c70aeb5cf10de1c290bd47';
 async function sha256(text) {
   if (crypto?.subtle) return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -558,17 +557,14 @@ $('#speed').addEventListener('pointerdown', () => {
   const go = async () => {
     const h = await sha256(o.querySelector('#dv').value.trim().toLowerCase().replace(/\s+/g, ' '));
     close();
-    if (h !== UNLOCK_HASH && h !== NODAMAGE_HASH) return; // a wrong phrase just closes the box
+    if (h !== UNLOCK_HASH) return; // a wrong phrase just closes the box
     for (const k of VEHICLE_ORDER) profile.unlocked[k] = true;
-    profile.coins += 10000; profile.random.uses = []; profile.dev = true;
-    let extra = '';
-    if (h === NODAMAGE_HASH) {
-      profile.settings.noDamage = !profile.settings.noDamage; cheats.noDamage = profile.settings.noDamage;
-      if (cheats.noDamage) { game.v.damage = 0; game.dmgShown = 0; repairLook(game.model); }
-      extra = cheats.noDamage ? ' 🛡️ No-damage mode on: nothing gets wrecked.' : ' 🛡️ No-damage mode off.';
-    }
+    profile.coins += 10000; profile.random.uses = []; profile.random.unlimited = true; profile.dev = true;
+    profile.settings.noDamage = !profile.settings.noDamage; cheats.noDamage = profile.settings.noDamage;
+    if (cheats.noDamage) { game.v.damage = 0; game.dmgShown = 0; repairLook(game.model); }
+    const extra = cheats.noDamage ? ' 🛡️ No-damage mode on: nothing gets wrecked.' : ' 🛡️ No-damage mode off.';
     save(true); refreshHud(); sound.chime();
-    toast(`🔓 Everything unlocked: all vehicles, +10,000 coins, random placements reset.${extra}`, { ms: 6500 });
+    toast(`🔓 Everything unlocked: all vehicles, +10,000 coins, unlimited random placements.${extra}`, { ms: 6500 });
   };
   o.querySelector('#dvok').onclick = go;
   o.querySelector('#dv').onkeydown = (e) => { if (e.key === 'Enter') go(); };
@@ -900,9 +896,11 @@ async function collectPostcard(p) {
 // ---------- weather (Open-Meteo) and waves ----------
 let weatherAt = 0;
 async function updateWeather(force = false) {
-  if (!force && Date.now() - weatherAt < 15 * 60 * 1000 && game.weather && haversine(game.lat, game.lon, game.weather.lat, game.weather.lon) < 8000) return;
+  const elev = game.v ? world.groundAt(game.v.x, game.v.z) : null; // (scene heights are metres above sea level)
+  const climbed = game.weather?.elevation != null && elev != null && Math.abs(elev - game.weather.elevation) > 300;
+  if (!force && !climbed && Date.now() - weatherAt < 15 * 60 * 1000 && game.weather && haversine(game.lat, game.lon, game.weather.lat, game.weather.lon) < 8000) return;
   weatherAt = Date.now();
-  const w = await fetchWeather(game.lat, game.lon);
+  const w = await fetchWeather(game.lat, game.lon, elev);
   if (!w) return;
   const was = game.weather?.kind;
   game.weather = w;
@@ -1066,7 +1064,7 @@ function renderTab(tab, body) {
     const act = profile.random.active;
     body.innerHTML = `<h3>🎲 Random placement</h3>
       <p class="note">Get dropped somewhere on Earth with no labels, then work out where you are from street names, shop signs, which side traffic drives on and the landscape. ${RANDOM_PER_WEEK} a week, resets ${new Date(nextWeekReset()).toLocaleDateString(undefined, { weekday: 'long' })}. Wherever you end up becomes your new spot.</p>
-      ${act ? '<button class="btn purple" id="g">Make a guess</button>' : `<button class="btn purple" id="r" ${randomLeft() ? '' : 'disabled'}>Drop me somewhere (${randomLeft()} left)</button>`}
+      ${act ? '<button class="btn purple" id="g">Make a guess</button>' : `<button class="btn purple" id="r" ${randomLeft() ? '' : 'disabled'}>Drop me somewhere (${randomUnlimited() ? 'unlimited' : `${randomLeft()} left`})</button>`}
       <h3>History</h3><div class="list">${profile.random.history.slice().reverse().map((h) => `<div class="item"><div class="ic">${flag(h.cc)}</div><div class="tx"><b>${esc(h.where)}</b><small>Guessed ${esc(h.guess)} · ${h.km >= 1 ? `${Math.round(h.km)} km off` : 'spot on'} · ${h.points} points</small></div></div>`).join('') || '<p class="note">No placements yet.</p>'}</div>`;
     const r = body.querySelector('#r'); if (r) r.onclick = () => { closePanel(); confirmRandom(); };
     const g = body.querySelector('#g'); if (g) g.onclick = () => { closePanel(); openGuess(); };
@@ -1917,7 +1915,7 @@ function openGuess() {
     <input type="search" id="gq" placeholder="e.g. Lisbon, or Portugal" autofocus />
     <div class="results" id="gr"></div>
     ${act.guesses?.length ? `<p class="note">Guesses so far: ${act.guesses.map((x) => `${esc(x.name)} (${Math.round(x.km)} km)`).join(' · ')}</p>` : ''}
-    <div class="row"><button class="btn" id="back">Keep exploring</button><button class="btn" id="give">Reveal where I am</button></div></div>`, 'dim');
+    <div class="row"><button class="btn" id="back">Keep exploring</button><button class="btn" id="give">${act.guesses?.length ? 'Stop and see the answer' : 'Give up and see the answer'}</button></div></div>`, 'dim');
   const back = () => { hideOverlay(); input.enabled = true; };
   o.querySelector('#back').onclick = back;
   o.querySelector('#give').onclick = () => finishGuess(null);
@@ -1961,20 +1959,23 @@ async function finishGuess(g) {
   act.guesses.push({ name: g.name.split(',').slice(0, 2).join(','), km, pts });
   save(true);
   const best = Math.max(...act.guesses.map((x) => x.pts));
+  // named the very town (or within a few km of it): nothing left to find, so it ends here
+  if (level === 'place' || km < 3) { revealPlacement(true); return; }
   const temp = !prev ? '' : km < prev.km * 0.8 ? ' 🔥 Warmer!' : km > prev.km * 1.25 ? ' 🧊 Colder.' : '';
   const gname = g.name.split(',')[0].trim();
-  const close = level === 'place' ? `Yes, you're in ${gname}!` : level ? `Yes, you're in ${gname}! Narrow it down for more points.` : km < 25 ? 'Spot on, or very nearly!' : km < 150 ? 'Close!' : km < 600 ? 'Right part of the world.' : 'A long way off.';
-  const o = overlay(`<div class="card"><h2>${level ? `✅ Right: ${esc(gname)}` : `🎯 ${km < 1 ? 'Less than a km' : `${Math.round(km).toLocaleString()} km`} away`}</h2>
-    <p>${esc(close)}${temp} That guess is worth <b>${pts.toLocaleString()}</b> points (your best so far: ${best.toLocaleString()}). The longer you take and the more you guess, the less each guess is worth.</p>
-    <button class="btn primary" id="gk">Keep exploring<small>Your best guess is kept; guess again any time</small></button>
+  const what = level === 'country' ? 'country' : 'region';
+  const close = level ? `${gname} is the right ${what}. Now name the town or city for more points.` : km < 25 ? 'Very close.' : km < 150 ? 'Close.' : km < 600 ? 'Right part of the world.' : 'A long way off.';
+  const o = overlay(`<div class="card"><h2>${level ? `✅ Right ${what}: ${esc(gname)}` : `🎯 ${Math.round(km).toLocaleString()} km away`}</h2>
+    <p>${esc(close)}${temp} This guess is worth <b>${pts.toLocaleString()}</b> points (your best so far: ${best.toLocaleString()}). Each guess is worth a little less the longer you take.</p>
+    <button class="btn primary" id="gk">Keep exploring<small>Look for a town name, then guess again</small></button>
     <button class="btn" id="ga">Guess again now</button>
-    <button class="btn purple" id="gr2">Reveal where I am<small>Ends this placement with ${best.toLocaleString()} points</small></button></div>`, 'dim');
+    <button class="btn purple" id="gr2">Stop and see the answer<small>Ends this placement with ${best.toLocaleString()} points</small></button></div>`, 'dim');
   o.querySelector('#gk').onclick = () => { hideOverlay(); input.enabled = true; };
   o.querySelector('#ga').onclick = () => openGuess();
   o.querySelector('#gr2').onclick = () => revealPlacement();
 }
 
-async function revealPlacement() {
+async function revealPlacement(nailed = false) {
   const act = profile.random.active;
   if (!act) return;
   const truth = await whereIs(game.lat, game.lon);
@@ -1994,7 +1995,7 @@ async function revealPlacement() {
   save(true);
   game.lastTile = null;
   sound.chime();
-  const o = overlay(`<div class="card"><h2>${flag(truth?.cc)} You're in ${esc(where)}</h2>
+  const o = overlay(`<div class="card"><h2>${nailed ? '✅ ' : ''}${flag(truth?.cc)} You're in ${esc(where)}</h2>${nailed ? '<p><b>You got it.</b></p>' : ''}
     <p>${g ? `Your best guess, ${esc(g.name)}, was <b>${Math.round(km).toLocaleString()} km</b> away (${gs.length} guess${gs.length === 1 ? '' : 'es'}).` : 'No guess.'} You drove ${drove.toFixed(1)} km.</p>
     <h1 style="color:var(--accent)">${points} points</h1><p>+${Math.round(points / 20)} coins. This is your new spot: carry on exploring from here.</p>
     <button class="btn primary" id="ok">Drive on</button></div>`, 'dim');
@@ -2045,18 +2046,26 @@ function updateCamera(dt) {
     camPos.copy(target); camLook.copy(look);
   } else {
     // keep the camera out of buildings: pull it in towards the vehicle
+    // Find the first blocked point finely (a coarse step made the distance jump between a few fixed
+    // values as walls slid past at a corner), then come in quickly but smoothly, and only drift back
+    // out once the way has stayed clear for a moment, so passing corners don't pump the camera in and out.
     let k0 = 1;
-    for (let t = 0.25; t <= 1.001; t += 0.125) {
-      if (!v.flying && world.collide(v.x - bx * dist * t, v.z - bz * dist * t, 0.4)) { k0 = Math.max(0.22, t - 0.15); break; }
+    if (!v.flying) {
+      const hit = (t) => world.collide(v.x - bx * dist * t, v.z - bz * dist * t, 0.6);
+      let lo = 0.2, hi = -1;
+      for (let t = 0.3; t <= 1.001; t += 0.1) { if (hit(t)) { hi = t; break; } lo = t; }
+      if (hi > 0) { for (let i = 0; i < 4; i++) { const m = (lo + hi) / 2; if (hit(m)) hi = m; else lo = m; } k0 = Math.max(0.22, lo - 0.08); }
     }
-    game.camK = (game.camK ?? 1) + (k0 - (game.camK ?? 1)) * (k0 < (game.camK ?? 1) ? 1 : Math.min(1, dt * 2));
+    const k1 = game.camK ?? 1;
+    if (k0 < k1 - 0.01) { game.camHold = 0.7; game.camK = k1 + (k0 - k1) * Math.min(1, dt * 14); }
+    else if ((game.camHold = (game.camHold || 0) - dt) <= 0) game.camK = k1 + (k0 - k1) * Math.min(1, dt * 1.2);
     const kd = game.camK;
     target.set(v.x - bx * dist * kd, v.y + h * (0.6 + 0.4 * kd), v.z - bz * dist * kd);
     const g = world.groundAt(target.x, target.z);
     if (g != null && target.y < g + 1.5) target.y = g + 1.5;
     look.set(v.x + fx * 4, v.y + h * 0.35, v.z + fz * 4);
     if (!camInit) { camPos.copy(target); camLook.copy(look); camInit = true; }
-    const k = 1 - Math.exp(-dt * (kd < 0.98 ? 20 : 6));
+    const k = 1 - Math.exp(-dt * (6 + 10 * (1 - kd))); // stiffer when pulled in (no lag into walls), without a sudden switch
     camPos.lerp(target, k);
     camLook.lerp(look, 1 - Math.exp(-dt * 12));
   }
@@ -2228,9 +2237,32 @@ function updateModel(dt, v = game.v, m = game.model, st = game) {
   m.group.position.set(v.x, st.visY + bob, v.z);
   m.group.rotation.set(0, 0, 0);
   m.group.rotation.order = 'YXZ';
+  // Sit the body on the ground under all four corners: tilt it sideways with the slope (it only
+  // pitched before, so across a hillside the uphill wheels sank into the ground) and lift it if a
+  // corner would still be under the ground or a road edge (ridges, kerbs between the samples).
+  if (!m.dims) { const b = new THREE.Box3().setFromObject(m.group), sz = b.getSize(new THREE.Vector3()); m.dims = { hl: Math.min(sz.z, 12) * 0.42, hw: Math.min(sz.x, 4) * 0.42 }; }
+  let tRoll = 0, lift = 0;
+  if (v.spec.terrain === 'land' && v.grounded && !v.wet && !game.turn?.path) {
+    const [fx, fz] = v.fwd(), rx = -fz, rz = fx, { hl, hw } = m.dims;
+    const gAt = (x, z) => {
+      let g = world.groundAt(x, z) ?? v.y;
+      const r = world.roadAt(x, z, 3);
+      if (r && r.d < 0.3 && r.y > g - 1.2 && r.y < v.y + 1.2) g = Math.max(g, r.y);
+      return g;
+    };
+    const c = [[hl, hw], [hl, -hw], [-hl, hw], [-hl, -hw]].map(([a, s]) => [a, s, gAt(v.x + fx * a + rx * s, v.z + fz * a + rz * s)]);
+    tRoll = Math.atan2((c[0][2] + c[2][2]) - (c[1][2] + c[3][2]), 4 * hw);
+    tRoll = Math.max(-0.35, Math.min(0.35, tRoll));
+    const sp = Math.sin(v.pitch), sr = Math.sin(tRoll);
+    for (const [a, s, g] of c) lift = Math.max(lift, g - (st.visY + a * sp + s * sr));
+    lift = Math.min(1.2, lift);
+  }
+  st.tRoll = (st.tRoll || 0) + (tRoll - (st.tRoll || 0)) * Math.min(1, dt * 10);
+  st.lift = (st.lift || 0) + (lift - (st.lift || 0)) * Math.min(1, dt * (lift > (st.lift || 0) ? 20 : 6));
+  m.group.position.y += st.lift;
   m.group.rotation.y = -v.heading;
   m.group.rotation.x = v.pitch + wavePitch;
-  m.group.rotation.z = -v.roll + waveRoll;
+  m.group.rotation.z = -v.roll + waveRoll + st.tRoll;
   animateDamage(m, dt);
   // rough ground: the vehicle jiggles on its suspension (the camera stays steady)
   if (v.grounded && v.spec.terrain === 'land' && v.surface !== 'road') {
@@ -2313,7 +2345,15 @@ function stopSplit() {
   resize();
 }
 function tickSplit(dt, ctx) {
-  const s = split, v = s.v, p = input.pollPad();
+  const s = split, p = input.pollPad();
+  // player 1 jumped somewhere (a portal, a trip, a reset, a random placement): bring player 2 along
+  const a0 = game.v;
+  if (Math.hypot(s.v.x - a0.x, s.v.z - a0.z) > 400) {
+    const [fx, fz] = a0.fwd(), x = a0.x - fz * 5, z = a0.z + fx * 5;
+    s.v = new VehicleState(s.v.kind, x, z, a0.heading); s.v.y = world.groundAt(x, z) ?? a0.y; s.v.init = false;
+    s.init = false; s.visY = null;
+  }
+  const v = s.v;
   if (p.swap) { // Y: the next vehicle player 2 has
     const ks = P2_KINDS(), kind = ks[(ks.indexOf(v.kind) + 1) % ks.length];
     scene.remove(s.m.group);
@@ -2473,7 +2513,7 @@ function frame(now) {
   }
   if ((game.limT = (game.limT || 0) + dt) > 0.3) { game.limT = 0; game.roadKmh = v.road ? world.speedLimitAt(v.x, v.z) : null; }
   checkTurnaround(v, sp);
-  const ctx = { world, grip: sky.grip(), wind: windVec(), loadLimit, traffic: traffic.density ? traffic : null, trains: trains.density ? trains : null, draft: game.style.draftOn, night: sky.night, roadLimit: game.roadKmh };
+  const ctx = { world, grip: sky.grip(v.y), wind: windVec(), loadLimit, traffic: traffic.density ? traffic : null, trains: trains.density ? trains : null, draft: game.style.draftOn, night: sky.night, roadLimit: game.roadKmh };
   if (v.wet && game.waves) ctx.grip *= Math.max(0.6, 1 - game.waves * 0.12);
   let acc = dt, moved = 0;
   const x0 = v.x, z0 = v.z;
@@ -2501,6 +2541,7 @@ function frame(now) {
     if (old) rebase(old);
   }
   if (traffic.density) traffic.update(dt, v, world);
+  { const d = DEV_HOUR != null ? new Date(new Date().setUTCHours(DEV_HOUR, 0, 0)) : new Date(); const off = game.weather?.utcOffset != null ? game.weather.utcOffset / 3600 : game.lon / 15; trains.hour = (((d.getUTCHours() + d.getUTCMinutes() / 60 + off) % 24) + 24) % 24; }
   trains.update(dt, v, world);
   signs.update(dt, world, v);
   tickStunts(dt);

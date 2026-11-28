@@ -69,7 +69,10 @@ function weekStart(d = new Date()) {
   x.setDate(x.getDate() - dow);
   return x.getTime();
 }
+// the hidden unlock makes them unlimited
+export const randomUnlimited = () => !!profile.random.unlimited;
 export function randomLeft() {
+  if (profile.random.unlimited) return Infinity;
   const ws = weekStart();
   return Math.max(0, RANDOM_PER_WEEK - profile.random.uses.filter((t) => t >= ws).length);
 }

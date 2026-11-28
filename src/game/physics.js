@@ -204,8 +204,10 @@ export class VehicleState {
       }
     }
     // a stunt ramp from the back or the side, where it's too tall to climb: it's a wall
+    // (but never at its low end: there a fast car, or a ramp on a sloping road, can meet the slope a
+    // little above the wheels, and it should ride up, not stop)
     const rb = w.rampAt ? w.rampAt(this.x, this.z) : null;
-    if (rb && rb.y > this.y + 0.9) {
+    if (rb && rb.y > this.y + 0.9 && !(rb.u < this.rampEntry())) {
       const du = (px - rb.ox) * rb.fx + (pz - rb.oz) * rb.fz, dw = (px - rb.ox) * -rb.fz + (pz - rb.oz) * rb.fx; // where we came from, in the ramp's frame
       const n = du > rb.L ? [rb.fx, rb.fz] : dw > rb.W / 2 ? [-rb.fz, rb.fx] : dw < -rb.W / 2 ? [rb.fz, -rb.fx] : [rb.fx, rb.fz];
       this.x = px; this.z = pz;
@@ -430,9 +432,11 @@ export class VehicleState {
     }
     // stunt ramps (only from the low end: you can't drive up the back of one)
     const r = w.rampAt ? w.rampAt(this.x, this.z) : null;
-    this.onRamp = r && r.y > g - 0.3 && r.y < this.y + 0.9 ? r : null;
+    this.onRamp = r && r.y > g - 0.3 && (r.y < this.y + 0.9 || r.u < this.rampEntry()) ? r : null;
     return this.onRamp ? Math.max(g, r.y) : g;
   }
+  /** How far up a ramp's slope (m) still counts as its low end: more at speed (a step covers more). */
+  rampEntry() { return 1.5 + Math.hypot(this.vx, this.vz) * 0.035; }
   /** Put the vehicle on the ground (after placing it). */
   settle(w) {
     this.wet = this.spec.terrain === 'water' && (!this.spec.amphibious || w.isWater(this.x, this.z));

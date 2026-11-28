@@ -5,6 +5,7 @@
 import { cachedJson } from './cache.js';
 
 const API = 'https://all.api.radio-browser.info/json/stations/search';
+const DAI = /streamtheworld|tritondigital|adswizz|ihrhls|iheart|revma|audacy|amperwave|streamguys.*adw|cdnstream1\.com|spreaker/i;
 
 /** Up to 25 playable stations for a country code, most popular first. */
 export async function stationsFor(cc) {
@@ -20,7 +21,12 @@ export async function stationsFor(cc) {
     if (/\b(adult|erotic|sex|xxx|porn|nsfw|explicit|18\+)\b/i.test(`${name} ${s.tags || ''}`)) return false;
     seen.add(name.toLowerCase());
     return true;
-  }).slice(0, 25).map((s) => ({ name: s.name.trim(), url: s.url_resolved || s.url, tags: s.tags || '', homepage: s.homepage || '' }));
+  })
+    // Stations on these streaming networks swap in adverts chosen from the listener's own internet
+    // address, so in the game you'd hear adverts from where you really are. Keep them, but last.
+    .map((st, i) => ({ st, i, dai: DAI.test(st.url_resolved || st.url || '') }))
+    .sort((a, b) => a.dai - b.dai || a.i - b.i).map((x) => x.st)
+    .slice(0, 25).map((s) => ({ name: s.name.trim(), url: s.url_resolved || s.url, tags: s.tags || '', homepage: s.homepage || '' }));
 }
 
 export class Radio {

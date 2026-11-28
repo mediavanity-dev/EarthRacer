@@ -326,8 +326,10 @@ async function build({ x, y, opts }) {
       if (Math.abs(cr) < 1e-6) continue;
       if (!sign) sign = Math.sign(cr); else if (Math.sign(cr) !== sign) convex = false;
     }
-    const shapeOk = outer.length >= 4 && outer.length <= 8 && convex && bd.rings.length === 1 && !(bd.minHeight > 0);
-    const pitched = shapeOk && shape !== 'flat' && (PITCHED.has(shape) || church || (!shape && house && outer.length <= 10 && rr() < style.pitched) || (!shape && ty && HOUSE_T.has(ty) && outer.length <= 12));
+    // a shape mapped in OSM (a spire, a dome) is drawn on round footprints and on raised parts too
+    const domed = shape === 'dome' || shape === 'onion', pointed = shape === 'pyramidal' || shape === 'cone' || shape === 'hipped';
+    const shapeOk = convex && bd.rings.length === 1 && outer.length >= 4 && (((domed || pointed) && outer.length <= 64) || (outer.length <= 8 && !(bd.minHeight > 0)));
+    const pitched = shapeOk && shape !== 'flat' && (PITCHED.has(shape) || (church && !(bd.minHeight > 0)) || (!shape && house && outer.length <= 10 && rr() < style.pitched) || (!shape && ty && HOUSE_T.has(ty) && outer.length <= 12));
     const realRoof = colourOf(det?.rc) || hexRgb(ROOF_MATERIAL[det?.rm]);
     const roofC = realRoof || (pitched ? shade(pal(style.roofs, rr()), 0.95 + r * 0.1) : industrial ? shade(pal(IND_ROOFS, rr()), 0.95 + r * 0.1) : tall ? shade(base, 0.8) : shade([0.62, 0.62, 0.6], 0.9 + r * 0.2));
     const top = ground + bd.height;
@@ -338,7 +340,11 @@ async function build({ x, y, opts }) {
     if (pitched) {
       let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
       for (const [x, z] of P) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
-      rh = det?.rh || Math.max(1.2, Math.min(church ? 9 : 4, Math.min(x1 - x0, z1 - z0) * (church ? 0.6 : 0.32)));
+      const span = Math.min(x1 - x0, z1 - z0);
+      rh = det?.rh || (domed ? Math.min(30, span * (shape === 'onion' ? 0.85 : 0.5))
+        : pointed && bd.minHeight > 0 && span < 12 ? Math.max(2, (bd.height - bd.minHeight) * 0.9) // a spire mapped as its own part
+          : Math.max(1.2, Math.min(church ? 9 : 4, span * (church ? 0.6 : 0.32))));
+      rh = Math.min(rh, Math.max(1, bd.height - (bd.minHeight || 0) - 0.5));
     }
     const wallTop = pitched ? Math.max(ground + 2.6, top - rh) : top;
     const roofTop = wallTop + rh;
@@ -358,7 +364,25 @@ async function build({ x, y, opts }) {
         const a = idx[k] * 2, bb = idx[k + 1] * 2, c = idx[k + 2] * 2;
         tri(flat[a], top, flat[a + 1], flat[bb], top, flat[bb + 1], flat[c], top, flat[c + 1], roofC);
       }
-    } else if (P.length === 4) {
+    } else if (domed) {
+      // dome or onion dome: rings of the footprint shrinking towards a point at the top
+      let ax = 0, az = 0; for (const [x, z] of P) { ax += x; az += z; } ax /= P.length; az /= P.length;
+      const N = 7, ring = (j) => {
+        const t = j / N, th = t * Math.PI / 2;
+        const rad = shape === 'onion' ? Math.max(0, Math.cos(th) * (1 + 0.35 * Math.sin(t * Math.PI * 1.15)) * (1 - t ** 4)) : Math.cos(th);
+        const y = wallTop + rh * (shape === 'onion' ? t : Math.sin(th));
+        return P.map(([x, z]) => [ax + (x - ax) * rad, y, az + (z - az) * rad]);
+      };
+      let prev = ring(0);
+      for (let j = 1; j <= N; j++) {
+        const cur = ring(j), c1 = shade(roofC, 0.85 + 0.15 * (j / N));
+        for (let k = 0; k < P.length; k++) {
+          const a = prev[k], b = prev[(k + 1) % P.length], c = cur[(k + 1) % P.length], d = cur[k];
+          tri(...a, ...b, ...c, c1); tri(...a, ...c, ...d, c1);
+        }
+        prev = cur;
+      }
+    } else if (P.length === 4 && !pointed) {
       // gable roof: ridge runs along the longer sides
       const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
       const o = d(P[0], P[1]) >= d(P[1], P[2]) ? 0 : 1;
@@ -379,7 +403,34 @@ async function build({ x, y, opts }) {
         tri(a[0], wallTop, a[1], b[0], wallTop, b[1], ax, roofTop, az, shade(roofC, k % 2 ? 0.85 : 1));
       }
     }
-    footprints.push({ ring: outer, bb: bbox(outer), top: roofTop });
+    // A church mapped as one plain outline gets a tower with a spire at its west end, where most
+    // churches have theirs. Not where the tower is mapped itself (then the outline is drawn in parts
+    // instead), not on chapels, and not when the building's height already looks like a tower's.
+    let top2 = roofTop;
+    if ((ty === 'church' || ty === 'cathedral') && !shape && P.length >= 4 && P.length <= 12 && convex && bd.rings.length === 1 && !(bd.minHeight > 0) && areaM >= 150 && bd.height <= 20) {
+      let ax = 0, az = 0; for (const [x, z] of P) { ax += x; az += z; } ax /= P.length; az /= P.length;
+      // the long axis: the direction the footprint reaches furthest
+      let best = 0, ux = 1, uz = 0;
+      for (let a = 0; a < Math.PI; a += Math.PI / 24) { const cx2 = Math.cos(a), cz2 = Math.sin(a); let lo = Infinity, hi = -Infinity; for (const [x, z] of P) { const d = (x - ax) * cx2 + (z - az) * cz2; lo = Math.min(lo, d); hi = Math.max(hi, d); } if (hi - lo > best) { best = hi - lo; ux = cx2; uz = cz2; } }
+      if (ux > 0) { ux = -ux; uz = -uz; } // point it west (towards -x)
+      let reach = -Infinity, wide = Infinity;
+      for (const [x, z] of P) reach = Math.max(reach, (x - ax) * ux + (z - az) * uz);
+      { let lo = Infinity, hi = -Infinity; for (const [x, z] of P) { const d = -(x - ax) * uz + (z - az) * ux; lo = Math.min(lo, d); hi = Math.max(hi, d); } wide = hi - lo; }
+      if (best > wide * 1.3) {
+        const sz = Math.max(3.5, Math.min(9, wide * 0.42)), h2 = sz / 2;
+        const tx = ax + ux * (reach - h2 - 0.3), tz = az + uz * (reach - h2 - 0.3);
+        const tTop = Math.max(roofTop + 6, ground + 12 + sz * 1.6), spire = sz * 2.4;
+        const cor = [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([a, b]) => [tx + (ux * a - uz * b) * h2, tz + (uz * a + ux * b) * h2]);
+        for (let k = 0; k < 4; k++) {
+          const [x1, z1] = cor[k], [x2, z2] = cor[(k + 1) % 4];
+          tri(x1, bottom, z1, x2, bottom, z2, x2, tTop, z2, lowC, lowC, wallC, 7, ground);
+          tri(x1, bottom, z1, x2, tTop, z2, x1, tTop, z1, lowC, wallC, wallC, 7, ground);
+          tri(x1, tTop, z1, x2, tTop, z2, tx, tTop + spire, tz, shade(roofC, k % 2 ? 0.8 : 1));
+        }
+        top2 = tTop + spire;
+      }
+    }
+    footprints.push({ ring: outer, bb: bbox(outer), top: top2 });
     // only solid-from-the-ground buildings block vehicles (not bridges over roads, canopies)
     if (!(bd.minHeight > 2)) { fpIdx.push(fpPts.length / 2); for (const [px, py] of outer) fpPts.push(X(px), Z(py)); }
   }
@@ -476,6 +527,62 @@ async function build({ x, y, opts }) {
       rails.push({ k: ln.sub || 'rail', s: ln.svc, p });
     }
     return rails;
+  }
+  // Railway track you can see: a ballast bed with sleepers (from a small texture) and two steel rails,
+  // one mesh per tile. Trams run in the street, so they keep the painted line. The ground under the
+  // bed is pressed down a little so the coarse terrain never pokes through it.
+  function buildTrack(list) {
+    const pos = [], uv = [], nrm = [];
+    const quad = (a, b, c, d, ua, ub, va, vb, n0, n1) => { // a,b at the first vertex, c,d at the next
+      pos.push(...a, ...b, ...c, ...b, ...d, ...c);
+      uv.push(ua, va, ub, va, ua, vb, ub, va, ub, vb, ua, vb);
+      nrm.push(...n0, ...n0, ...n1, ...n0, ...n1, ...n1);
+    };
+    const dxg = xs[1] - xs[0], dzg = zs[1] - zs[0];
+    for (const r of list) {
+      if (r.k === 'tram') continue;
+      const P = r.p, n = P.length / 3;
+      if (n < 2) continue;
+      const g = r.k === 'narrow_gauge' ? 0.5 : 0.72, bed = r.k === 'narrow_gauge' ? 1.1 : 1.5;
+      const pts = [];
+      let dist = 0;
+      for (let k = 0; k < n; k++) {
+        const x = P[k * 3], y = P[k * 3 + 1] - 0.05, z = P[k * 3 + 2];
+        const a = Math.max(0, k - 1), b = Math.min(n - 1, k + 1);
+        let dx = P[b * 3] - P[a * 3], dz = P[b * 3 + 2] - P[a * 3 + 2]; const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+        if (k) dist += Math.hypot(x - P[k * 3 - 3], z - P[k * 3 - 1]);
+        pts.push({ x, y, z, rx: -dz, rz: dx, v: dist / 0.62 });
+      }
+      const at = (q, off, h) => [q.x + q.rx * off, q.y + h, q.z + q.rz * off];
+      const up = [0, 1, 0];
+      for (let k = 1; k < pts.length; k++) {
+        const A = pts[k - 1], B = pts[k];
+        const sl = (sd) => [A.rx * sd * 0.45, 0.9, A.rz * sd * 0.45], sl2 = (sd) => [B.rx * sd * 0.45, 0.9, B.rz * sd * 0.45];
+        // shoulders, then the bed with sleepers
+        quad(at(A, -bed - 0.9, -0.45), at(A, -bed, 0), at(B, -bed - 0.9, -0.45), at(B, -bed, 0), 0.02, 0.08, A.v, B.v, sl(-1), sl2(-1));
+        quad(at(A, bed, 0), at(A, bed + 0.9, -0.45), at(B, bed, 0), at(B, bed + 0.9, -0.45), 0.08, 0.02, A.v, B.v, sl(1), sl2(1));
+        quad(at(A, -bed, 0), at(A, bed, 0), at(B, -bed, 0), at(B, bed, 0), 0.1, 0.7, A.v, B.v, up, up);
+        // the rails: a top and an inner face each
+        for (const sd of [-1, 1]) {
+          const o = sd * g;
+          quad(at(A, o - 0.04, 0.17), at(A, o + 0.04, 0.17), at(B, o - 0.04, 0.17), at(B, o + 0.04, 0.17), 0.85, 0.95, A.v, B.v, up, up);
+          const inA = [-A.rx * sd, 0, -A.rz * sd], inB = [-B.rx * sd, 0, -B.rz * sd], f = o - sd * 0.04;
+          quad(at(A, f, 0.03), at(A, f, 0.17), at(B, f, 0.03), at(B, f, 0.17), 0.82, 0.86, A.v, B.v, inA, inB);
+        }
+        // press the terrain grid down under the bed
+        const rr = bed + 1.2;
+        const c0 = Math.max(0, Math.floor((Math.min(A.x, B.x) - rr - xs[0]) / dxg)), c1 = Math.min(GRID, Math.ceil((Math.max(A.x, B.x) + rr - xs[0]) / dxg));
+        const r0 = Math.max(0, Math.floor((Math.min(A.z, B.z) - rr - zs[0]) / dzg)), r1 = Math.min(GRID, Math.ceil((Math.max(A.z, B.z) + rr - zs[0]) / dzg));
+        const ex = B.x - A.x, ez = B.z - A.z, L2 = ex * ex + ez * ez || 1;
+        for (let q = r0; q <= r1; q++) for (let c = c0; c <= c1; c++) {
+          const t = Math.max(0, Math.min(1, ((xs[c] - A.x) * ex + (zs[q] - A.z) * ez) / L2));
+          if (Math.hypot(xs[c] - A.x - ex * t, zs[q] - A.z - ez * t) > rr) continue;
+          const kk = (q * W + c) * 3 + 1, y = A.y + (B.y - A.y) * t - 0.5;
+          if (tPos[kk] > y && tPos[kk] - y < 6) tPos[kk] = y; // (not where the line is on a bridge high above)
+        }
+      }
+    }
+    return pos.length ? { pos: new Float32Array(pos), uv: new Float32Array(uv), nrm: new Float32Array(nrm) } : null;
   }
   // junctions: roads sharing a vertex take the same height there, blended in over ~25 m
   {
@@ -730,9 +837,10 @@ async function build({ x, y, opts }) {
   // ---------- public transport you can board (bus, train, ferry, plane) ----------
   const stops = (fabric.stops || []).slice(0, 400).map((s) => ({ kind: s.kind, name: s.name, x: X(s.px), z: Z(s.py), lat: latOf(s.py), lon: lonOf(s.px) }));
 
+  const railList = buildRails(), track = buildTrack(railList);
   const payload = {
     key: `${CHUNK_Z}/${x}/${y}`, x, y, bounds: b, latc, lonc, areaName: fabric.areaName,
-    rails: buildRails(),
+    rails: railList, track,
     gridN: GRID, grid, xs, zs, maskN: MASK, mask, mPerMask: tileM / MASK,
     terrain: { pos: tPos, uv: tUv }, texture,
     buildings, roadMesh, fp: { pts: new Float32Array(fpPts), idx: new Uint32Array(fpIdx) },
@@ -743,6 +851,7 @@ async function build({ x, y, opts }) {
   const transfer = [grid.buffer, xs.buffer, zs.buffer, mask.buffer, tPos.buffer, tUv.buffer, texture, payload.fp.pts.buffer, payload.fp.idx.buffer, payload.lamps.buffer, payload.posts.buffer];
   if (buildings) transfer.push(buildings.pos.buffer, buildings.nrm.buffer, buildings.col.buffer, buildings.win.buffer);
   if (roadMesh) transfer.push(roadMesh.pos.buffer, roadMesh.col.buffer, roadMesh.nrm.buffer);
+  if (track) transfer.push(track.pos.buffer, track.uv.buffer, track.nrm.buffer);
   for (const t of [payload.trees, payload.cones]) if (t) transfer.push(t.mat.buffer, t.col.buffer, t.trunk.buffer);
   for (const r of roads) transfer.push(r.p.buffer);
   for (const r of payload.rails) transfer.push(r.p.buffer);
