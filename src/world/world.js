@@ -63,10 +63,14 @@ export class World {
     // look ahead: where the vehicle will be in ~40 s and ~80 s
     const sp = Math.hypot(ve, vn);
     if (sp > 3) {
+      // very fast (the Speed Demon): only the squares on your line far ahead, so a phone doesn't run
+      // out of memory holding three times the usual map
+      const fast = sp > 40;
       for (const [t, pr] of [[40, 1], [80, 3]]) {
         const g = offsetGeo(lat, lon, ve * t, vn * t);
         const a = chunkIndex(g.lat, g.lon);
-        for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+        const n = fast && t > 40 ? 0 : 1;
+        for (let di = -n; di <= n; di++) for (let dj = -n; dj <= n; dj++) {
           const k = chunkKey(a.i + di, a.j + dj);
           const p = pr + (di || dj ? 2 : 0);
           if (!want.has(k) || want.get(k).pr > p) want.set(k, { i: a.i + di, j: a.j + dj, pr: p });
@@ -79,7 +83,8 @@ export class World {
     this.pump();
     for (const [k, c] of this.chunks) {
       if (want.has(k)) continue;
-      if (Math.abs(c.i - i) > 2 || Math.abs(c.j - j) > 2) this.unload(k);
+      const keep = sp > 40 ? 1 : 2; // (behind you, at speed: let go sooner)
+      if (Math.abs(c.i - i) > keep || Math.abs(c.j - j) > keep) this.unload(k);
     }
     return old;
   }

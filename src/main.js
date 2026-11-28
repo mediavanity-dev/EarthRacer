@@ -30,6 +30,7 @@ import { Debris, TreeHits } from './world/debris.js';
 import { roadFocus } from './world/materials.js';
 import { Radio } from './data/radio.js';
 import { StreetView } from './ui/streetview.js';
+import { governorStop, buildRamp, makePath, R as PIPE_R, WIDTH as PIPE_W } from './world/turnaround.js';
 import { portalNow, PORTAL_POINTS, PORTAL_COINS } from './game/portals.js';
 import { PortalView, PORTAL_RADIUS } from './world/portal.js';
 import { animateStars, starAvailable, animateGamer, coinAvailable, collected as starsCollected } from './world/stunts.js';
@@ -1098,7 +1099,7 @@ function renderTab(tab, body) {
       <h3>Controls</h3><table class="keys">
       <tr><td>Drive / brake &amp; reverse</td><td><span class="kbd">W</span>/<span class="kbd">S</span> or arrows · RT / LT</td></tr>
       <tr><td>Steer</td><td><span class="kbd">A</span>/<span class="kbd">D</span> · left stick</td></tr>
-      <tr><td>Handbrake (drift)</td><td><span class="kbd">Space</span> or <span class="kbd">Shift</span> · A</td></tr>
+      <tr><td>Handbrake (drift)</td><td><span class="kbd">Shift</span> or <span class="kbd">Space</span> · A (Shift works on keyboards that drop a third key held with Space)</td></tr>
       <tr><td>Camera</td><td><span class="kbd">C</span> · Y</td></tr>
       <tr><td>Look around / zoom</td><td>drag · wheel · <span class="kbd">Q</span>/<span class="kbd">E</span> <span class="kbd">Z</span>/<span class="kbd">X</span> · right stick (click to recentre)</td></tr>
       <tr><td>Horn (honk, bark, quack, bell)</td><td><span class="kbd">H</span> · X on a controller · 📯 on a phone</td></tr>
@@ -2020,7 +2021,13 @@ function updateCamera(dt) {
   dist += speed * 0.04;
   const target = new THREE.Vector3();
   const look = new THREE.Vector3();
-  if (game.cam === 3) {
+  if (game.turn?.path && game.cam !== 2) {
+    // the turnaround: watch it from the side, like a skate video
+    const t = game.turn, sx = -t.fz, sz = t.fx;
+    target.set(t.bx + t.fx * PIPE_R * 0.3 + sx * 28, t.by + 11, t.bz + t.fz * PIPE_R * 0.3 + sz * 28);
+    look.set(v.x, v.y + 2, v.z);
+    camPos.lerp(target, 1 - Math.exp(-dt * 4)); camLook.lerp(look, 1 - Math.exp(-dt * 10));
+  } else if (game.cam === 3) {
     // straight down from above, the direction of travel at the top of the screen
     const hgt = ((v.kind === 'truck' ? 75 : v.kind === 'bike' ? 45 : 60) + speed * 1.6) * camCtl.zoom;
     target.set(v.x + fx * speed * 0.9, v.y + hgt, v.z + fz * speed * 0.9);
@@ -2365,6 +2372,55 @@ function renderSplit() {
   renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
 }
 
+// ---------- the turnaround: a giant quarter-pipe when the map ahead surely can't load in time ----------
+// Only when it's certain: a land vehicle on the ground, the map ahead not loaded, and the loading
+// governor's hardest braking would still carry you past its edge. Then a quarter-pipe appears in
+// front of you (on loaded ground), you go up and come back down, and a J-turn points you home.
+function checkTurnaround(v, sp) {
+  const t = game.turn;
+  if (t) {
+    if (t.path) return;
+    const along = (v.x - t.bx) * t.fx + (v.z - t.bz) * t.fz, side = Math.abs((v.x - t.bx) * -t.fz + (v.z - t.bz) * t.fx);
+    if (along >= 0 && side < PIPE_W / 2 + 1) { // at the foot of the ramp: up we go
+      t.speed = Math.max(12, Math.min(45, sp));
+      t.path = makePath(t.bx, t.by, t.bz, t.h, t.speed);
+      t.time = 0; sound.whoosh();
+    } else if (side > PIPE_W / 2 + 8 || Math.hypot(v.x - t.bx, v.z - t.bz) > 400 || along > 5) endTurnaround(); // steered round it
+    return;
+  }
+  if (sp < 15 || !v.grounded || v.wet || v.flying || v.spec.terrain !== 'land' || split || performance.now() < (game.turnCool || 0)) return;
+  const fx = v.vx / sp, fz = v.vz / sp, need = governorStop(sp);
+  let miss = null;
+  for (let d = 10; d <= need + 40; d += 10) if (!world.isReady(v.x + fx * d, v.z + fz * d)) { miss = d; break; }
+  if (miss == null || miss > need + 20) return; // the governor will manage
+  const D = Math.max(6, miss - PIPE_R - 8);
+  const bx = v.x + fx * D, bz = v.z + fz * D, by = world.groundAt(bx, bz) ?? v.y;
+  const h = Math.atan2(fx, -fz);
+  const ramp = buildRamp();
+  ramp.position.set(bx, by - 0.05, bz); ramp.rotation.y = Math.PI / 2 - h;
+  scene.add(ramp);
+  game.turn = { bx, by, bz, fx, fz, h, ramp };
+  toast('🛹 The map ahead is still loading. Up the ramp and back you go.', { ms: 4000 });
+}
+function tickTurnaround(v, dt) {
+  const t = game.turn;
+  t.time += dt;
+  const p = t.path.at(t.time);
+  v.x = p.x; v.y = p.y; v.z = p.z; v.heading = p.heading; v.pitch = -p.pitch; v.roll = 0; v.steer = 0;
+  v.vx = v.vz = 0; v.vf = 0; v.grounded = false;
+  if (p.done) {
+    const u = 0.6 * t.speed; // (the speed the J-turn ends at)
+    const [fx, fz] = v.fwd();
+    v.vf = u; v.vx = fx * u; v.vz = fz * u; v.pitch = 0; v.grounded = true;
+    v.y = world.groundAt(v.x, v.z) ?? v.y;
+    const ramp = t.ramp;
+    game.turn = null; game.turnCool = performance.now() + 6000;
+    setTimeout(() => scene.remove(ramp), 5000);
+    sound.crash(2);
+  }
+}
+function endTurnaround() { if (game.turn) { scene.remove(game.turn.ramp); game.turn = null; game.turnCool = performance.now() + 3000; } }
+
 // ---------- main loop ----------
 let last = performance.now(), worldT = 0, mapT = 0, saveT = 0, waveT = 0;
 const STEP = 1 / 60;
@@ -2398,6 +2454,11 @@ function frame(now) {
   let inp = input.poll({ noPad: !!split });
   input.drawWheel();
   if (game.autopilot) { const a = autopilotInput(v, inp); if (a) inp = a; }
+  // Space + W + an arrow: many keyboards drop the third key, so a drift started with Space never sees
+  // the turn. Shift is wired apart from the other keys on nearly every keyboard, so suggest it (once a session).
+  if (input.source === 'keyboard' && input.keys.has('Space') && inp.throttle > 0 && Math.abs(inp.steer) < 0.05 && v.vf > 8 && !v.drifting) {
+    if ((game.hbT = (game.hbT || 0) + dt) > 0.9 && !game.hbHint) { game.hbHint = true; toast('Drift not starting? Many keyboards cannot read three keys at once. Hold <b>Shift</b> instead of Space for the handbrake.', { ms: 6500 }); }
+  } else game.hbT = 0;
   game.stillT = Math.abs(v.vf) < 0.3 && !v.flying && !inp.throttle && !inp.brake && Math.abs(inp.steer) < 0.05 && !camCtl.held ? (game.stillT || 0) + dt : 0;
   game.braking = inp.brake > 0 && v.vf > 0.5;
   game.reversing = inp.brake > 0 && v.vf < -0.2;
@@ -2411,10 +2472,12 @@ function frame(now) {
     else if (sp > 25 && !world.isReady(v.x + ux * sp * 7, v.z + uz * sp * 7)) loadLimit = Math.max(25, sp * 0.9); // very fast: ease off until the map catches up
   }
   if ((game.limT = (game.limT || 0) + dt) > 0.3) { game.limT = 0; game.roadKmh = v.road ? world.speedLimitAt(v.x, v.z) : null; }
+  checkTurnaround(v, sp);
   const ctx = { world, grip: sky.grip(), wind: windVec(), loadLimit, traffic: traffic.density ? traffic : null, trains: trains.density ? trains : null, draft: game.style.draftOn, night: sky.night, roadLimit: game.roadKmh };
   if (v.wet && game.waves) ctx.grip *= Math.max(0.6, 1 - game.waves * 0.12);
   let acc = dt, moved = 0;
   const x0 = v.x, z0 = v.z;
+  if (game.turn?.path) { tickTurnaround(v, dt); acc = 0; } // the quarter-pipe has the wheel
   while (acc > 1e-4) {
     const h = Math.min(STEP, acc); acc -= h;
     for (const e of v.step(h, inp, ctx)) handleEvent(e);
@@ -2485,6 +2548,7 @@ function windVec() {
 
 function rebase(old) {
   const fix = (o) => { const g = old.toGeo(o.x, o.z); const p = world.toLocal(g.lat, g.lon); o.x = p.x; o.z = p.z; };
+  if (game.turn) { const t = game.turn, o = { x: t.bx, z: t.bz }; fix(o); t.bx = o.x; t.bz = o.z; t.ramp.position.x = o.x; t.ramp.position.z = o.z; if (t.path) { t.path.bx = o.x; t.path.bz = o.z; } }
   if (game.v) fix(game.v);
   if (split) { fix(split.v); for (const q of [split.pos, split.look]) { const o = { x: q.x, z: q.z }; fix(o); q.x = o.x; q.z = o.z; } }
   traffic.cars.forEach((c) => traffic.place(c));
@@ -2831,7 +2895,7 @@ function tickStyle(dt, inp) {
 const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences). Street photos: <a href="https://www.mapillary.com" target="_blank" rel="noopener">Mapillary</a> contributors (CC BY-SA 4.0). Sounds (trimmed), via Wikimedia Commons: car horn by 15HPanska_Ruttner_Jan (CC0), truck horn from a city bus by Work With Sounds / Technical Museum of Slovenia (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>), ship horn by Tvabutzku1234 (CC0) and dog bark by Amada44 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>).';
 
 // ---------- boot ----------
-if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, trains, sky, profile, input, radio, sound, camCtl, wake, debris, openStreetView, get streetView() { return streetView; }, startSkydive, toggleAutopilot, frameBudget, cheats, get split() { return split; }, startSplit, stopSplit, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
+if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, trains, sky, profile, input, radio, sound, camCtl, wake, debris, openStreetView, get streetView() { return streetView; }, get turn() { return game.turn; }, startSkydive, toggleAutopilot, frameBudget, cheats, get split() { return split; }, startSplit, stopSplit, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
 pruneRaces();
 world.stuntMode = profile.settings.mode || 'explorer';
 cheats.noDamage = !!profile.settings.noDamage;
