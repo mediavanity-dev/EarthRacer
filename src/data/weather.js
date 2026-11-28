@@ -5,9 +5,12 @@ import { tryJson } from './net.js';
 
 const FIELDS = 'temperature_2m,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,precipitation,snowfall,snow_depth,is_day';
 
-export async function fetchWeather(lat, lon) {
+// elev: the height of the ground where you are (m). Open-Meteo then corrects the temperature from its
+// grid's averaged ground to your height, so a mountain top is cold, and rain up there falls as snow.
+export async function fetchWeather(lat, lon, elev = null) {
   const la = lat.toFixed(2), lo = lon.toFixed(2);
-  const w = await tryJson(`https://api.open-meteo.com/v1/forecast?latitude=${la}&longitude=${lo}&current=${FIELDS}&timezone=auto`, { retries: 1 });
+  const el = Number.isFinite(elev) ? `&elevation=${Math.round(elev)}` : '';
+  const w = await tryJson(`https://api.open-meteo.com/v1/forecast?latitude=${la}&longitude=${lo}${el}&current=${FIELDS}&timezone=auto`, { retries: 1 });
   if (!w?.current) return null;
   const c = w.current;
   return {
@@ -19,10 +22,18 @@ export async function fetchWeather(lat, lon) {
     windDir: c.wind_direction_10m ?? 0,   // degrees, where wind comes FROM
     precip: c.precipitation ?? 0,
     snowDepth: c.snow_depth ?? 0,
+    snowfall: c.snowfall ?? 0,
+    elevation: Number.isFinite(elev) ? elev : w.elevation ?? null, // the height these figures are for
     utcOffset: w.utc_offset_seconds ?? 0,
     timezone: w.timezone || null,
-    ...describe(c.weather_code),
+    ...wintry(describe(c.weather_code), c.temperature_2m, c.snowfall),
   };
+}
+
+// rain reported for the grid's lower ground but freezing at your height (or snow measured): it's snow
+function wintry(d, t, snowfall) {
+  if ((d.kind === 'rain' || d.kind === 'drizzle') && ((t != null && t <= 0.5) || snowfall > 0)) return { kind: 'snow', label: 'Snow', icon: '🌨️' };
+  return d;
 }
 
 // WMO weather interpretation codes -> {kind, label, icon}

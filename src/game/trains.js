@@ -36,6 +36,15 @@ const box = (() => {
   return mergeGeometries([part(0, 0.12, 0.12, 0.25), part(0.12, 0.5, 0, 1), part(0.5, 0.78, 0.02, 0.22), part(0.78, 0.92, 0, 1), part(0.92, 1, 0.1, 0.8)]);
 })();
 
+// How busy the railway is through the day, against its daytime timetable: most trains at the morning
+// and evening peaks, a few through the night (freight, night trains) and almost none from 1 to 5 am.
+export function busyness(h) {
+  if (h == null) return 1;
+  const k = [[0, 0.35], [1, 0.08], [5, 0.08], [6, 0.7], [7.5, 1.5], [9.5, 1.5], [10, 1], [16, 1], [17, 1.5], [19, 1.4], [20, 0.8], [23, 0.5], [24, 0.35]];
+  for (let i = 1; i < k.length; i++) if (h <= k[i][0]) { const [a, va] = k[i - 1], [b, vb] = k[i]; return va + ((vb - va) * (h - a)) / (b - a); }
+  return 1;
+}
+
 export class Trains {
   constructor(scene) {
     this.mesh = new THREE.InstancedMesh(box, new THREE.MeshLambertMaterial({ vertexColors: true }), MAX);
@@ -141,13 +150,14 @@ export class Trains {
     this.list.push(t);
   }
 
+  /** hour: local time of day (0-24), set by the game; null = no timetable shape */
   update(dt, player, world) {
     if (!this.density) { if (this.list.length) this.clear(); return; }
     // new trains: a Poisson process at the rate the timetable implies (checked once a second)
     if ((this.clock -= dt) <= 0) {
       this.clock = 1;
       const { rate, lines } = this.spawn(player, world);
-      if (lines.length && Math.random() < rate * this.density) this.start(player, world, lines);
+      if (lines.length && Math.random() < rate * this.density * busyness(this.hour)) this.start(player, world, lines);
     }
     for (const t of this.list) {
       t.s += t.speed * dt;

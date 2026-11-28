@@ -3,7 +3,7 @@
 // Everything here is in tile-local metres; the World places the tile in the scene.
 
 import * as THREE from 'three';
-import { terrainMat, roadMat, buildingMat, treeMat, trunkMat, treeGeo, coneGeo, trunkGeo, lampGeo, lampHeadGeo, postGeo, lampMat, lampHeadMat, postMat } from './materials.js';
+import { terrainMat, roadMat, trackMat, buildingMat, treeMat, trunkMat, treeGeo, coneGeo, trunkGeo, lampGeo, lampHeadGeo, postGeo, lampMat, lampHeadMat, postMat } from './materials.js';
 
 const CELL = 40; // spatial index cell (m)
 
@@ -38,6 +38,13 @@ export function makeChunk(p, { anisotropy = 4 } = {}) {
     g.setAttribute('normal', new THREE.BufferAttribute(p.roadMesh.nrm, 3));
     g.setAttribute('color', new THREE.BufferAttribute(p.roadMesh.col, 3));
     add(new THREE.Mesh(g, roadMat));
+  }
+  if (p.track) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(p.track.pos, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(p.track.nrm, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(p.track.uv, 2));
+    add(new THREE.Mesh(g, trackMat));
   }
   if (p.buildings) {
     const g = new THREE.BufferGeometry();

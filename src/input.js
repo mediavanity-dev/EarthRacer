@@ -148,7 +148,13 @@ export class Input {
 
   /** Player 2 in split screen: the first controller only. -> state, plus edge-triggered buttons (horn, swap). */
   pollPad() {
-    const gp = (navigator.getGamepads?.() || []).find((g) => g);
+    // the controller player 2 is using: once one has been pressed, keep to it (Windows can list a
+    // second, idle device, such as a wheel, a headset or a duplicate of the same pad, before it)
+    const pads = [...(navigator.getGamepads?.() || [])].filter((g) => g && g.connected !== false);
+    const busy = (g) => g.buttons.some((x) => x.pressed) || g.axes.some((a, i) => i !== 9 && Math.abs(a) > 0.3);
+    let gp = pads.find((g) => g.index === this.p2Pad);
+    if (!gp || (!busy(gp) && pads.some((g) => g !== gp && busy(g)))) { gp = pads.find(busy) || gp || pads.find((g) => g.mapping === 'standard') || pads[0]; }
+    if (gp && busy(gp)) this.p2Pad = gp.index;
     const out = { throttle: 0, brake: 0, steer: 0, handbrake: false, analog: true, horn: false, swap: false, connected: !!gp };
     if (!gp) return out;
     const b = (i) => gp.buttons[i] ? gp.buttons[i].value || (gp.buttons[i].pressed ? 1 : 0) : 0;

@@ -13,6 +13,10 @@ const M_LAT = 111320;
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const mLon = (lat) => M_LAT * Math.cos((lat * Math.PI) / 180);
+// Google Maps at this spot (a map always shows; drag the little person onto a blue line for Street
+// View there). A direct Street View link shows a black screen where Google has no photos, and there's
+// no way to check first without a Google API key.
+export const googleMapLink = (lat, lon) => `https://www.google.com/maps/@?api=1&map_action=map&center=${lat.toFixed(6)},${lon.toFixed(6)}&zoom=18`;
 export const googleLink = (lat, lon, heading) =>
   `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)},${lon.toFixed(6)}&heading=${Math.round(heading)}`;
 export const hasToken = () => TOKEN.startsWith('MLY|');
@@ -125,17 +129,24 @@ export class StreetView {
     this.here = { lat, lon, heading };
     this.el.hidden = false; this.img.hidden = true; this.canvas.hidden = true;
     this.$('.sv-nav').hidden = true; this.$('.sv-credit').innerHTML = '';
-    const g = `<a class="btn" href="${googleLink(lat, lon, heading)}" target="_blank" rel="noopener">🗺️ Open Google Street View<small>Opens in your browser or the Google Maps app.</small></a>`;
+    const g = `<a class="btn" href="${googleMapLink(lat, lon)}" target="_blank" rel="noopener">🗺️ Look in Google Maps<small>Opens this spot on the map. Where a street turns blue as you drag the little person, Google has Street View.</small></a>`;
     this.google = g;
     if (!hasToken()) { this.msg(`<p>Street photos are not set up in this build.</p>${g}`); return; }
     this.msg('<p>Looking for street photos here…</p>');
     let list;
     try { list = await near(lat, lon, 60); } catch { list = null; }
     if (this.el.hidden) return;
-    const p = list && best(list, heading, 60);
-    if (!p) { this.msg(`<p>${list ? 'There are no Mapillary street photos within 50 m of here.' : 'Could not reach Mapillary.'}</p>${g}`); return; }
+    let p = list && best(list, heading, 60);
+    if (!p && list) { // nothing right here: the nearest within about 300 m will do, saying how far it is
+      let wide; try { wide = await near(lat, lon, 300); } catch { wide = null; }
+      if (this.el.hidden) return;
+      p = wide && best(wide, heading, 300);
+      if (p) this.farNote = `The nearest street photo is about ${Math.round(p.d / 10) * 10} m away.`;
+    }
+    if (!p) { this.msg(`<p>${list ? 'No street view images in this location.' : 'Could not reach the street photo service.'}</p>${g}`); return; }
     this.yaw = heading; this.pitch = 0; this.fov = 75;
     this.load(p);
+    if (this.farNote) { this.toast?.(`📷 ${this.farNote}`); this.farNote = null; }
   }
 
   async load(p) {
