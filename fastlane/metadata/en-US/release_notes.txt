@@ -10,6 +10,7 @@ New
 • Trains run on the railway lines, about as often as real ones: main-line trains, metros, light rail and trams. They don't stop for you, so look both ways at level crossings.
 • Street view: tap 📷 to see street photos of where you are (from Mapillary), or open Google Street View there.
 • Outrun the map and a giant quarter-pipe turns you round while it catches up.
+• Gamer mode: giant sky tracks about every mile. Ride up from the street, through a loop and two banked bends, and land back on the road for coins.
 • Railway track you can see: ballast, sleepers and rails. Trains follow the time of day, busiest at rush hour and rare in the small hours.
 • Snow on high mountains, and weather corrected for your height, so a summit is cold and snowy.
 • Church towers with spires, and domes and onion domes where the map has them.
@@ -22,7 +23,6 @@ Better
 • Driving into water makes a big splash and stops you, instead of bouncing you off like a wall.
 • The duck, the dog, the boats and the jet ski leave a wake.
 • The back of a stunt ramp is solid now.
-• Boost arrows point both ways, because they work both ways.
 • Real horn recordings every time you press the horn, including right after switching apps, and a fuller double honk for cars.
 • Flights: one minute to board and one to get off, with a countdown on screen.
 • On a phone that gets hot, the game draws less until it cools (Settings: Keep the phone cool).
@@ -40,7 +40,6 @@ Fixed
 • Getting off a bus or train early works every time.
 • A drift starts even if you press the handbrake before steering (some keyboards drop a third key held at once).
 • Buildings and shop signs no longer flicker where two were drawn in the same place.
-• "Start where I am" asks for your location as EarthRacer, not "localhost".
 • Cooler and kinder to the battery: the game no longer draws faster than it needs to.
 • At very high speed the game holds less of the map in memory, so phones are less likely to close it.
 • On a keyboard, if a drift won't start, the game suggests Shift for the handbrake (many keyboards can't read Space, W and an arrow at once).

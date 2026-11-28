@@ -32,6 +32,7 @@ import { roadFocus } from './world/materials.js';
 import { Radio } from './data/radio.js';
 import { StreetView } from './ui/streetview.js';
 import { governorStop, buildRamp, makePath, R as PIPE_R, WIDTH as PIPE_W } from './world/turnaround.js';
+import { frameAt, W as SKY_W, cross as cross3, v3n } from './world/skytrack.js';
 import { portalNow, PORTAL_POINTS, PORTAL_COINS } from './game/portals.js';
 import { PortalView, PORTAL_RADIUS } from './world/portal.js';
 import { animateStars, starAvailable, animateGamer, coinAvailable, collected as starsCollected } from './world/stunts.js';
@@ -2021,7 +2022,7 @@ async function revealPlacement(nailed = false) {
 }
 
 // ---------- camera ----------
-const camPos = new THREE.Vector3(), camLook = new THREE.Vector3(), topUp = new THREE.Vector3(0, 0, -1);
+const camPos = new THREE.Vector3(), camLook = new THREE.Vector3(), topUp = new THREE.Vector3(0, 0, -1), skyUp = new THREE.Vector3(0, 1, 0);
 let camInit = false;
 function updateCamera(dt) {
   const v = game.v, s = v.spec;
@@ -2046,6 +2047,13 @@ function updateCamera(dt) {
     target.set(t.bx + t.fx * PIPE_R * 0.3 + sx * 28, t.by + 11, t.bz + t.fz * PIPE_R * 0.3 + sz * 28);
     look.set(v.x, v.y + 2, v.z);
     camPos.lerp(target, 1 - Math.exp(-dt * 4)); camLook.lerp(look, 1 - Math.exp(-dt * 10));
+  } else if (game.sky?.f && game.cam !== 2 && game.cam !== 3) {
+    // on a sky track: behind and above along the track itself, turning over with it through the loop
+    const { T, N, pos } = game.sky.f, back = (game.cam === 1 ? 22 : 10) + speed * 0.05, up = game.cam === 1 ? 9 : 3.6;
+    target.set(pos[0] - T[0] * back + N[0] * up, pos[1] - T[1] * back + N[1] * up, pos[2] - T[2] * back + N[2] * up);
+    look.set(pos[0] + T[0] * 8 + N[0], pos[1] + T[1] * 8 + N[1], pos[2] + T[2] * 8 + N[2]);
+    camPos.lerp(target, 1 - Math.exp(-dt * 9)); camLook.lerp(look, 1 - Math.exp(-dt * 14));
+    skyUp.lerp(new THREE.Vector3(N[0], N[1], N[2]), 1 - Math.exp(-dt * 6)).normalize();
   } else if (game.cam === 3) {
     // straight down from above, the direction of travel at the top of the screen
     const hgt = ((v.kind === 'truck' ? 75 : v.kind === 'bike' ? 45 : 60) + speed * 1.6) * camCtl.zoom;
@@ -2093,7 +2101,7 @@ function updateCamera(dt) {
     game.shake *= Math.exp(-dt * 8);
   }
   // speed feel: tiny rumble at speed on rough ground
-  if (game.cam === 3) camera.up.copy(topUp); else camera.up.set(0, 1, 0);
+  if (game.cam === 3) camera.up.copy(topUp); else if (game.sky?.f && game.cam !== 2) camera.up.copy(skyUp); else { camera.up.set(0, 1, 0); skyUp.set(0, 1, 0); }
   camera.lookAt(camLook);
   const fov = game.cam === 3 ? 50 : 60 + Math.min(18, speed * 0.55) + (game.cam === 2 ? 6 : 0);
   if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix(); }
@@ -2260,7 +2268,7 @@ function updateModel(dt, v = game.v, m = game.model, st = game) {
   // corner would still be under the ground or a road edge (ridges, kerbs between the samples).
   if (!m.dims) { const b = new THREE.Box3().setFromObject(m.group), sz = b.getSize(new THREE.Vector3()); m.dims = { hl: Math.min(sz.z, 12) * 0.42, hw: Math.min(sz.x, 4) * 0.42 }; }
   let tRoll = 0, lift = 0;
-  if (v.spec.terrain === 'land' && v.grounded && !v.wet && !game.turn?.path) {
+  if (v.spec.terrain === 'land' && v.grounded && !v.wet && !game.turn?.path && !(st === game && game.sky)) {
     const [fx, fz] = v.fwd(), rx = -fz, rz = fx, { hl, hw } = m.dims;
     const gAt = (x, z) => {
       let g = world.groundAt(x, z) ?? v.y;
@@ -2281,6 +2289,7 @@ function updateModel(dt, v = game.v, m = game.model, st = game) {
   m.group.rotation.y = -v.heading;
   m.group.rotation.x = v.pitch + wavePitch;
   m.group.rotation.z = -v.roll + waveRoll + st.tRoll;
+  if (st === game && game.sky?.f) { m.group.position.set(v.x, v.y, v.z); m.group.quaternion.copy(game.sky.q); } // on a sky track: square to the deck, loops included
   animateDamage(m, dt);
   // rough ground: the vehicle jiggles on its suspension (the camera stays steady)
   if (v.grounded && v.spec.terrain === 'land' && v.surface !== 'road') {
@@ -2430,6 +2439,89 @@ function renderSplit() {
   renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
 }
 
+// ---------- sky tracks (Gamer): ride a giant toy track through the sky ----------
+// Drive onto the orange ramp at the roadside and the track has the wheel: throttle and brake set
+// your speed (gravity slows the climbs and speeds the drops), steering keeps you on the deck. The
+// banked bends lean the right way for about 65 km/h; faster or slower and you drift to one
+// side. Off an edge, or too slow at the top of the loop, and you fall. Finish for coins.
+const skyM4 = new THREE.Matrix4(), skyA = new THREE.Vector3(), skyB = new THREE.Vector3(), skyC = new THREE.Vector3();
+const skyHinted = new Set();
+function checkSkyEntry(v) {
+  if ((profile.settings.mode || 'explorer') !== 'gamer' || split || game.turn || v.spec.terrain !== 'land' || v.spec.flaps || v.wet || !v.grounded || performance.now() < (game.skyCool || 0)) return;
+  const sp = Math.hypot(v.vx, v.vz);
+  for (const ch of world.readyChunks()) {
+    const tr = ch.stunts?.sky;
+    if (!tr) continue;
+    const F = tr.frames, p0 = F[0].p, x0 = ch.ox + p0[0] * ch.sx, z0 = ch.oz + p0[2], d0 = Math.hypot(v.x - x0, v.z - z0);
+    if (d0 < 260 && sp > 3 && !skyHinted.has(ch.key)) { skyHinted.add(ch.key); toast('🎢 A sky track starts on this street. Drive onto the orange ramp.', { ms: 5000 }); }
+    if (d0 > 40 || sp < 2) continue;
+    const lx = (v.x - ch.ox) / ch.sx, lz = v.z - ch.oz;
+    for (let i = 0; i < F.length && F[i].s < 22; i++) {
+      const f = F[i], th = v3n(f.t[0], 0, f.t[2]), dx = lx - f.p[0], dz = lz - f.p[2];
+      const al = dx * th[0] + dz * th[2], w = dx * -th[2] + dz * th[0];
+      if (Math.abs(al) > 1.2 || Math.abs(w) > SKY_W / 2 - 0.3) continue;
+      if ((v.vx * th[0] + v.vz * th[2]) / sp < 0.6) return; // across it or the wrong way
+      game.sky = { ch, tr, s: f.s + al, v: sp, w, wv: 0, i, t0: performance.now(), top: sp, q: new THREE.Quaternion(), f: null };
+      sound.whoosh();
+      if (!profile.skySeen) { profile.skySeen = true; save(); toast('🎢 On the sky track. Hold the throttle, keep to the middle, and carry speed into the loop.', { ms: 6000 }); }
+      return;
+    }
+  }
+}
+function tickSky(v, dt, inp) {
+  const S = game.sky, ch = S.ch, tr = S.tr;
+  if (ch.stunts?.sky !== tr) { skyFall(v, null); return; } // the tile went (or Gamer mode was switched off)
+  let f = frameAt(tr, S.s, S.i); S.i = f.i;
+  let T = f.t, N = f.n, R = cross3(T, N);
+  const top = 30; // about 110 km/h, whatever you drive
+  const a = inp.throttle * 11 - inp.brake * 16 - 0.004 * S.v * Math.abs(S.v) - 9.81 * T[1];
+  S.v = Math.max(-25, Math.min(top, S.v + a * dt));
+  S.top = Math.max(S.top, S.v);
+  S.s += S.v * dt;
+  if (!f.loop) {
+    const rh = v3n(-T[2], 0, T[0]), cen = -f.k * S.v * S.v; // the bend pushes outwards; the bank (gravity along the tilted deck) pushes in
+    const aw = -9.81 * R[1] + cen * (rh[0] * R[0] + rh[2] * R[2]);
+    S.wv += (aw + inp.steer * 12 - S.wv * 1.6) * dt;
+  } else S.wv += (inp.steer * 6 - S.wv * 3) * dt;
+  S.w += S.wv * dt;
+  if (Math.abs(S.w) > SKY_W / 2 + 0.2) { skyFall(v, '💥 Off the edge.', T, R); return; }
+  if (f.loop && N[1] < -0.15 && (S.v * S.v) / tr.loopR < 9.81 * -N[1] * 0.85) { skyFall(v, '💥 Too slow for the loop.', T, R); return; }
+  if (S.s >= tr.len - 0.3) { skyFinish(v, frameAt(tr, tr.len, S.i)); return; }
+  if (S.s < 0) { skyFinish(v, frameAt(tr, 0, 1), true); return; } // rolled back off the start
+  f = frameAt(tr, S.s, S.i); T = f.t; N = f.n; R = cross3(T, N);
+  const pos = [f.p[0] + R[0] * S.w, f.p[1] + R[1] * S.w, f.p[2] + R[2] * S.w];
+  v.x = ch.ox + pos[0] * ch.sx; v.y = pos[1]; v.z = ch.oz + pos[2];
+  if (!f.loop && Math.hypot(T[0], T[2]) > 0.3) v.heading = Math.atan2(T[0], -T[2]);
+  v.vx = T[0] * S.v; v.vz = T[2] * S.v; v.vy = T[1] * S.v; v.vf = S.v; v.grounded = true; v.air = 0; v.pitch = 0; v.roll = 0; v.steer = inp.steer;
+  S.q.setFromRotationMatrix(skyM4.makeBasis(skyA.set(R[0], R[1], R[2]), skyB.set(N[0], N[1], N[2]), skyC.set(-T[0], -T[1], -T[2])));
+  S.f = { T, N, pos: [v.x, v.y, v.z] };
+}
+function skyFall(v, msg, T, R) {
+  const S = game.sky;
+  game.sky = null; game.skyCool = performance.now() + 4000;
+  if (T) {
+    v.vx = T[0] * S.v + R[0] * S.wv; v.vz = T[2] * S.v + R[2] * S.wv; v.vy = T[1] * S.v + R[1] * S.wv;
+    if (Math.hypot(v.vx, v.vz) > 1) v.heading = Math.atan2(v.vx, -v.vz);
+    v.vf = Math.hypot(v.vx, v.vz);
+  }
+  v.grounded = false; v.air = 0; v.airH = 0; v.takeoff = { x: v.x, z: v.z }; v.pitch = 0; v.roll = 0;
+  if (msg) { toast(`${msg} Back to the ramp to try again.`, { ms: 3500 }); sound.crash(1.5); }
+}
+function skyFinish(v, f, back = false) {
+  const S = game.sky;
+  game.sky = null; game.skyCool = performance.now() + 3000;
+  const T = f.t, sp = Math.abs(S.v);
+  v.x = S.ch.ox + f.p[0] * S.ch.sx; v.z = S.ch.oz + f.p[2];
+  v.heading = Math.atan2(T[0], -T[2]) + (back ? Math.PI : 0);
+  const [fx, fz] = v.fwd();
+  v.vx = fx * sp; v.vz = fz * sp; v.vy = 0; v.vf = sp; v.pitch = 0; v.roll = 0;
+  v.settle(world);
+  if (back) return;
+  const secs = (performance.now() - S.t0) / 1000, pay = 120 + Math.round(S.top * 1.5);
+  profile.coins += pay; profile.stats.skyTracks = (profile.stats.skyTracks || 0) + 1; save(); sound.chime(); checkUnlocks();
+  sidePop(`<b>🏁 Sky track complete</b><br><span class="dim">${secs.toFixed(1)} s · top speed ${Math.round(game.mph ? S.top * 2.237 : S.top * 3.6)} ${game.mph ? 'mph' : 'km/h'} · +${pay} coins</span>`, 'note', 5000);
+}
+
 // ---------- the turnaround: a giant quarter-pipe when the map ahead surely can't load in time ----------
 // Only when it's certain: a land vehicle on the ground, the map ahead not loaded, and the loading
 // governor's hardest braking would still carry you past its edge. Then a quarter-pipe appears in
@@ -2446,7 +2538,7 @@ function checkTurnaround(v, sp) {
     } else if (side > PIPE_W / 2 + 8 || Math.hypot(v.x - t.bx, v.z - t.bz) > 400 || along > 5) endTurnaround(); // steered round it
     return;
   }
-  if (sp < 15 || !v.grounded || v.wet || v.flying || v.spec.terrain !== 'land' || split || performance.now() < (game.turnCool || 0)) return;
+  if (sp < 15 || game.sky || !v.grounded || v.wet || v.flying || v.spec.terrain !== 'land' || split || performance.now() < (game.turnCool || 0)) return;
   const fx = v.vx / sp, fz = v.vz / sp, need = governorStop(sp);
   let miss = null;
   for (let d = 10; d <= need + 40; d += 10) if (!world.isReady(v.x + fx * d, v.z + fz * d)) { miss = d; break; }
@@ -2556,10 +2648,12 @@ function frame(now) {
   let acc = dt, moved = 0;
   const x0 = v.x, z0 = v.z;
   if (game.turn?.path) { tickTurnaround(v, dt); acc = 0; } // the quarter-pipe has the wheel
+  else if (game.sky) { let a2 = dt; while (a2 > 1e-4 && game.sky) { const h = Math.min(STEP, a2); a2 -= h; tickSky(v, h, inp); } acc = 0; } // on a sky track: the track has the wheel
   while (acc > 1e-4) {
     const h = Math.min(STEP, acc); acc -= h;
     for (const e of v.step(h, inp, ctx)) handleEvent(e);
   }
+  if (!game.sky) checkSkyEntry(v);
   moved = Math.hypot(v.x - x0, v.z - z0);
   profile.stats.km += moved / 1000;
   (profile.odo ||= {})[v.kind] = (profile.odo[v.kind] || 0) + moved / 1000; // each vehicle's own odometer (km)
@@ -2784,6 +2878,7 @@ function markers() {
   for (const ch of world.readyChunks()) {
     const st = ch.stunts;
     if (!st || Math.abs(ch.ox - v0.x) > ch.half + 500 || Math.abs(ch.oz - v0.z) > ch.half + 500) continue;
+    if (st.sky) { const p0 = st.sky.frames[0].p, x = ch.ox + p0[0] * ch.sx, z = ch.oz + p0[2]; if (Math.hypot(x - v0.x, z - v0.z) < 900) out.push({ x, z, color: '#ff4d00', size: 7 }); }
     for (const [list, color] of [[st.ramps, '#f4c430'], [st.kicks, '#4ea3ff'], [st.hoops, '#ff7a1a']]) {
       for (const o of list) {
         const x = ch.ox + o.x * ch.sx, z = ch.oz + o.z;
@@ -2976,7 +3071,7 @@ function tickStyle(dt, inp) {
 const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences). Street photos: <a href="https://www.mapillary.com" target="_blank" rel="noopener">Mapillary</a> contributors (CC BY-SA 4.0). Aircraft: <a href="https://adsb.lol" target="_blank" rel="noopener">adsb.lol</a> (ODbL). Earthquakes: <a href="https://earthquake.usgs.gov" target="_blank" rel="noopener">USGS</a>. Sounds (trimmed), via Wikimedia Commons: car horn by 15HPanska_Ruttner_Jan (CC0), truck horn from a city bus by Work With Sounds / Technical Museum of Slovenia (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>), ship horn by Tvabutzku1234 (CC0) and dog bark by Amada44 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>).';
 
 // ---------- boot ----------
-if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, trains, live, sky, profile, input, radio, sound, camCtl, wake, debris, openStreetView, get streetView() { return streetView; }, get turn() { return game.turn; }, startSkydive, toggleAutopilot, frameBudget, cheats, get split() { return split; }, startSplit, stopSplit, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
+if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, trains, live, skyTrack: { check: (v) => checkSkyEntry(v), tick: (v, dt, i) => tickSky(v, dt, i) }, sky, profile, input, radio, sound, camCtl, wake, debris, openStreetView, get streetView() { return streetView; }, get turn() { return game.turn; }, startSkydive, toggleAutopilot, frameBudget, cheats, get split() { return split; }, startSplit, stopSplit, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
 pruneRaces();
 world.stuntMode = profile.settings.mode || 'explorer';
 cheats.noDamage = !!profile.settings.noDamage;

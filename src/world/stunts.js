@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { rng, hashStr } from '../geo.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { planSkyTrack, skyTrackMeshes } from './skytrack.js';
 
 const RAMP = { L: 10, W: 4.6, H: 3.0 }, KICK = { L: 9, W: 5.5, H: 2.2 };
 const STAR_RESPAWN = 10 * 60 * 1000;
@@ -198,13 +199,20 @@ export function addStunts(chunk, mode = 'explorer') {
   st.coinMesh = inst(geos.coin, mats.coin, st.coins, at);
   inst(geos.boost, mats.boost, st.boosts, yaw);
   st.coneMesh = inst(geos.cone, mats.cone, st.cones, at);
+  // Gamer: a sky track (if a road here suits one)
+  if (G) {
+    try {
+      const tr = planSkyTrack(chunk);
+      if (tr) { st.sky = tr; for (const m of skyTrackMeshes(chunk, tr)) { chunk.group.add(m); st.meshes.push(m); } }
+    } catch (e) { console.warn('sky track', e); }
+  }
   chunk.stunts = st;
 }
 
 export function removeStunts(chunk) {
   const st = chunk.stunts;
   if (!st) return;
-  for (const m of st.meshes || []) { chunk.group.remove(m); m.dispose(); }
+  for (const m of st.meshes || []) { chunk.group.remove(m); if (m.isInstancedMesh) m.dispose(); else m.geometry.dispose(); }
   chunk.stunts = null;
 }
 
