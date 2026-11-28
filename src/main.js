@@ -1083,6 +1083,7 @@ function renderTab(tab, body) {
     const g = body.querySelector('#g'); if (g) g.onclick = () => { closePanel(); openGuess(); };
   } else if (tab === 'settings') {
     body.innerHTML = `${isTouch ? `<h3>Steering</h3><div class="seg" id="ctl">${['tilt', 'slider', 'buttons'].map((m) => `<button data-m="${m}" class="${input.mode === m ? 'on' : ''}">${{ tilt: '📱 Tilt (wheel)', slider: '👍 Slider', buttons: '◀ ▶ Buttons' }[m]}</button>`).join('')}</div>${input.mode === 'tilt' ? '<button class="btn" id="cal">Recalibrate tilt</button>' : ''}` : ''}
+      ${isTouch ? `<h3>Keep the phone cool</h3><div class="seg" id="coolseg">${[['auto', '🌡️ Auto', 'Draws less only when the phone gets warm'], ['on', '❄️ Always', 'Smoothness halved, a little softer, much cooler'], ['off', '⚡ Off', 'Full detail and smoothness always']].map(([k, n, d]) => `<button data-c="${k}" class="${(profile.settings.cool || 'auto') === k ? 'on' : ''}">${n}<br><small>${d}</small></button>`).join('')}</div>` : ''}
       <h3>Play mode</h3><div class="seg" id="modeseg">${[['explorer', '🧭 Explorer', 'The world as it is, with a few stunts to find'], ['gamer', '🎮 Gamer', 'Ramps, coins, boosts and cones everywhere']].map(([k, n, d]) => `<button data-m="${k}" class="${(profile.settings.mode || 'explorer') === k ? 'on' : ''}">${n}<br><small>${d}</small></button>`).join('')}</div>
       <h3>Steering sensitivity</h3><div class="seg" id="sensseg">${[['Gentle', 0.7], ['Normal', 1], ['Sharp', 1.4]].map(([n, k]) => `<button data-k="${k}" class="${(profile.settings.sens ?? 1) === k ? 'on' : ''}">${n}</button>`).join('')}</div><p class="note">For every way of steering: keys, a controller, tilt, the slider and the buttons.</p>
       ${!isTouch ? `<h3>Two players</h3><p class="note">Split screen on this computer: player 1 drives on the keyboard, player 2 on a controller.</p><button class="btn" id="splitb">${split ? 'End split screen' : '🎮 Start split screen'}</button>` : ''}
@@ -1098,6 +1099,7 @@ function renderTab(tab, body) {
     body.querySelector('#splitb')?.addEventListener('click', () => { if (split) { stopSplit(); openPanel('settings'); } else startSplit(); });
     body.querySelectorAll('#sensseg button').forEach((b) => b.onclick = () => { profile.settings.sens = +b.dataset.k; input.sens = +b.dataset.k; save(); openPanel('settings'); });
     body.querySelectorAll('#modeseg button').forEach((b) => b.onclick = () => { setMode(b.dataset.m); openPanel('settings'); });
+    body.querySelectorAll('#coolseg button').forEach((b) => b.onclick = () => { profile.settings.cool = b.dataset.c; save(); applyCool(); openPanel('settings'); });
     body.querySelectorAll('#camseg button').forEach((b) => b.onclick = () => { game.cam = +b.dataset.c; profile.settings.cam = game.cam; save(); openPanel('settings'); });
     body.querySelectorAll('#trf button').forEach((b) => b.onclick = () => { traffic.density = trains.density = +b.dataset.d; profile.settings.traffic = traffic.density; if (!traffic.density) { traffic.clear(); trains.clear(); } save(); openPanel('settings'); });
     body.querySelector('#snd').onclick = () => { onAction('mute'); openPanel('settings'); };
@@ -2488,7 +2490,27 @@ function frameBudget() {
   if ((!overlayEl.hidden && overlayEl.className === '') || streetView?.open) return 250; // an opaque card covers the world (trips, start)
   if (game.state !== 'driving') return 1000 / 20;
   if (!panelEl.hidden || (game.stillT || 0) > 2) return 1000 / 30; // a menu open, or parked and idle
-  return 1000 / 60;
+  return coolLevel() >= 2 ? 1000 / 30 : 1000 / 60;
+}
+// ---------- keeping the phone cool ----------
+// The apps ask the phone how hot it is (iOS thermal state; Android's thermal status) every 10 s.
+// Warm: fewer pixels. Hot: also 30 frames a second instead of 60, which roughly halves the work.
+// "Always" in Settings keeps the hot setting on; "Off" never steps down.
+let heat = 0, heatT = 0, heatTold = false, coolApplied = -1;
+function coolLevel() { const c = profile.settings.cool || 'auto'; return !isTouch || c === 'off' ? 0 : c === 'on' ? 2 : heat; }
+function applyCool() {
+  const lv = coolLevel();
+  if (lv === coolApplied) return;
+  coolApplied = lv;
+  renderer.setPixelRatio(Math.min(devicePixelRatio, !isTouch ? 2 : lv >= 2 ? 1.1 : lv === 1 ? 1.3 : 1.6));
+  resize();
+  if (lv >= 2 && (profile.settings.cool || 'auto') === 'auto' && !heatTold) { heatTold = true; toast('🌡️ Your phone is getting hot, so the game is drawing less to cool it down. You can change this in Settings.', { ms: 6000 }); }
+}
+async function checkHeat(dt) {
+  if ((heatT -= dt) > 0) return;
+  heatT = 10;
+  try { const r = await window.__tipJar?.thermal?.(); if (r && Number.isFinite(r.state)) heat = Math.min(3, r.state); } catch { /* older app without it */ }
+  applyCool();
 }
 function frame(now) {
   if (TIMER) setTimeout(() => frame(performance.now()), 16); else requestAnimationFrame(frame);
@@ -2556,6 +2578,7 @@ function frame(now) {
   if (traffic.density) traffic.update(dt, v, world);
   { const d = DEV_HOUR != null ? new Date(new Date().setUTCHours(DEV_HOUR, 0, 0)) : new Date(); const off = game.weather?.utcOffset != null ? game.weather.utcOffset / 3600 : game.lon / 15; trains.hour = (((d.getUTCHours() + d.getUTCMinutes() / 60 + off) % 24) + 24) % 24; }
   trains.update(dt, v, world);
+  checkHeat(dt);
   live.update(dt, { v, lat: game.lat, lon: game.lon, camera, mode: profile.settings.mode || 'explorer', mph: game.mph, profile, hidden: !!profile.random.active });
   signs.update(dt, world, v);
   tickStunts(dt);

@@ -20,7 +20,14 @@ public class EarthRacerPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "tipProducts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "tip", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "locate", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "thermal", returnType: CAPPluginReturnPromise),
     ]
+
+    // How hot the phone is (0 nominal, 1 fair, 2 serious, 3 critical), so the game can draw less
+    // before iOS slows everything down.
+    @objc func thermal(_ call: CAPPluginCall) {
+        call.resolve(["state": ProcessInfo.processInfo.thermalState.rawValue])
+    }
     private var locator: OneShotLocator?
 
     @objc func locate(_ call: CAPPluginCall) {
