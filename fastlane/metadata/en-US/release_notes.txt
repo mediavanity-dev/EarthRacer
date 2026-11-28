@@ -3,7 +3,7 @@ New
 • Cruises: sail between cruise ports in real time, and watch the coast from the top deck.
 • Autopilot, earned with 200 km of motorway driving: it holds your lane and the speed limit on motorways and major highways.
 • An odometer for each vehicle, at the bottom of the minimap.
-• Portals now lead to about 250 places, and won't send you back somewhere you've just been.
+• Portals lead to about 250 places.
 • Nine new seatback games, each for its kind of trip. Train: Spot it, Timetable. Plane: Country quiz, Which way? Bus: Next stop. Cruise: Shuffleboard, Bingo night, Port quiz. Bus, train and ferry: Higher or lower.
 • One steering sensitivity setting for every way of steering: keys, controller, tilt, slider and buttons.
 • Split screen on a computer: one player on the keyboard, the other on a controller.
@@ -32,7 +32,6 @@ Better
 • Vehicles tilt with the slope, so wheels stay out of hillsides and road edges.
 • Street view looks up to 300 m away for photos, and says plainly when there are none.
 • Radio stations that play adverts for your real location are listed last.
-• A new portal tells you how far away it is.
 
 Fixed
 • Swerving could push vehicles past their top speed (the Speed Demon past 400 mph). Top speeds are now firm.
