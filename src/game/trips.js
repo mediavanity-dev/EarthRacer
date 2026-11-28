@@ -29,7 +29,7 @@ export const MODES = {
     speed: () => 37, // about 20 knots
   },
   plane: {
-    name: 'Flight', icon: '✈️', stop: 'airport', detour: 1.05, wait: 10, after: 10, min: 120, max: 16000, canStopEarly: false,
+    name: 'Flight', icon: '✈️', stop: 'airport', detour: 1.05, wait: 1, after: 1, min: 120, max: 16000, canStopEarly: false,
     speed: (km) => (km < 600 ? 550 : 800),
   },
 };
@@ -85,6 +85,15 @@ export function positionAt(trip, now = Date.now()) {
   let lon = trip.from.lon + dLon * f;
   if (lon > 180) lon -= 360; else if (lon < -180) lon += 360;
   return { lat: trip.from.lat + (trip.to.lat - trip.from.lat) * f, lon, f };
+}
+
+/** Boarding or getting-off time left as m:ss, or null outside those (for the on-screen countdown). */
+export function stepClock(trip, now = Date.now()) {
+  const m = MODES[trip.mode], b = trip.start + m.wait * MIN - now, a = trip.start + trip.duration - now;
+  const fmt = (ms) => { const sec = Math.ceil(ms / 1000); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
+  if (b > 0) return { what: trip.mode === 'plane' ? 'Boarding' : 'Leaving in', left: fmt(b) };
+  if (m.after && a > 0 && a <= m.after * MIN) return { what: 'Getting off', left: fmt(a) };
+  return null;
 }
 
 export function fmtDuration(ms) {
