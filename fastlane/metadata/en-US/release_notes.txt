@@ -9,6 +9,7 @@ New
 • Split screen on a computer: one player on the keyboard, the other on a controller.
 • Trains run on the railway lines, about as often as real ones: main-line trains, metros, light rail and trams. They don't stop for you, so look both ways at level crossings.
 • Street view: tap 📷 to see street photos of where you are (from Mapillary), or open Google Street View there.
+• Outrun the map and a giant quarter-pipe turns you round while it catches up.
 
 Better
 • Crash into a car and it gets shoved, spins and dents, by weight: a truck sends it flying, a bike barely moves it.
@@ -28,3 +29,5 @@ Fixed
 • Buildings and shop signs no longer flicker where two were drawn in the same place.
 • "Start where I am" asks for your location as EarthRacer, not "localhost".
 • Cooler and kinder to the battery: the game no longer draws faster than it needs to.
+• At very high speed the game holds less of the map in memory, so phones are less likely to close it.
+• On a keyboard, if a drift won't start, the game suggests Shift for the handbrake (many keyboards can't read Space, W and an arrow at once).
