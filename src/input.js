@@ -93,7 +93,8 @@ export class Input {
     if (this.source === 'touch' && strong > 0.3) navigator.vibrate?.(Math.min(120, ms));
   }
 
-  poll() {
+  /** opts.noPad: leave the controller out (in split screen it belongs to player 2). */
+  poll(opts = {}) {
     const s = this.state;
     const k = (list) => list.some((c) => this.keys.has(c));
     let throttle = k(KEYS.up) ? 1 : 0, brake = k(KEYS.down) ? 1 : 0;
@@ -102,7 +103,7 @@ export class Input {
     let steer = (k(KEYS.right) ? 1 : 0) - (k(KEYS.left) ? 1 : 0), hand = k(KEYS.hand), analog = false;
 
     // gamepad
-    const gp = this.pad != null ? navigator.getGamepads?.()[this.pad] : (navigator.getGamepads?.() || []).find((g) => g);
+    const gp = opts.noPad ? null : this.pad != null ? navigator.getGamepads?.()[this.pad] : (navigator.getGamepads?.() || []).find((g) => g);
     if (gp) {
       if (this.pad == null) this.pad = gp.index;
       const b = (i) => gp.buttons[i] ? gp.buttons[i].value || (gp.buttons[i].pressed ? 1 : 0) : 0;
@@ -143,6 +144,22 @@ export class Input {
     s.throttle = throttle; s.brake = brake; s.steer = steer; s.handbrake = hand; s.analog = analog;
     s.lookX = this.enabled ? lookX : 0; s.lookY = this.enabled ? lookY : 0; s.lookReset = lookReset;
     return s;
+  }
+
+  /** Player 2 in split screen: the first controller only. -> state, plus edge-triggered buttons (horn, swap). */
+  pollPad() {
+    const gp = (navigator.getGamepads?.() || []).find((g) => g);
+    const out = { throttle: 0, brake: 0, steer: 0, handbrake: false, analog: true, horn: false, swap: false, connected: !!gp };
+    if (!gp) return out;
+    const b = (i) => gp.buttons[i] ? gp.buttons[i].value || (gp.buttons[i].pressed ? 1 : 0) : 0;
+    const sx = gp.axes[0] || 0, dz = 0.12;
+    const sx2 = Math.abs(sx) < dz ? 0 : Math.sign(sx) * ((Math.abs(sx) - dz) / (1 - dz)) ** 1.6;
+    const sens = this.sens || 1;
+    out.throttle = b(7); out.brake = b(6); out.steer = Math.sign(sx2) * Math.min(1, Math.abs(sx2) * sens); out.handbrake = b(0) > 0.5; out.sens = sens;
+    this.p2Prev ||= [];
+    const edge = (i) => { const now = !!gp.buttons[i]?.pressed, was = this.p2Prev[i]; this.p2Prev[i] = now; return now && !was; };
+    out.horn = edge(2); out.swap = edge(3);
+    return out;
   }
 
   // ---------- on-screen controls ----------

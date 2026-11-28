@@ -12,41 +12,41 @@ export const VEHICLES = {
   bike: {
     name: 'Bicycle', icon: '🚲', top: 11, accel: 1.5, brake: 5, grip: 11, wheelbase: 1.05, steer: 0.6, radius: 0.6,
     fuel: 0, use: 0, terrain: 'land', offroadTop: 6, sound: 'bike', camDist: 5.5, camH: 2.2, mass: 0.1, tough: 1.6,
-    about: 'Real speed: about 25-40 km/h. Quiet, nimble, goes down paths.',
+    about: 'About 25-40 km/h. Quiet and nimble, and it can use paths.',
   },
   car: {
     name: 'Car', icon: '🚗', top: 50, accel: 3.0, brake: 8.5, grip: 8.5, wheelbase: 2.7, steer: 0.55, radius: 1.6,
     fuel: 50, use: 0.07, terrain: 'land', offroadTop: 9, sound: 'car', camDist: 8, camH: 3.2, mass: 1, tough: 1,
-    about: 'Real top speed 180 km/h, within the speed limit plus 10 mph. 50 L tank, about 700 km.',
+    about: 'Top speed 180 km/h, within the speed limit plus 10 mph. 50 L tank, about 700 km.',
   },
   truck: {
     name: 'Delivery truck', icon: '🚚', top: 25, accel: 1.15, brake: 5.5, grip: 6, wheelbase: 4.6, steer: 0.5, radius: 2.4,
     fuel: 300, use: 0.3, terrain: 'land', offroadTop: 6, sound: 'truck', camDist: 13, camH: 5, mass: 4, tough: 0.45,
-    about: 'Governed to 90 km/h like real trucks. Slow to get going, very hard to damage. Deliveries pay double.',
+    about: 'Limited to 90 km/h, like most trucks. Slow to get going, very hard to damage. Deliveries pay double.',
     unlock: { what: 'Complete 3 deliveries', key: 'deliveries', n: 3 },
   },
   pickup: {
     name: 'Pickup truck', icon: '🛻', top: 45, accel: 2.6, brake: 7.5, grip: 7.4, wheelbase: 3.2, steer: 0.5, radius: 1.8,
     fuel: 80, use: 0.11, terrain: 'land', offroadK: 0.97, offroadTop: 15, sound: 'car', camDist: 9, camH: 3.6, mass: 1.6, tough: 0.7,
-    about: 'Four-wheel drive: barely slows down off-road. Real top speed about 170 km/h.',
+    about: 'Four-wheel drive: barely slows down off-road. Top speed about 170 km/h.',
     unlock: { what: 'Complete 5 deliveries', key: 'deliveries', n: 5 },
   },
   moto: {
     name: 'Motorcycle', icon: '🏍️', top: 55, accel: 5, brake: 9, grip: 9.5, wheelbase: 1.5, steer: 0.55, radius: 0.7,
     fuel: 15, use: 0.045, terrain: 'land', offroadK: 0.8, offroadTop: 12, sound: 'moto', camDist: 6, camH: 2.4, mass: 0.3, lean: true, tough: 1.5,
-    about: 'Quick off the line and leans into corners. Real top speed about 200 km/h.',
+    about: 'Quick off the line and leans into corners. Top speed about 200 km/h.',
     unlock: { what: 'Land 10 jumps', key: 'jumps', n: 10 },
   },
   dog: {
     name: 'Dog', icon: '🐕', top: 25, accel: 4, brake: 10, grip: 10, wheelbase: 1.3, steer: 0.55, radius: 0.6,
     fuel: 0, use: 0, terrain: 'land', amphibious: true, waterK: 0.14, offroadK: 1, offroadTop: 25, sound: 'dog', camDist: 5, camH: 2, mass: 0.2, feat: true, tough: 0.9,
-    about: 'A very good dog that runs as fast as a car, paddles slowly through water and barks on the horn. Never needs fuel.',
+    about: 'Runs as fast as a car, swims slowly and barks on the horn. Never needs fuel.',
     unlock: { what: 'Drive 1,000 miles (1,609 km)', key: 'km', n: 1609 },
   },
   cart: {
     name: 'Shopping cart', icon: '🛒', top: 18, accel: 2.6, brake: 6, grip: 7, wheelbase: 1, steer: 0.6, radius: 0.6,
     fuel: 0, use: 0, terrain: 'land', offroadK: 0.7, offroadTop: 10, sound: 'cart', camDist: 5, camH: 2, mass: 0.2, feat: true, tough: 1.3,
-    about: 'One wheel always wants to go its own way. Rattles magnificently.',
+    about: 'One wheel pulls to the side, and it rattles.',
     unlock: { what: 'Grab 50 stunt stars', key: 'stars', n: 50 },
   },
   duck: {
@@ -58,13 +58,13 @@ export const VEHICLES = {
   para: {
     name: 'Paramotor', icon: '🪂', top: 13, accel: 1.4, brake: 2, grip: 6, wheelbase: 2, steer: 0.5, radius: 1.2,
     fuel: 12, use: 0.11, terrain: 'air', offroadTop: 13, sound: 'para', camDist: 11, camH: 4.5, mass: 0.3, tough: 1.3,
-    about: 'A powered paraglider: about 40 km/h, up to 150 m above the ground. Take off from a park or open field; the real wind pushes you about.',
+    about: 'A powered paraglider: about 40 km/h, up to 150 m above the ground. Take off from a park or open field; the wind pushes you about.',
     unlock: { what: 'Finish a daily race', key: 'races', n: 1 },
   },
   boat: {
     name: 'Speedboat', icon: '🚤', top: 20, accel: 2.2, brake: 2.5, grip: 2.2, wheelbase: 4, steer: 0.5, radius: 2,
     fuel: 150, use: 0.5, terrain: 'water', offroadTop: 0, sound: 'boat', camDist: 10, camH: 4, mass: 1.5, tough: 0.8,
-    about: 'Real top speed about 70 km/h. Water only. Summon it at a shore.',
+    about: 'Top speed about 70 km/h. Water only. Summon it at a shore.',
     unlock: { what: 'Reach the water\'s edge (river, lake or sea)', key: 'shore', n: 1 },
   },
   demon: {

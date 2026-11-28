@@ -198,7 +198,7 @@ function startScreen() {
   if (p) {
     const o = overlay(`<div class="card">
       <h1>Earth<em>Racer</em></h1>
-      <p>You carry on from exactly where you stopped last time. That's the rule.</p>
+      <p>You carry on from exactly where you stopped last time.</p>
       <button class="btn primary" id="go">▶ Carry on<small id="lastwhere">${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}</small></button>
       <button class="btn purple" id="rnd" ${randomLeft() ? '' : 'disabled'}>🎲 Random placement<small>${randomLeft()} of ${RANDOM_PER_WEEK} left this week. Get dropped somewhere on Earth and work out where you are.</small></button>
       ${modeChooser()}
@@ -212,7 +212,7 @@ function startScreen() {
   }
   const o = overlay(`<div class="card">
     <h1>Earth<em>Racer</em></h1>
-    <p>Drive, ride and sail the real world, built from open map data. Real streets, real speeds, real weather.
+    <p>Drive, ride and sail the real world, built from open map data. Streets, speed limits and weather come from where you are.
     <b>Choose your starting point carefully:</b> after today you carry on from where you last stopped, unless you take a trip or a random placement.</p>
     <button class="btn primary" id="here">📍 Start where I am<small>Uses your device's location once</small></button>
     <div class="row" style="margin-top:8px"><input type="search" id="q" placeholder="Or search a town, street or landmark…" /></div>
@@ -351,7 +351,7 @@ function markDay() {
   st.bestStreak = Math.max(st.bestStreak || 0, st.streak);
   st.days = (st.days || 0) + 1; st.lastDay = key;
   save();
-  if (st.streak >= 2) toast(`🔥 Day ${st.streak} in a row. Keep it going!`, { ms: 3500 });
+  if (st.streak >= 2) toast(`🔥 Day ${st.streak} in a row.`, { ms: 3500 });
 }
 
 function firstStart(lat, lon) {
@@ -667,7 +667,7 @@ function tickActivity(dt) {
       if (a.recT >= 0.2) { a.recT = 0; a.rec.push(+game.lat.toFixed(6), +game.lon.toFixed(6), +v.heading.toFixed(2)); }
     }
     if (d < 16) {
-      if (a.idx === 0) { a.t = 0; a.rec = []; sound.checkpoint(); toast('🏁 Go go go!', { ms: 1500 }); if (a.ghost) startGhost(a.ghost); }
+      if (a.idx === 0) { a.t = 0; a.rec = []; sound.checkpoint(); toast('🏁 Go!', { ms: 1500 }); if (a.ghost) startGhost(a.ghost); }
       else sound.checkpoint();
       a.idx++;
       if (a.idx >= cps.length) {
@@ -735,7 +735,7 @@ function checkUnlocks() {
   for (const k of VEHICLE_ORDER) {
     const u = VEHICLES[k].unlock;
     if (!u || profile.unlocked[k]) continue;
-    if (featCount(u.key, profile) >= u.n) { profile.unlocked[k] = true; save(); sound.chime(); toast(`🔓 ${VEHICLES[k].feat ? 'Unlocked something odd' : 'New vehicle'}: <b>${VEHICLES[k].icon} ${VEHICLES[k].name}</b>. Summon it from the Garage.`, { ms: 7000 }); }
+    if (featCount(u.key, profile) >= u.n) { profile.unlocked[k] = true; save(); sound.chime(); toast(`🔓 ${VEHICLES[k].feat ? 'Unlocked' : 'New vehicle'}: <b>${VEHICLES[k].icon} ${VEHICLES[k].name}</b>. Summon it from the Garage.`, { ms: 7000 }); }
   }
   profile.feats ||= {};
   for (const b of BADGES) {
@@ -884,7 +884,7 @@ async function updateWeather(force = false) {
   game.weather = w;
   sky.setWeather(w);
   if (was !== w.kind && (w.kind === 'rain' || w.kind === 'snow' || w.kind === 'storm' || w.kind === 'fog')) {
-    toast(`${w.icon} ${w.label} here right now: ${w.kind === 'fog' ? 'low visibility' : 'less grip, take it easy in the corners'}.`, { ms: 5000 });
+    toast(`${w.icon} ${w.label} here right now: ${w.kind === 'fog' ? 'low visibility' : 'less grip in the corners'}.`, { ms: 5000 });
   }
   refreshHud(true);
 }
@@ -967,7 +967,7 @@ function renderTab(tab, body) {
   const ch = world.chunkAt(v.x, v.z);
   if (tab === 'garage') {
     body.innerHTML = `<h3>Service</h3><div class="list" id="svc"></div>
-      <h3>Summon a vehicle</h3><p class="note">It turns up right where you are. Better vehicles are earned. Speeds are real-world: up to the posted limit plus 10 mph where the map knows it, otherwise ${game.mph ? `${Math.round(SPEED_CAP * 3.6 / 1.609)} mph` : `${Math.round(SPEED_CAP * 3.6)} km/h`}.</p><div class="list" id="vl"></div>
+      <h3>Summon a vehicle</h3><p class="note">It turns up right where you are. Better vehicles are earned. Top speed is the posted limit plus 10 mph where the map knows it, otherwise ${game.mph ? `${Math.round(SPEED_CAP * 3.6 / 1.609)} mph` : `${Math.round(SPEED_CAP * 3.6)} km/h`}.</p><div class="list" id="vl"></div>
       ${Object.keys(profile.paints || {}).length ? `<h3>🎨 Paint jobs</h3><p class="note">Earned with the biggest feats. For your ${esc(VEHICLES[v.kind].name.toLowerCase())}:</p><div class="chips" id="paints"><button class="chip" data-p="">Factory</button>${Object.keys(profile.paints).map((k) => `<button class="chip" data-p="${k}" style="border-color:${PAINTS[k].color}">${PAINTS[k].name}</button>`).join('')}</div>` : ''}`;
     body.querySelectorAll('#paints .chip').forEach((b) => b.onclick = () => {
       (profile.paint ||= {})[v.kind] = b.dataset.p || null; save();
@@ -994,7 +994,7 @@ function renderTab(tab, body) {
     const oof = svc.querySelector('#oof'); if (oof) oof.onclick = () => { closePanel(); outOfFuel(); };
   } else if (tab === 'jobs') {
     const jobs = ch ? jobsFor(ch, world) : [];
-    body.innerHTML = `<h3>Today's delivery jobs here</h3><p class="note">Pick up from a real shop or café nearby and deliver across town against the clock. Everyone in this area gets the same jobs today. New ones tomorrow.${v.kind === 'truck' ? ' <b>Truck bonus: double pay.</b>' : ''}</p><div class="list" id="jl"></div>`;
+    body.innerHTML = `<h3>Today's delivery jobs here</h3><p class="note">Pick up from a shop or café nearby and deliver across town against the clock. Everyone in this area gets the same jobs today. New ones tomorrow.${v.kind === 'truck' ? ' <b>Truck bonus: double pay.</b>' : ''}</p><div class="list" id="jl"></div>`;
     const jl = body.querySelector('#jl');
     if (game.activity) jl.innerHTML = `<div class="item"><div class="ic">⏱️</div><div class="tx"><b>You're already on a ${game.activity.type === 'job' ? 'job' : 'race'}</b></div><button id="cx">Abandon</button></div>`;
     const cx = jl.querySelector('#cx'); if (cx) cx.onclick = () => { endActivity('Abandoned.'); openPanel('jobs'); };
@@ -1008,7 +1008,7 @@ function renderTab(tab, body) {
   } else if (tab === 'race') {
     const race = ch ? raceFor(ch, world) : null;
     const best = race && profile.races[race.key]?.best;
-    body.innerHTML = `<h3>Today's race here</h3><p class="note">A route through real streets in this area, the same for everyone today. Beat your best time and race your own ghost. Traffic is real, so mind it.</p>`;
+    body.innerHTML = `<h3>Today's race here</h3><p class="note">A route through the streets here, the same for everyone today. Race your best time and your own ghost. Watch for traffic.</p>`;
     if (!race) body.insertAdjacentHTML('beforeend', '<p class="note">The roads here don\'t make a good race route. Try a different area.</p>');
     else {
       const d = document.createElement('div'); d.className = 'item';
@@ -1048,8 +1048,9 @@ function renderTab(tab, body) {
     const g = body.querySelector('#g'); if (g) g.onclick = () => { closePanel(); openGuess(); };
   } else if (tab === 'settings') {
     body.innerHTML = `${isTouch ? `<h3>Steering</h3><div class="seg" id="ctl">${['tilt', 'slider', 'buttons'].map((m) => `<button data-m="${m}" class="${input.mode === m ? 'on' : ''}">${{ tilt: '📱 Tilt (wheel)', slider: '👍 Slider', buttons: '◀ ▶ Buttons' }[m]}</button>`).join('')}</div>${input.mode === 'tilt' ? '<button class="btn" id="cal">Recalibrate tilt</button>' : ''}` : ''}
-      <h3>Play mode</h3><div class="seg" id="modeseg">${[['explorer', '🧭 Explorer', 'The real world, with a few stunts to find'], ['gamer', '🎮 Gamer', 'Ramps, coins, boosts and cones everywhere']].map(([k, n, d]) => `<button data-m="${k}" class="${(profile.settings.mode || 'explorer') === k ? 'on' : ''}">${n}<br><small>${d}</small></button>`).join('')}</div>
+      <h3>Play mode</h3><div class="seg" id="modeseg">${[['explorer', '🧭 Explorer', 'The world as it is, with a few stunts to find'], ['gamer', '🎮 Gamer', 'Ramps, coins, boosts and cones everywhere']].map(([k, n, d]) => `<button data-m="${k}" class="${(profile.settings.mode || 'explorer') === k ? 'on' : ''}">${n}<br><small>${d}</small></button>`).join('')}</div>
       <h3>Steering sensitivity</h3><div class="seg" id="sensseg">${[['Gentle', 0.7], ['Normal', 1], ['Sharp', 1.4]].map(([n, k]) => `<button data-k="${k}" class="${(profile.settings.sens ?? 1) === k ? 'on' : ''}">${n}</button>`).join('')}</div><p class="note">For every way of steering: keys, a controller, tilt, the slider and the buttons.</p>
+      ${!isTouch ? `<h3>Two players</h3><p class="note">Split screen on this computer: player 1 drives on the keyboard, player 2 on a controller.</p><button class="btn" id="splitb">${split ? 'End split screen' : '🎮 Start split screen'}</button>` : ''}
       <h3>Camera</h3><div class="seg" id="camseg">${['Chase', 'Far', 'Bumper', 'Top down'].map((n, i) => `<button data-c="${i}" class="${game.cam === i ? 'on' : ''}">${n}</button>`).join('')}</div>
       <h3>Traffic</h3><div class="seg" id="trf">${[['None', 0], ['Light', 0.5], ['Normal', 1], ['Busy', 1.5]].map(([n, d]) => `<button data-d="${d}" class="${traffic.density === d ? 'on' : ''}">${n}</button>`).join('')}</div>
       <h3>Sound</h3><div class="seg"><button id="snd" class="${profile.settings.mute ? '' : 'on'}">${profile.settings.mute ? '🔇 Off' : '🔊 On'}</button></div>
@@ -1059,6 +1060,7 @@ function renderTab(tab, body) {
     if (window.__tipJar) tipJar(body);
     body.querySelectorAll('#ctl button').forEach((b) => b.onclick = async () => { await setControls(b.dataset.m); openPanel('settings'); });
     const cal = body.querySelector('#cal'); if (cal) cal.onclick = () => { closePanel(); calibrateTilt(); };
+    body.querySelector('#splitb')?.addEventListener('click', () => { if (split) { stopSplit(); openPanel('settings'); } else startSplit(); });
     body.querySelectorAll('#sensseg button').forEach((b) => b.onclick = () => { profile.settings.sens = +b.dataset.k; input.sens = +b.dataset.k; save(); openPanel('settings'); });
     body.querySelectorAll('#modeseg button').forEach((b) => b.onclick = () => { setMode(b.dataset.m); openPanel('settings'); });
     body.querySelectorAll('#camseg button').forEach((b) => b.onclick = () => { game.cam = +b.dataset.c; profile.settings.cam = game.cam; save(); openPanel('settings'); });
@@ -1067,9 +1069,9 @@ function renderTab(tab, body) {
     const wipe = body.querySelector('#wipe');
     wipe.onclick = () => confirmStartOver();
   } else if (tab === 'help') {
-    body.innerHTML = `<h3>The rules</h3><p class="note">The world is the real one, built live from OpenStreetMap. You can only carry on from where you last stopped. To go somewhere new, drive there, take a bus, train, ferry or plane from a real stop (in real time), or use a random placement (${RANDOM_PER_WEEK} a week). Vehicles go at real-world speeds: up to the posted speed limit plus 10 mph where OpenStreetMap knows it, otherwise ${Math.round(SPEED_CAP * 3.6)} km/h, and never faster than the map can load.</p>
-      <h3>Things to do</h3><p class="note">📦 <b>Jobs</b>: deliveries between real shops. 🏁 <b>Races</b>: a daily route in each area, with your ghost. 🛣️ <b>Street atlas</b>: every named street you drive. 🌉 <b>Bridges</b>. 📮 <b>Postcards</b>: drive past landmarks. ${flag('UN')} <b>Countries</b>. ✨ <b>Style</b>: near misses, drifts, overtakes, slipstreams and airtime build a combo; crashes break it.</p>
-      <h3>Real conditions</h3><p class="note">Weather is live where you are: rain and snow cut grip, fog shortens the view, headwinds slow bikes and boats. Day and night follow the real sun. Traffic drives on the correct side for the country. Fuel runs out, so stop at real fuel stations.</p>
+    body.innerHTML = `<h3>The rules</h3><p class="note">The world is built live from OpenStreetMap. You can only carry on from where you last stopped. To go somewhere new, drive there, take a bus, train, ferry, cruise or plane from a stop (trips take as long as they really would), or use a random placement (${RANDOM_PER_WEEK} a week). Top speed is the posted speed limit plus 10 mph where OpenStreetMap knows it, otherwise ${Math.round(SPEED_CAP * 3.6)} km/h, and never faster than the map can load.</p>
+      <h3>Things to do</h3><p class="note">📦 <b>Jobs</b>: deliveries between shops. 🏁 <b>Races</b>: a daily route in each area, with your ghost. 🛣️ <b>Street atlas</b>: every named street you drive. 🌉 <b>Bridges</b>. 📮 <b>Postcards</b>: drive past landmarks. ${flag('UN')} <b>Countries</b>. ✨ <b>Style</b>: near misses, drifts, overtakes, slipstreams and airtime build a combo; crashes break it.</p>
+      <h3>Conditions</h3><p class="note">Weather is live where you are: rain and snow cut grip, fog shortens the view, headwinds slow bikes and boats. Day and night follow the sun where you are. Traffic drives on the correct side for the country. Fuel runs out, so stop at fuel stations.</p>
       <h3>Controls</h3><table class="keys">
       <tr><td>Drive / brake &amp; reverse</td><td><span class="kbd">W</span>/<span class="kbd">S</span> or arrows · RT / LT</td></tr>
       <tr><td>Steer</td><td><span class="kbd">A</span>/<span class="kbd">D</span> · left stick</td></tr>
@@ -1360,12 +1362,13 @@ const cruiseStops = {};
 // a duration, so the app (or the phone) can be off while you travel.
 function openTripPlanner(stop) {
   const m = MODES[stop.kind];
+  stopSplit(); // trips are for one
   if (game.activity) { toast('Finish or abandon your job or race first.'); return; }
   input.enabled = false;
   const from = { lat: game.lat, lon: game.lon, name: stop.name || `the ${m.stop}` };
   if (stop.kind === 'cruise') { cruisePlanner(stop, from, m); return; }
   const o = overlay(`<div class="card"><h2>${m.icon} ${m.name} from ${esc(from.name)}</h2>
-    <p>Where to? Pick a town, city or place. You'll travel in real time: the ${m.name.toLowerCase()} takes as long as it would really take, and the app can be closed while you wait.</p>
+    <p>Where to? Pick a town, city or place. The ${m.name.toLowerCase()} takes as long as it really would, and you can close the app while you wait.</p>
     <input type="search" id="tq" placeholder="Search a destination…" />
     <div class="results" id="tr"></div>
     <div id="te"></div>
@@ -1447,7 +1450,7 @@ function tripScreen() {
   const m = MODES[t.mode];
   const arrive = new Date(t.start + t.duration);
   const early = m.canStopEarly === true || (m.canStopEarly === 'boat' && profile.unlocked.boat);
-  const watch = t.mode === 'plane' ? ['✈️ Window seat', 'Look out at the real ground below'] : t.mode === 'ferry' ? ['⛴️ Watch from the deck', 'Stand on deck as the ferry crosses'] : t.mode === 'cruise' ? ['🛳️ Out on deck', 'Watch the coast go by from the top deck'] : null;
+  const watch = t.mode === 'plane' ? ['✈️ Window seat', 'Look down at the ground below'] : t.mode === 'ferry' ? ['⛴️ Watch from the deck', 'Stand on deck as the ferry crosses'] : t.mode === 'cruise' ? ['🛳️ Out on deck', 'Watch the coast go by from the top deck'] : null;
   const o = overlay(`<div class="card trip"><h2>${m.icon} On the ${m.name.toLowerCase()} to ${esc(t.to.name)}</h2>
     <canvas id="tmap" class="tmap" width="760" height="340"></canvas>
     <p class="note" id="tover">&nbsp;</p>
@@ -1607,6 +1610,7 @@ function arriveTrip() {
 
 function finishTrip(lat, lon, kindOverride, msg, km, loading = null) {
   clearInterval(tripTimer);
+  stopSplit();
   endWatchUI();
   profile.trip = null;
   profile.stats.trips = (profile.stats.trips || 0) + 1;
@@ -1686,7 +1690,7 @@ function landSkydive() {
   game.sky = null;
   say('Oof!', 900);
   setTimeout(() => { $('#skydive').hidden = true; }, 500);
-  finishTrip(s.lat, s.lon, null, `🪂 You jumped from ${Math.round(s.alt0).toLocaleString()} m and landed ${s.where}. Your ${VEHICLES[s.kind].name.toLowerCase()} was somehow waiting.`, s.km, '🪂 Landing…');
+  finishTrip(s.lat, s.lon, null, `🪂 You jumped from ${Math.round(s.alt0).toLocaleString()} m and landed ${s.where}. Your ${VEHICLES[s.kind].name.toLowerCase()} is there.`, s.km, '🪂 Landing…');
 }
 
 // ---------- watching a trip: the window seat (plane) and the deck (ferry) ----------
@@ -2049,7 +2053,7 @@ function autopilotHere(v) {
 }
 function showAutopilotButton(v) {
   const b = $('#b-auto'), here = !!autopilotHere(v);
-  if (game.autopilot && !here) { game.autopilot = false; toast('🤖 Autopilot off: the highway ends here. Your wheel.'); }
+  if (game.autopilot && !here) { game.autopilot = false; toast('🤖 Autopilot off. The highway ends here.'); }
   const show = here || game.autopilot;
   if (b.hidden === show) b.hidden = !show;
   b.classList.toggle('on', !!game.autopilot);
@@ -2066,7 +2070,7 @@ function toggleAutopilot() {
 function autopilotInput(v, inp) {
   // you take over: any real steering or braking
   game.autoGrace = Math.max(0, (game.autoGrace || 0) - 1 / 60);
-  if (!game.autoGrace && (Math.abs(inp.steer) > (input.mode === 'tilt' && input.tilt.on ? 0.55 : 0.3) || inp.brake > 0.2 || inp.handbrake)) { game.autopilot = false; toast('🤖 Autopilot off. Your wheel.'); showAutopilotButton(v); return null; }
+  if (!game.autoGrace && (Math.abs(inp.steer) > (input.mode === 'tilt' && input.tilt.on ? 0.55 : 0.3) || inp.brake > 0.2 || inp.handbrake)) { game.autopilot = false; toast('🤖 Autopilot off.'); showAutopilotButton(v); return null; }
   const [fx, fz] = v.fwd();
   // stay on *this* road: the one we're on, or one carrying straight on from it (not a slip road,
   // the other carriageway or a road alongside)
@@ -2092,7 +2096,7 @@ function autopilotInput(v, inp) {
   let mine = game.apRoad && world.roadAt(v.x, v.z, 10, (q) => q === game.apRoad.road);
   if (mine && pastEnd(mine, game.apRoad.dir)) mine = null;
   const r = mine || pick(v.x + go[0] * 6, v.z + go[1] * 6, 25, go[0], go[1]);
-  const handBack = (why) => { game.autopilot = false; toast(`🤖 Autopilot off: ${why}. Your wheel.`); showAutopilotButton(v); return null; };
+  const handBack = (why) => { game.autopilot = false; toast(`🤖 Autopilot off (${why}).`); showAutopilotButton(v); return null; };
   if (!r) return handBack("can't see where the highway goes");
   const dir = r.dirX * fx + r.dirZ * fz >= 0 ? 1 : -1; // follow the road the way we're facing
   if ((r.road.f & 4) && dir < 0) { game.autopilot = false; toast('🤖 Autopilot off: wrong way down a one-way road.'); showAutopilotButton(v); return null; }
@@ -2178,8 +2182,7 @@ function tickCamCtl(dt, inp) {
 }
 
 // ---------- vehicle visuals ----------
-function updateModel(dt) {
-  const v = game.v, m = game.model;
+function updateModel(dt, v = game.v, m = game.model, st = game) {
   const waves = game.waves || 0;
   const t = performance.now() / 1000;
   let bob = 0, wavePitch = 0, waveRoll = 0;
@@ -2189,9 +2192,9 @@ function updateModel(dt) {
   }
   // suspension: the body follows small changes in the ground smoothly instead of copying every one
   const gy = v.y;
-  if (game.visY == null || !v.grounded || v.spec.terrain !== 'land' || Math.abs(gy - game.visY) > 1.5) game.visY = gy;
-  else game.visY += (gy - game.visY) * Math.min(1, dt * 14);
-  m.group.position.set(v.x, game.visY + bob, v.z);
+  if (st.visY == null || !v.grounded || v.spec.terrain !== 'land' || Math.abs(gy - st.visY) > 1.5) st.visY = gy;
+  else st.visY += (gy - st.visY) * Math.min(1, dt * 14);
+  m.group.position.set(v.x, st.visY + bob, v.z);
   m.group.rotation.set(0, 0, 0);
   m.group.rotation.order = 'YXZ';
   m.group.rotation.y = -v.heading;
@@ -2217,27 +2220,28 @@ function updateModel(dt) {
   const ud = m.group.userData;
   if (ud.legs) {
     const sp = Math.abs(v.vf), amp = Math.min(0.9, sp / 6);
-    game.gait = (game.gait || 0) + dt * (4 + sp * (ud.duck ? 2.2 : 1.2) + (v.wet ? 3 : 0)); // paddling is quick
-    for (const l of ud.legs) l.hip.rotation.x = Math.sin(game.gait + l.ph) * (v.wet ? 0.5 : amp);
+    st.gait = (st.gait || 0) + dt * (4 + sp * (ud.duck ? 2.2 : 1.2) + (v.wet ? 3 : 0)); // paddling is quick
+    for (const l of ud.legs) l.hip.rotation.x = Math.sin(st.gait + l.ph) * (v.wet ? 0.5 : amp);
     if (ud.tail) ud.tail.rotation.y = Math.sin(t * (sp > 1 ? 14 : 8)) * 0.6;
-    if (ud.head) ud.head.position.y = 1.08 + Math.abs(Math.sin(game.gait)) * 0.05 * amp;
+    if (ud.head) ud.head.position.y = 1.08 + Math.abs(Math.sin(st.gait)) * 0.05 * amp;
     if (ud.duck) {
       // on land the duck stands up on its legs and waddles side to side; afloat they're tucked under
       const stand = v.wet && v.grounded !== false ? 0 : 0.85;
-      game.duckLift = (game.duckLift ?? stand) + (stand - (game.duckLift ?? stand)) * Math.min(1, dt * 6);
-      m.body.position.y = game.duckLift;
-      for (const l of ud.legs) l.hip.visible = game.duckLift > 0.3;
-      m.body.rotation.z = !v.wet ? Math.sin(game.gait) * 0.12 * Math.min(1, sp / 3) : 0;
+      st.duckLift = (st.duckLift ?? stand) + (stand - (st.duckLift ?? stand)) * Math.min(1, dt * 6);
+      m.body.position.y = st.duckLift;
+      for (const l of ud.legs) l.hip.visible = st.duckLift > 0.3;
+      m.body.rotation.z = !v.wet ? Math.sin(st.gait) * 0.12 * Math.min(1, sp / 3) : 0;
       // wings: out and flapping while it flies
       const fly = v.flapping || (!v.grounded && !v.wet) || v.boatAir;
       for (const wg of ud.wings) { wg.g.visible = fly; wg.g.rotation.z = fly ? wg.sx * (v.flapping ? Math.sin(t * 26) * 0.7 : 0.15) : 0; }
-    } else m.body.position.y = Math.abs(Math.sin(game.gait)) * 0.06 * amp - (v.wet ? 0.35 : 0); // a swimming dog sits low
+    } else m.body.position.y = Math.abs(Math.sin(st.gait)) * 0.06 * amp - (v.wet ? 0.35 : 0); // a swimming dog sits low
   }
   if (v.kind === 'cart' && Math.abs(v.vf) > 1) m.body.rotation.z = Math.sin(t * 22) * 0.02; // that one wobbly wheel
   // brake lights
-  if (m.tailM) m.tailM.color.set(game.braking ? '#ff2a1a' : sky.night > 0.5 ? '#c02020' : '#7a1010');
-  if (m.revM) m.revM.color.set(game.reversing ? '#ffffff' : '#55585c');
+  if (m.tailM) m.tailM.color.set(st.braking ? '#ff2a1a' : sky.night > 0.5 ? '#c02020' : '#7a1010');
+  if (m.revM) m.revM.color.set(st.reversing ? '#ffffff' : '#55585c');
   if (m.headM) m.headM.color.set(sky.night > 0.4 ? '#ffffff' : '#fff6d8');
+  if (st !== game) return; // (the shadow and headlights follow player 1)
   // shadow
   const g = v.wet ? v.y : (v.road ? v.road.y : world.groundAt(v.x, v.z) ?? v.y);
   shadow.position.set(v.x, g + 0.06, v.z);
@@ -2248,6 +2252,93 @@ function updateModel(dt) {
   headlight.intensity = sky.night > 0.25 ? 260 * sky.night : 0;
   headlight.position.set(v.x + fx * 1.5, v.y + 1.1, v.z + fz * 1.5);
   headTarget.position.set(v.x + fx * 25, v.y - 1, v.z + fz * 25);
+}
+
+// ---------- split screen (computers): player 2 on a controller ----------
+// Player 1 keeps the keyboard, the HUD and the left half; player 2 drives on the first controller
+// in the right half, with a small speed panel. The world loads round the point between you, so
+// whoever races ahead meets the map-loading limit and the pair stays together. You can bump each other.
+let split = null;
+const P2_KINDS = () => VEHICLE_ORDER.filter((k) => (profile.unlocked[k] || VEHICLES[k].always) && VEHICLES[k].terrain === 'land' && k !== 'glider');
+function startSplit() {
+  if (isTouch) return;
+  if (!input.pollPad().connected) { toast('🎮 Connect a controller for player 2 (press any button on it), then try again.', { ms: 5000 }); return; }
+  const v = game.v, [fx, fz] = v.fwd();
+  const kind = VEHICLES[v.kind].terrain === 'land' ? v.kind : 'car';
+  const x = v.x - fz * 5, z = v.z + fx * 5; // alongside, on the right
+  split = { v: new VehicleState(kind, x, z, v.heading), m: buildModel(kind, '#2f9e5b'), cam: new THREE.PerspectiveCamera(60, 1, 0.5, 6000), pos: new THREE.Vector3(), look: new THREE.Vector3(), init: false };
+  split.v.y = world.groundAt(x, z) ?? v.y; split.v.init = false;
+  scene.add(split.m.group);
+  $('#p2hud').hidden = false; $('#splitbar').hidden = false;
+  closePanel();
+  toast('🎮 Split screen: player 2 drives on the controller (Y changes vehicle, X is the horn). End it in Settings.', { ms: 6000 });
+}
+function stopSplit() {
+  if (!split) return;
+  scene.remove(split.m.group);
+  split = null;
+  $('#p2hud').hidden = true; $('#splitbar').hidden = true;
+  renderer.setScissorTest(false);
+  resize();
+}
+function tickSplit(dt, ctx) {
+  const s = split, v = s.v, p = input.pollPad();
+  if (p.swap) { // Y: the next vehicle player 2 has
+    const ks = P2_KINDS(), kind = ks[(ks.indexOf(v.kind) + 1) % ks.length];
+    scene.remove(s.m.group);
+    s.v = new VehicleState(kind, v.x, v.z, v.heading); s.v.y = v.y; s.v.init = false;
+    s.m = buildModel(kind, '#2f9e5b'); scene.add(s.m.group);
+  }
+  if (p.horn) sound.horn(1);
+  const w = s.v;
+  // the map-loading governor for player 2 as well
+  const sp = Math.hypot(w.vx, w.vz);
+  let loadLimit = Infinity;
+  if (sp > 3) { const ux = w.vx / sp, uz = w.vz / sp; if (!world.isReady(w.x + ux * 250, w.z + uz * 250)) loadLimit = 7; else if (!world.isReady(w.x + ux * 550, w.z + uz * 550)) loadLimit = 14; }
+  const c2 = { ...ctx, loadLimit, roadLimit: w.road ? world.speedLimitAt(w.x, w.z) : null };
+  let acc = dt;
+  while (acc > 1e-4) {
+    const h = Math.min(STEP, acc); acc -= h;
+    for (const e of w.step(h, p, c2)) if (e.type === 'crash' && e.impact > 2) { sound.crash(e.impact * 0.7); if (e.impact > 4) debris.sparks(w.x, w.y + 0.5, w.z, -Math.sin(w.heading), Math.cos(w.heading), e.impact); }
+  }
+  // the two of you: bump, by momentum (the same as traffic)
+  const a = game.v, dx = w.x - a.x, dz = w.z - a.z, d = Math.hypot(dx, dz), min = (a.spec.radius ?? 1.2) + (w.spec.radius ?? 1.2);
+  if (d < min && d > 1e-3) {
+    const nx = dx / d, nz = dz / d, push = (min - d) / 2;
+    a.x -= nx * push; a.z -= nz * push; w.x += nx * push; w.z += nz * push;
+    const closing = (a.vx - w.vx) * nx + (a.vz - w.vz) * nz;
+    if (closing > 0.3) {
+      const m1 = a.spec.mass ?? 1, m2 = w.spec.mass ?? 1, J = (1.25 * closing) / (1 / m1 + 1 / m2);
+      a.vx -= nx * J / m1; a.vz -= nz * J / m1; w.vx += nx * J / m2; w.vz += nz * J / m2;
+      if (closing > 3) { sound.crash(closing); debris.sparks(a.x + nx * min / 2, a.y + 0.6, a.z + nz * min / 2, nx, nz, closing); input.rumble(0.5, 0.6, 180); }
+    }
+  }
+  updateModel(dt, w, s.m, s);
+  // player 2's camera: behind and above, following the slide a little
+  const [fx, fz] = w.fwd(), spd = Math.hypot(w.vx, w.vz);
+  const far = game.cam === 1 ? 3.4 : 1;
+  const dist = w.spec.camDist * far + spd * 0.04, hgt = w.spec.camH * (game.cam === 1 ? 3.6 : 1);
+  const tx = w.x - fx * dist, tz = w.z - fz * dist, g = world.groundAt(tx, tz);
+  const target = new THREE.Vector3(tx, Math.max(w.y + hgt, (g ?? -1e9) + 1.5), tz), look = new THREE.Vector3(w.x + fx * 4, w.y + hgt * 0.35, w.z + fz * 4);
+  if (!s.init) { s.pos.copy(target); s.look.copy(look); s.init = true; }
+  s.pos.lerp(target, 1 - Math.exp(-dt * 6)); s.look.lerp(look, 1 - Math.exp(-dt * 12));
+  s.cam.position.copy(s.pos); s.cam.up.set(0, 1, 0); s.cam.lookAt(s.look);
+  s.cam.fov = 60 + Math.min(18, spd * 0.55); s.cam.updateProjectionMatrix();
+  // player 2's speed panel
+  if ((s.hudT = (s.hudT || 0) + dt) > 0.15) {
+    s.hudT = 0;
+    const kmh = spd * 3.6;
+    $('#p2hud').innerHTML = `🎮 P2 ${w.spec.icon} <b>${Math.round(game.mph ? kmh / 1.609 : kmh)}</b> ${game.mph ? 'mph' : 'km/h'}${w.damage >= 1 ? ` · 🔧 ${Math.round(w.damage)}%` : ''}`;
+  }
+}
+function renderSplit() {
+  const W = innerWidth, H = innerHeight, half = Math.floor(W / 2);
+  renderer.setScissorTest(true);
+  camera.aspect = half / H; camera.updateProjectionMatrix();
+  renderer.setViewport(0, 0, half, H); renderer.setScissor(0, 0, half, H); renderer.render(scene, camera);
+  split.cam.aspect = (W - half) / H; split.cam.updateProjectionMatrix();
+  renderer.setViewport(half, 0, W - half, H); renderer.setScissor(half, 0, W - half, H); renderer.render(scene, split.cam);
+  renderer.setScissorTest(false); renderer.setViewport(0, 0, W, H);
 }
 
 // ---------- main loop ----------
@@ -2280,7 +2371,7 @@ function frame(now) {
     return;
   }
   const v = game.v;
-  let inp = input.poll();
+  let inp = input.poll({ noPad: !!split });
   input.drawWheel();
   if (game.autopilot) { const a = autopilotInput(v, inp); if (a) inp = a; }
   game.stillT = Math.abs(v.vf) < 0.3 && !v.flying && !inp.throttle && !inp.brake && Math.abs(inp.steer) < 0.05 && !camCtl.held ? (game.stillT || 0) + dt : 0;
@@ -2318,7 +2409,8 @@ function frame(now) {
   if (worldT > 0.4) {
     worldT = 0;
     const ve = v.vx, vn = -v.vz;
-    const old = world.update(game.lat, game.lon, ve, vn);
+    const mid = split ? world.toGeo((v.x + split.v.x) / 2, (v.z + split.v.z) / 2) : null; // two players: load round the point between them
+    const old = world.update(mid ? mid.lat : game.lat, mid ? mid.lon : game.lon, ve, vn);
     if (old) rebase(old);
   }
   if (traffic.density) traffic.update(dt, v, world);
@@ -2332,6 +2424,7 @@ function frame(now) {
   tickStyle(dt, inp);
   tickActivity(dt);
   tickPassive(dt, moved);
+  if (split) tickSplit(dt, ctx);
   updateModel(dt);
   // the speed you see is how far you really went this frame (after walls, trees and traffic have
   // pushed back), smoothed: not the engine's idea of it. A big jump is the world re-centring.
@@ -2355,7 +2448,7 @@ function frame(now) {
   }
   waveT += dt;
   if (waveT > 120) { waveT = 0; updateWaves(); }
-  renderer.render(scene, camera);
+  if (split) renderSplit(); else renderer.render(scene, camera);
 }
 
 function windVec() {
@@ -2368,6 +2461,7 @@ function windVec() {
 function rebase(old) {
   const fix = (o) => { const g = old.toGeo(o.x, o.z); const p = world.toLocal(g.lat, g.lon); o.x = p.x; o.z = p.z; };
   if (game.v) fix(game.v);
+  if (split) { fix(split.v); for (const q of [split.pos, split.look]) { const o = { x: q.x, z: q.z }; fix(o); q.x = o.x; q.z = o.z; } }
   traffic.cars.forEach((c) => traffic.place(c));
   const c = { x: camPos.x, z: camPos.z }; fix(c); camPos.x = c.x; camPos.z = c.z;
   const l = { x: camLook.x, z: camLook.z }; fix(l); camLook.x = l.x; camLook.z = l.z;
@@ -2380,7 +2474,7 @@ function setMode(mode) {
   world.setStuntMode(mode);
   document.body.dataset.mode = mode;
   $('#gscore').hidden = mode !== 'gamer';
-  toast(mode === 'gamer' ? '🎮 Gamer mode: ramps, coins, boosts and cones everywhere.' : '🧭 Explorer mode: the real world, with a few stunts to find.');
+  toast(mode === 'gamer' ? '🎮 Gamer mode: ramps, coins, boosts and cones everywhere.' : '🧭 Explorer mode: the world as it is, with a few stunts to find.');
 }
 
 function confirmStartOver() {
@@ -2574,13 +2668,13 @@ function handleEvent(e) {
     }
   } else if (e.type === 'takeoff') {
     sound.whoosh();
-    if (!profile.stats.flights) toast('🪂 Airborne! The real wind here pushes you about.', { ms: 4000 });
+    if (!profile.stats.flights) toast('🪂 Airborne. The wind will push you about.', { ms: 4000 });
     profile.stats.flights = (profile.stats.flights || 0) + 1;
   } else if (e.type === 'landing') {
     if (e.water) { // ditched: swim to the nearest bank
       const l = searchAround(v.x, v.z, 400, (px, pz) => !world.isWater(px, pz));
       if (l) { v.x = l.x; v.z = l.z; v.init = false; }
-      sound.crash(4); toast('💦 Splashdown! You dragged the wing to the bank.');
+      sound.crash(4); toast('💦 You came down in the water and pulled the wing to the bank.');
     } else if (e.hard) { sound.crash(6); game.shake = 0.5; } else sound.burst(0.15, 300, 0.2);
   } else if (e.type === 'blocked') {
     if (e.why === 'water' && !profile.shore) { profile.shore = true; save(); checkUnlocks(); }
@@ -2675,7 +2769,7 @@ function tickDog(dt) {
     p.mesh.position.set(px, (world.groundAt(px, pz) ?? v.y) + 0.04, pz); p.t = 0; p.mesh.visible = true;
     sound.hiss(2.4);
     profile.stats.trees_marked = (profile.stats.trees_marked || 0) + 1;
-    if (profile.stats.trees_marked === 1) toast('🐕 …a very good dog. Mostly.', { ms: 3500 });
+    if (profile.stats.trees_marked === 1) toast('🐕 The dog stops at the tree.', { ms: 3500 });
   }
 }
 
@@ -2711,7 +2805,7 @@ function tickStyle(dt, inp) {
 const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences). Sounds (trimmed), via Wikimedia Commons: car horn by 15HPanska_Ruttner_Jan (CC0), truck horn from a city bus by Work With Sounds / Technical Museum of Slovenia (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>), ship horn by Tvabutzku1234 (CC0) and dog bark by Amada44 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>).';
 
 // ---------- boot ----------
-if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, radio, sound, camCtl, wake, debris, startSkydive, toggleAutopilot, frameBudget, cheats, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
+if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, radio, sound, camCtl, wake, debris, startSkydive, toggleAutopilot, frameBudget, cheats, get split() { return split; }, startSplit, stopSplit, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
 pruneRaces();
 world.stuntMode = profile.settings.mode || 'explorer';
 cheats.noDamage = !!profile.settings.noDamage;
