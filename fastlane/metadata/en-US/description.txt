@@ -1,33 +1,35 @@
-Drive anywhere on Earth. Every street, building, bridge and hill in EarthRacer comes from real open map data, built live around you as you go, with the real weather, the real time of day and the real speed limits.
+Drive anywhere on Earth. The streets, buildings, bridges and hills in EarthRacer come from open map data, built around you as you drive, with the weather, time of day and speed limits of the place you're in.
 
 ONE RULE: CARRY ON FROM WHERE YOU STOPPED
-Pick a starting point once. After that, the world remembers exactly where you parked. Want to see somewhere new? Drive there, or take a real bus, train, ferry or plane from a real stop, in real time.
+You pick a starting point once. After that, the game keeps you exactly where you parked. To go somewhere new, drive there, or take a bus, train, ferry, cruise or plane from a stop on the map. Trips take as long as they really would, and you can close the app while you travel.
 
 THINGS TO DO
-• Deliveries between real shops and cafés, against the clock.
-• A daily race through real streets, against your own ghost.
-• Portals: once an hour one opens somewhere in your town for ten minutes. Follow the star on the map and drive through for big points and a one-way trip to the city on its label.
-• Random placement: get dropped somewhere on Earth with no labels, read the signs, and guess where you are.
-• Collect postcards of landmarks, fill a street atlas, cross bridges, earn feats.
+• Deliveries between shops and cafés, against the clock.
+• A daily race through the streets near you, against your own ghost.
+• Portals: once an hour one opens somewhere in your town for ten minutes. Follow the star on the map and drive through it for big points and a one-way trip to the city on its label.
+• Random placement: you're dropped somewhere on Earth with no labels. Read the signs and guess where you are.
+• Postcards of landmarks, a street atlas, bridges crossed, and feats for long play with coin rewards and paint jobs.
+• Seatback games on trips: quizzes on flights, bingo and shuffleboard on cruises, cards on the bus.
+• Bail out of a flight and steer your skydive down to the ground.
 
-VEHICLES WITH REAL TRADE-OFFS
-Bicycle, car, pickup, motorcycle, delivery truck, speedboat, jet ski and a paramotor, each with its own speed, handling, toughness and fuel range. Earn the odd ones too: a 200 mph Speed Demon, a hang glider that rides the wind off hilltops, a rubber duck that swims, waddles and flies, and a dog that swims across rivers. Honk, ring, bark or quack with the horn button.
+VEHICLES
+Bicycle, car, pickup, motorcycle, delivery truck, speedboat, jet ski and paramotor, each with its own speed, handling, toughness and fuel range. Some are earned: a 200 mph Speed Demon, a hang glider for hilltops, a rubber duck that swims, waddles and flies, and a dog that swims across rivers. Long motorway drives earn an autopilot.
 
 EXPLORER OR GAMER
-• Explorer: the real world, with a few ramps and stunts to find.
+• Explorer: the world as it is, with a few ramps and stunts to find.
 • Gamer: ramps, coins, boost arrows, cones, signs to knock down and trees to topple.
 
-REAL CONDITIONS
-Rain and snow cut grip, fog closes in, headwinds slow you down, night falls with the real sun. Traffic drives on the correct side for the country. Run out of fuel and you'll need a tow truck, another vehicle, or the emergency solar buggy.
+CONDITIONS
+Rain and snow cut grip, fog closes in, headwinds slow you down and night falls when the sun sets. Traffic drives on the correct side for the country. If you run out of fuel you'll need a tow truck, another vehicle or the solar buggy.
 
-PLAY YOUR WAY
-Tilt the phone like a steering wheel, or use the slider or buttons; a keyboard or game controller works too. Swing the camera round with a drag and zoom with a pinch. Tune in to local radio stations wherever you are.
+CONTROLS
+Tilt the phone like a steering wheel, or use the slider or buttons. A keyboard or game controller works too, and on a computer two players can share the screen. Drag to turn the camera and pinch to zoom. Local radio stations play wherever you are.
 
 FREE
-EarthRacer is free, with no ads and nothing to buy: every vehicle and feat is earned by playing. Long play earns coin rewards and paint jobs. Optional tips in Settings help keep it going; they don't change the game.
+EarthRacer is free, with no ads and nothing to buy. Every vehicle is earned by playing. Optional tips in Settings help keep it going; they don't change the game.
 
 OPEN DATA
 Map data © OpenStreetMap contributors, served by OpenFreeMap. Terrain from AWS Terrain Tiles, weather from Open-Meteo, place names from Nominatim, postcards from Wikipedia and Wikimedia Commons, radio stations from Radio Browser.
 
 PRIVATE
-No account, no ads, no tracking. Your game stays on your phone.
+No account, no ads, no tracking. Your game stays on your device.
