@@ -8,7 +8,7 @@ New
 • One steering sensitivity setting for every way of steering: keys, controller, tilt, slider and buttons.
 • Split screen on a computer: one player on the keyboard, the other on a controller.
 • Trains run on the railway lines, about as often as real ones: main-line trains, metros, light rail and trams. They don't stop for you, so look both ways at level crossings.
-• Street view: tap 📷 to see street photos of where you are (from Mapillary), or open Google Street View there.
+• Street view: tap the camera button to see street photos of where you are (from Mapillary), or open Google Street View there.
 • Outrun the map and a giant quarter-pipe turns you round while it catches up.
 • Gamer mode: giant sky tracks about every mile. Ride up from the street, through a loop and two banked bends, and land back on the road for coins.
 • Railway track you can see: ballast, sleepers and rails. Trains follow the time of day, busiest at rush hour and rare in the small hours.
