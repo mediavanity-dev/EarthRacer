@@ -2454,6 +2454,11 @@ function checkSkyEntry(v) {
     if (!tr) continue;
     const F = tr.frames, p0 = F[0].p, x0 = ch.ox + p0[0] * ch.sx, z0 = ch.oz + p0[2], d0 = Math.hypot(v.x - x0, v.z - z0);
     if (d0 < 260 && sp > 3 && !skyHinted.has(ch.key)) { skyHinted.add(ch.key); toast('🎢 A sky track starts on this street. Drive onto the orange ramp.', { ms: 5000 }); }
+    const pe = F[F.length - 1].p, de = Math.hypot(v.x - (ch.ox + pe[0] * ch.sx), v.z - (ch.oz + pe[2]));
+    if (de < 30 && sp > 2 && !skyHinted.has(ch.key + ':end')) { // met from its far end: it only runs one way
+      const te = F[F.length - 1].t;
+      if ((v.vx * te[0] + v.vz * te[2]) / sp < -0.5) { skyHinted.add(ch.key + ':end'); toast('🎢 This is where a sky track lands. Its start is about half a kilometre back the way you came, so turn round to ride it.', { ms: 6000 }); }
+    }
     if (d0 > 40 || sp < 2) continue;
     const lx = (v.x - ch.ox) / ch.sx, lz = v.z - ch.oz;
     for (let i = 0; i < F.length && F[i].s < 22; i++) {
@@ -2461,7 +2466,7 @@ function checkSkyEntry(v) {
       const al = dx * th[0] + dz * th[2], w = dx * -th[2] + dz * th[0];
       if (Math.abs(al) > 1.2 || Math.abs(w) > SKY_W / 2 - 0.3) continue;
       if ((v.vx * th[0] + v.vz * th[2]) / sp < 0.6) return; // across it or the wrong way
-      game.sky = { ch, tr, s: f.s + al, v: sp, w, wv: 0, i, t0: performance.now(), top: sp, q: new THREE.Quaternion(), f: null };
+      game.sky = { ch, tr, s: Math.max(0.5, f.s + al), v: sp, w, wv: 0, i, t0: performance.now(), top: sp, q: new THREE.Quaternion(), f: null };
       sound.whoosh();
       if (!profile.skySeen) { profile.skySeen = true; save(); toast('🎢 On the sky track. Hold the throttle, keep to the middle, and carry speed into the loop.', { ms: 6000 }); }
       return;
@@ -2487,7 +2492,7 @@ function tickSky(v, dt, inp) {
   if (Math.abs(S.w) > SKY_W / 2 + 0.2) { skyFall(v, '💥 Off the edge.', T, R); return; }
   if (f.loop && N[1] < -0.15 && (S.v * S.v) / tr.loopR < 9.81 * -N[1] * 0.85) { skyFall(v, '💥 Too slow for the loop.', T, R); return; }
   if (S.s >= tr.len - 0.3) { skyFinish(v, frameAt(tr, tr.len, S.i)); return; }
-  if (S.s < 0) { skyFinish(v, frameAt(tr, 0, 1), true); return; } // rolled back off the start
+  if (S.s < 0 && S.v < 0) { skyFinish(v, frameAt(tr, 0, 1), true); return; } // rolled back off the start
   f = frameAt(tr, S.s, S.i); T = f.t; N = f.n; R = cross3(T, N);
   const pos = [f.p[0] + R[0] * S.w, f.p[1] + R[1] * S.w, f.p[2] + R[2] * S.w];
   v.x = ch.ox + pos[0] * ch.sx; v.y = pos[1]; v.z = ch.oz + pos[2];
