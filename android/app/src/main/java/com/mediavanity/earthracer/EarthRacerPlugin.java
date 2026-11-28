@@ -20,6 +20,9 @@ import com.android.billingclient.api.Purchase;
 import com.android.billingclient.api.PurchasesUpdatedListener;
 import com.android.billingclient.api.QueryProductDetailsParams;
 import com.android.billingclient.api.QueryPurchasesParams;
+import android.content.Context;
+import android.os.Build;
+import android.os.PowerManager;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -129,6 +132,21 @@ public class EarthRacerPlugin extends Plugin implements PurchasesUpdatedListener
     private static JSObject pro(boolean owned) { JSObject o = new JSObject(); o.put("pro", owned); return o; }
 
     // ---------- tips ----------
+
+    // How hot the phone is, on the same scale as iOS (0 nominal, 1 fair, 2 serious, 3 critical),
+    // so the game can draw less before Android slows everything down.
+    @PluginMethod
+    public void thermal(PluginCall call) {
+        int s = 0;
+        if (Build.VERSION.SDK_INT >= 29) {
+            PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+            int t = pm != null ? pm.getCurrentThermalStatus() : 0; // 0 none, 1 light, 2 moderate, 3 severe, 4+ critical
+            s = t >= 3 ? 3 : t == 2 ? 2 : t == 1 ? 1 : 0;
+        }
+        JSObject r = new JSObject();
+        r.put("state", s);
+        call.resolve(r);
+    }
 
     @PluginMethod
     public void tipProducts(PluginCall call) {
