@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { haversine } from '../geo.js';
 
-const PLANE_POLL = 60, PLANE_R_NM = 25, FAR = 4200;
+const PLANE_POLL = 60, PLANE_R_NM = 25, FAR = 2600; // (the camera sees 3 km)
 
 function planeGeo() {
   const parts = [
