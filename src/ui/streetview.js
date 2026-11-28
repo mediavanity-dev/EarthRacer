@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 
 // A Mapillary client token: it is meant to sit in client code (it only reads public imagery).
-const TOKEN = import.meta.env.VITE_MAPILLARY_TOKEN || 'MLY|PLACEHOLDER';
+const TOKEN = import.meta.env.VITE_MAPILLARY_TOKEN || 'MLY|28786303274375890|0585afdcf3f9023a2b5fc6c9f9c2b338';
 const API = 'https://graph.mapillary.com/images';
 const FIELDS = 'id,computed_geometry,geometry,compass_angle,computed_compass_angle,captured_at,is_pano,creator,thumb_2048_url';
 const M_LAT = 111320;
@@ -15,7 +15,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 const mLon = (lat) => M_LAT * Math.cos((lat * Math.PI) / 180);
 export const googleLink = (lat, lon, heading) =>
   `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)},${lon.toFixed(6)}&heading=${Math.round(heading)}`;
-export const hasToken = () => !TOKEN.includes('PLACEHOLDER');
+export const hasToken = () => TOKEN.startsWith('MLY|');
 
 async function near(lat, lon, r) {
   const dLat = r / M_LAT, dLon = r / mLon(lat);
@@ -180,7 +180,7 @@ export class StreetView {
       const brg = (Math.atan2(p.dx, p.dy) * 180) / Math.PI;
       const off = Math.abs(((brg - look + 540) % 360) - 180);
       if (off > 50) continue;
-      const s = p.d + off * 0.4 - (p.pano === c.pano ? 4 : 0);
+      const s = p.d + off * 0.4 - (p.pano === c.pano ? 12 : 0); // stay with 360° photos (or flat ones) when there is a choice
       if (s < ts) { ts = s; top = p; }
     }
     this.busy = false;
