@@ -418,6 +418,7 @@ async function build({ x, y, opts }) {
   const DIRT = [0.55, 0.47, 0.36], PATHC = [0.72, 0.64, 0.5], WHITE = [0.93, 0.93, 0.9], RAIL = [0.7, 0.71, 0.73];
   const LIFT = { motorway: 0.34, trunk: 0.33, primary: 0.32, secondary: 0.31, tertiary: 0.3, minor: 0.28, service: 0.26, pedestrian: 0.25, track: 0.24, path: 0.22 };
   const roads = []; // game data: { c, w, f, name?, p: Float32Array [x,y,z,...] }
+  const rails = []; // game data for trains: { k: subclass, s: service or null, p: Float32Array [x,y,z,...] }
   const props = { lamp: [], post: [] };
   const rand = rng(seed ^ 0x5bd1e995);
   const MAXPROPS = opts.maxProps ?? 1400;
@@ -455,6 +456,27 @@ async function build({ x, y, opts }) {
     }
     return { L, vtx, hs };
   });
+  // railway lines, for trains: densified to <= 10 m, on the ground (bridges run straight between their ends)
+  function buildRails() {
+    for (const ln of fabric.lines) {
+      if (ln.cls !== 'rail' || ln.pts.length < 2) continue;
+      const L = [];
+      for (let k = 0; k < ln.pts.length; k++) {
+        const [px, py] = ln.pts[k];
+        if (k) {
+          const [qx, qy] = ln.pts[k - 1], n = Math.ceil((Math.hypot(px - qx, py - qy) * mPerPx) / 10);
+          for (let t = 1; t < n; t++) L.push([qx + ((px - qx) * t) / n, qy + ((py - qy) * t) / n]);
+        }
+        L.push([px, py]);
+      }
+      let hs = L.map(([px, py]) => H(px, py) + 0.3);
+      if (ln.bridge) { const h0 = hs[0], h1 = hs[hs.length - 1]; hs = hs.map((h, k) => Math.max(h, h0 + ((h1 - h0) * k) / (hs.length - 1))); }
+      const p = new Float32Array(L.length * 3);
+      L.forEach(([px, py], k) => p.set([X(px), hs[k], Z(py)], k * 3));
+      rails.push({ k: ln.sub || 'rail', s: ln.svc, p });
+    }
+    return rails;
+  }
   // junctions: roads sharing a vertex take the same height there, blended in over ~25 m
   {
     const at = new Map();
@@ -710,6 +732,7 @@ async function build({ x, y, opts }) {
 
   const payload = {
     key: `${CHUNK_Z}/${x}/${y}`, x, y, bounds: b, latc, lonc, areaName: fabric.areaName,
+    rails: buildRails(),
     gridN: GRID, grid, xs, zs, maskN: MASK, mask, mPerMask: tileM / MASK,
     terrain: { pos: tPos, uv: tUv }, texture,
     buildings, roadMesh, fp: { pts: new Float32Array(fpPts), idx: new Uint32Array(fpIdx) },
@@ -722,6 +745,7 @@ async function build({ x, y, opts }) {
   if (roadMesh) transfer.push(roadMesh.pos.buffer, roadMesh.col.buffer, roadMesh.nrm.buffer);
   for (const t of [payload.trees, payload.cones]) if (t) transfer.push(t.mat.buffer, t.col.buffer, t.trunk.buffer);
   for (const r of roads) transfer.push(r.p.buffer);
+  for (const r of payload.rails) transfer.push(r.p.buffer);
   for (const st of streets) transfer.push(st.p.buffer);
   return { payload, transfer };
 }

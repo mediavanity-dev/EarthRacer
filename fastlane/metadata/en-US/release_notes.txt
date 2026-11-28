@@ -7,6 +7,8 @@ New
 • Nine new seatback games, each for its kind of trip. Train: Spot it, Timetable. Plane: Country quiz, Which way? Bus: Next stop. Cruise: Shuffleboard, Bingo night, Port quiz. Bus, train and ferry: Higher or lower.
 • One steering sensitivity setting for every way of steering: keys, controller, tilt, slider and buttons.
 • Split screen on a computer: one player on the keyboard, the other on a controller.
+• Trains run on the railway lines, about as often as real ones: main-line trains, metros, light rail and trams. They don't stop for you, so look both ways at level crossings.
+• Street view: tap 📷 to see street photos of where you are (from Mapillary), or open Google Street View there.
 
 Better
 • Crash into a car and it gets shoved, spins and dents, by weight: a truck sends it flying, a bike barely moves it.

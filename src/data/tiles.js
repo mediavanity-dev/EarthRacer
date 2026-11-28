@@ -212,7 +212,7 @@ export function normalizeTile(vt) {
       const cls = isRail ? 'rail' : p.class === 'path' || p.class === 'track' ? 'path' : 'road';
       for (const line of f.loadGeometry()) {
         if (line.length < 2) continue;
-        out.lines.push({ cls, width, pts: pts(line) });
+        out.lines.push(isRail ? { cls, width, pts: pts(line), sub: p.subclass || p.class, svc: p.service || null, bridge: p.brunnel === 'bridge' } : { cls, width, pts: pts(line) });
         // driveable ways, with what a vehicle needs to know about them
         if (!isRail && p.class !== 'raceway' && p.class !== 'busway' && p.subclass !== 'platform' && p.subclass !== 'steps') {
           out.roads.push({

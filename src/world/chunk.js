@@ -131,7 +131,7 @@ export function makeChunk(p, { anisotropy = 4 } = {}) {
 
   const chunk = {
     key: p.key, x: p.x, y: p.y, bounds: p.bounds, latc: p.latc, lonc: p.lonc, areaName: p.areaName,
-    group, roads: p.roads, streets: p.streets, pois: p.pois, stops: p.stops || [], labels: p.labels || [], lamps, half,
+    group, roads: p.roads, rails: p.rails || [], streets: p.streets, pois: p.pois, stops: p.stops || [], labels: p.labels || [], lamps, half,
     junctionAt(x, z) { return nodes.get(vkey(x, z)) || null; },
     /** All junctions of drivable roads: [[{ r, i }, ...], ...] */
     junctions() { return [...nodes.values()]; },
