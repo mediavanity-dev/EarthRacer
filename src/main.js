@@ -11,7 +11,7 @@ import { Trains } from './game/trains.js';
 import { LiveData } from './game/livedata.js';
 import { jobsFor, jobTime, jobReward, raceFor, isLandmark, isFuel, pruneRaces } from './game/activities.js';
 import { RANDOM_PLACES } from './game/places.js';
-import { MODES, BOARD_RADIUS, CRUISE_PORTS, estimate, newTrip, progress, positionAt, fmtDuration } from './game/trips.js';
+import { MODES, BOARD_RADIUS, CRUISE_PORTS, estimate, newTrip, progress, positionAt, fmtDuration, stepClock } from './game/trips.js';
 import { TripMap } from './ui/tripmap.js';
 import { BADGES, PAINTS, count as featCount } from './game/feats.js';
 import { PlaneView } from './world/planeView.js';
@@ -1527,8 +1527,9 @@ function tripScreen() {
     }
     // where you are now, at most once a minute
     const over = o.querySelector('#tover');
-    if (p.f <= 0) over.textContent = t.mode === 'plane' ? 'Boarding…' : 'Waiting to leave…';
-    else if (p.f >= 1 && f < 1) over.textContent = t.mode === 'plane' ? 'Landed: getting off the plane…' : 'Arriving…';
+    const sc = stepClock(t, now);
+    if (p.f <= 0) over.innerHTML = sc ? `${sc.what} · <b class="tclock">${sc.left}</b>` : 'Waiting to leave…';
+    else if (p.f >= 1 && f < 1) over.innerHTML = t.mode === 'plane' && sc ? `Landed. Getting off · <b class="tclock">${sc.left}</b>` : 'Arriving…';
     else if (p.f < 1 && now - overAt > 60000) {
       overAt = now;
       whereIs(p.lat, p.lon).then((w) => {
@@ -1790,7 +1791,9 @@ function watchFrame(dt) {
     if (now - watchInfoAt > 1000) {
       watchInfoAt = now;
       const kmh = t.km / ((t.duration - wait - after) / 3600000);
-      $('#winfo').textContent = `${m.icon} To ${t.to.name} · ${game.mph ? `${Math.round(alt * 3.281).toLocaleString()} ft` : `${Math.round(alt).toLocaleString()} m`} · ${Math.round(game.mph ? kmh / 1.609 : kmh)} ${game.mph ? 'mph' : 'km/h'} · ${fmtDuration(t.start + t.duration - now)} to go`;
+      const sc = stepClock(t, now);
+      if (sc) $('#winfo').textContent = `${m.icon} ${t.to.name} · ${sc.what === 'Getting off' ? 'Landed. Getting off' : sc.what} · ${sc.left}`;
+      else $('#winfo').textContent = `${m.icon} To ${t.to.name} · ${game.mph ? `${Math.round(alt * 3.281).toLocaleString()} ft` : `${Math.round(alt).toLocaleString()} m`} · ${Math.round(game.mph ? kmh / 1.609 : kmh)} ${game.mph ? 'mph' : 'km/h'} · ${fmtDuration(t.start + t.duration - now)} to go`;
     }
     return;
   }
@@ -1822,7 +1825,7 @@ function watchFrame(dt) {
   renderer.render(scene, camera);
   if (now - watchInfoAt > 1000) {
     watchInfoAt = now;
-    $('#winfo').textContent = ready ? `${m.icon} To ${t.to.name} · ${p.f <= 0 ? 'boarding' : '30 km/h'} · ${fmtDuration(t.start + t.duration - now)} to go` : `${m.icon} Loading the view…`;
+    $('#winfo').textContent = ready ? `${m.icon} To ${t.to.name} · ${p.f <= 0 ? `boarding ${stepClock(t, now)?.left || ''}` : '30 km/h'} · ${fmtDuration(t.start + t.duration - now)} to go` : `${m.icon} Loading the view…`;
   }
 }
 

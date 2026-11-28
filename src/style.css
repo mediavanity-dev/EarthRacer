@@ -411,3 +411,6 @@ body[data-sign="au"] #sidepops .nm { --bg: #fff; --fg: #16357a; --bd: #16357a; }
 #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 50; }
 #flash.on { animation: er-flash 0.45s ease-out; }
 @keyframes er-flash { 0% { opacity: 0.85; } 100% { opacity: 0; } }
+
+/* boarding / getting-off countdown on trips */
+.tclock { font-variant-numeric: tabular-nums; font-size: 1.25em; color: var(--accent); }
