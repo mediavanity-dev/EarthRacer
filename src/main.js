@@ -8,6 +8,7 @@ import { VehicleState, cheats } from './game/physics.js';
 import { VEHICLES, VEHICLE_ORDER, SPEED_CAP, buildModel, ratings, prepDamage, dent, grime, repairLook, flashHit, animateDamage } from './game/vehicles.js';
 import { Traffic } from './game/traffic.js';
 import { Trains } from './game/trains.js';
+import { LiveData } from './game/livedata.js';
 import { jobsFor, jobTime, jobReward, raceFor, isLandmark, isFuel, pruneRaces } from './game/activities.js';
 import { RANDOM_PLACES } from './game/places.js';
 import { MODES, BOARD_RADIUS, CRUISE_PORTS, estimate, newTrip, progress, positionAt, fmtDuration } from './game/trips.js';
@@ -126,6 +127,18 @@ traffic.onHit = (c, J, at) => {
 traffic.density = profile.settings.traffic ?? 1;
 // trains on the railway lines, about as often as real ones (the traffic setting covers them too)
 const trains = new Trains(scene);
+// live open data: planes overhead, earthquakes, speed cameras, viewpoints and lighthouses
+const flashEl = Object.assign(document.createElement('div'), { id: 'flash' }); document.body.appendChild(flashEl);
+const live = new LiveData({
+  scene, world, toast: (...a) => toast(...a), sidePop: (...a) => sidePop(...a),
+  flash: () => { flashEl.classList.remove('on'); void flashEl.offsetWidth; flashEl.classList.add('on'); },
+  onReward: (kind, n, name) => {
+    if (kind === 'quake') { game.shake = 0.9; input.rumble(0.6, 0.6, 600); return; }
+    profile.coins += n; save(); sound.chime();
+    if (kind === 'camera') sidePop(`<b>📸 Under the limit past the speed camera</b><br><span class="dim">+${n} coins</span>`, 'note', 3000);
+    else sidePop(`<b>${kind === 'light' ? '🗼 Lighthouse' : '🔭 Viewpoint'}${name ? `: ${esc(name)}` : ''}</b><br><span class="dim">+${n} coins · ${profile.atlas.views.length} reached</span>`, 'postcard', 4500);
+  },
+});
 trains.density = traffic.density;
 trains.onNear = (t, d) => {
   if (t.K.bell) sound.bell(); else sound.horn(0.62, 'horn-truck');
@@ -2543,6 +2556,7 @@ function frame(now) {
   if (traffic.density) traffic.update(dt, v, world);
   { const d = DEV_HOUR != null ? new Date(new Date().setUTCHours(DEV_HOUR, 0, 0)) : new Date(); const off = game.weather?.utcOffset != null ? game.weather.utcOffset / 3600 : game.lon / 15; trains.hour = (((d.getUTCHours() + d.getUTCMinutes() / 60 + off) % 24) + 24) % 24; }
   trains.update(dt, v, world);
+  live.update(dt, { v, lat: game.lat, lon: game.lon, camera, mode: profile.settings.mode || 'explorer', mph: game.mph, profile, hidden: !!profile.random.active });
   signs.update(dt, world, v);
   tickStunts(dt);
   tickTrees(dt);
@@ -2933,10 +2947,10 @@ function tickStyle(dt, inp) {
   if (st.overtakes) profile.stats.overtakes += st.overtakes; // counted, but points are for stunts only
 }
 
-const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences). Street photos: <a href="https://www.mapillary.com" target="_blank" rel="noopener">Mapillary</a> contributors (CC BY-SA 4.0). Sounds (trimmed), via Wikimedia Commons: car horn by 15HPanska_Ruttner_Jan (CC0), truck horn from a city bus by Work With Sounds / Technical Museum of Slovenia (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>), ship horn by Tvabutzku1234 (CC0) and dog bark by Amada44 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>).';
+const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences). Street photos: <a href="https://www.mapillary.com" target="_blank" rel="noopener">Mapillary</a> contributors (CC BY-SA 4.0). Aircraft: <a href="https://adsb.lol" target="_blank" rel="noopener">adsb.lol</a> (ODbL). Earthquakes: <a href="https://earthquake.usgs.gov" target="_blank" rel="noopener">USGS</a>. Sounds (trimmed), via Wikimedia Commons: car horn by 15HPanska_Ruttner_Jan (CC0), truck horn from a city bus by Work With Sounds / Technical Museum of Slovenia (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>), ship horn by Tvabutzku1234 (CC0) and dog bark by Amada44 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>).';
 
 // ---------- boot ----------
-if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, trains, sky, profile, input, radio, sound, camCtl, wake, debris, openStreetView, get streetView() { return streetView; }, get turn() { return game.turn; }, startSkydive, toggleAutopilot, frameBudget, cheats, get split() { return split; }, startSplit, stopSplit, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
+if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, trains, live, sky, profile, input, radio, sound, camCtl, wake, debris, openStreetView, get streetView() { return streetView; }, get turn() { return game.turn; }, startSkydive, toggleAutopilot, frameBudget, cheats, get split() { return split; }, startSplit, stopSplit, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
 pruneRaces();
 world.stuntMode = profile.settings.mode || 'explorer';
 cheats.noDamage = !!profile.settings.noDamage;

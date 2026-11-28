@@ -108,22 +108,35 @@ function parseSpeed(v) {
   const n = +m[1];
   return m[2] === 'mph' ? n * 1.609 : n;
 }
+// Plus, in the same request, a few points worth driving to: speed cameras (with the limit they
+// enforce, when mapped), viewpoints and lighthouses -> { rows, spots: [[kind, lat, lon, name, km/h]] }.
 export async function loadSpeedLimits(key, b) {
-  const ck = `speeds:v1:${key}`;
+  const ck = `speeds:v2:${key}`;
   const hit = await cacheGet(ck, 30 * 24 * 3600 * 1000);
   if (hit) return hit;
   return slot(async () => {
     const raw = await overpass(`[out:json][timeout:60][bbox:${b.s},${b.w},${b.n},${b.e}];
 way["highway"]["maxspeed"];
-out tags geom qt;`);
-    const out = [];
+out tags geom qt;
+(node["highway"="speed_camera"];node["tourism"="viewpoint"];node["man_made"="lighthouse"];way["man_made"="lighthouse"];);
+out tags center qt;`);
+    const rows = [], spots = [];
     for (const el of raw.elements || []) {
-      const kmh = parseSpeed(el.tags?.maxspeed);
+      const t = el.tags || {};
+      if (el.type === 'node' || t.man_made === 'lighthouse') {
+        const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
+        if (lat == null) continue;
+        const kind = t.highway === 'speed_camera' ? 'cam' : t.man_made === 'lighthouse' ? 'light' : 'view';
+        spots.push([kind, +lat.toFixed(6), +lon.toFixed(6), t.name || '', kind === 'cam' ? Math.round(parseSpeed(t.maxspeed) || 0) : 0]);
+        continue;
+      }
+      const kmh = parseSpeed(t.maxspeed);
       if (!kmh || !el.geometry?.length) continue;
       const row = [Math.round(kmh)];
       for (const g of el.geometry) row.push(+g.lat.toFixed(6), +g.lon.toFixed(6));
-      out.push(row);
+      rows.push(row);
     }
+    const out = { rows, spots: spots.slice(0, 300) };
     cachePut(ck, out);
     return out;
   });

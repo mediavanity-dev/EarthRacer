@@ -31,6 +31,7 @@ export function count(key, profile) {
     case 'streak': return s.bestStreak || 0;
     case 'portals': return s.portals || 0;
     case 'flights': return s.flights || 0;
+    case 'views': return (at.views || []).length;
     default: return 0;
   }
 }
@@ -51,6 +52,7 @@ export const BADGES = [
   { id: 'signs20', icon: '🪧', name: 'Signs of trouble', what: 'Knock down 20 street signs', key: 'signs', n: 20 },
   { id: 'miss50', icon: '😬', name: 'Too close', what: '50 near misses', key: 'nearMiss', n: 50 },
   { id: 'guess', icon: '🎯', name: 'Geo-genius', what: 'Guess a random placement within 50 km', key: 'guesses', n: 1 },
+  { id: 'views10', icon: '🔭', name: 'Scenic route', what: 'Reach 10 viewpoints or lighthouses', key: 'views', n: 10, reward: 100 },
   { id: 'rich', icon: '💰', name: 'Loaded', what: 'Have 5,000 coins', key: 'coins', n: 5000 },
   // ---- the long game: for people who keep coming back (coins, and paint jobs for the biggest) ----
   { id: 'h1', icon: '⏱️', name: 'Getting the hang of it', what: 'Drive for 1 hour', key: 'hours', n: 1, reward: 50 },
