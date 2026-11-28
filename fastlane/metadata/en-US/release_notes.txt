@@ -13,6 +13,9 @@ New
 • Railway track you can see: ballast, sleepers and rails. Trains follow the time of day, busiest at rush hour and rare in the small hours.
 • Snow on high mountains, and weather corrected for your height, so a summit is cold and snowy.
 • Church towers with spires, and domes and onion domes where the map has them.
+• Real planes overhead in the app, at their real height and heading, with contrails up high (live open flight data).
+• Viewpoints and lighthouses to reach, for coins and a new feat. In Gamer mode, speed cameras: pass under the limit for coins, or get flashed.
+• A note when a real earthquake struck nearby today (from USGS).
 
 Better
 • Crash into a car and it gets shoved, spins and dents, by weight: a truck sends it flying, a bike barely moves it.
@@ -21,7 +24,6 @@ Better
 • The back of a stunt ramp is solid now.
 • Boost arrows point both ways, because they work both ways.
 • Real horn recordings every time you press the horn, including right after switching apps, and a fuller double honk for cars.
-• Service is at the top of the Garage.
 • Rain falls in streaks and snow in soft flakes.
 • Name the right town in a random placement and it ends there with your score; naming the right country or region tells you so and lets you narrow it down.
 • The camera no longer pumps in and out passing buildings.

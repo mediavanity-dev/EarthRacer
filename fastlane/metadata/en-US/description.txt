@@ -30,7 +30,7 @@ FREE
 EarthRacer is free, with no ads and nothing to buy. Every vehicle is earned by playing. Optional tips in Settings help keep it going; they don't change the game.
 
 OPEN DATA
-Map data © OpenStreetMap contributors, served by OpenFreeMap. Terrain from AWS Terrain Tiles, weather from Open-Meteo, place names from Nominatim, postcards from Wikipedia and Wikimedia Commons, radio stations from Radio Browser.
+Map data © OpenStreetMap contributors, served by OpenFreeMap. Terrain from AWS Terrain Tiles, weather from Open-Meteo, place names from Nominatim, postcards from Wikipedia and Wikimedia Commons, radio stations from Radio Browser, aircraft from adsb.lol, earthquakes from USGS.
 
 PRIVATE
 No account, no ads, no tracking. Your game stays on your device.

@@ -21,6 +21,7 @@ export class World {
     this.hasOrigin = false;
     this.chunks = new Map();
     this.speeds = new Map(); // tile key -> road speed limits
+    this.spots = new Map();  // tile key -> speed cameras, viewpoints, lighthouses
     this.listeners = new Set();
     this.anisotropy = anisotropy;
     this.quality = quality || { tex: 1024, maxTrees: 3500, maxProps: 1400 };
@@ -133,9 +134,13 @@ export class World {
     try {
       const b = entry.chunk?.bounds;
       if (!b) return;
-      const rows = await loadSpeedLimits(key, b);
+      const res = await loadSpeedLimits(key, b);
+      const rows = Array.isArray(res) ? res : res.rows || [];
       const c = this.chunks.get(key)?.chunk;
-      if (!c || !rows.length) return;
+      if (!c) return;
+      // speed cameras, viewpoints, lighthouses: kept in tile-local metres (scene = ox + x*sx, oz + z)
+      this.spots.set(key, (res.spots || []).map(([kind, lat, lon, name, kmh]) => { const p = this.frame.toLocal(lat, lon); return { kind, name, kmh, lx: (p.x - c.ox) / c.sx, lz: p.z - c.oz, id: `${kind}:${lat},${lon}` }; }));
+      if (!rows.length) return;
       const CELL = 50, cells = new Map(), segs = [];
       for (const row of rows) {
         let prev = null;
@@ -207,7 +212,7 @@ export class World {
   }
 
   unload(key) {
-    this.speeds.delete(key);
+    this.speeds.delete(key); this.spots.delete(key);
     const c = this.chunks.get(key);
     if (!c) return;
     if (c.chunk) { this.scene.remove(c.chunk.group); c.chunk.dispose(); if (this.hint === c.chunk) this.hint = null; }
@@ -267,5 +272,14 @@ export class World {
     return h;
   }
   toLocal(lat, lon) { return this.frame.toLocal(lat, lon); }
+  /** Speed cameras, viewpoints and lighthouses within r metres of (x, z), in scene coordinates. */
+  spotsNear(x, z, r) {
+    const out = [];
+    for (const [key, list] of this.spots) {
+      const c = this.chunks.get(key)?.chunk; if (!c) continue;
+      for (const s of list) { const sx = c.ox + s.lx * c.sx, sz = c.oz + s.lz; const d = Math.hypot(sx - x, sz - z); if (d < r) out.push({ ...s, x: sx, z: sz, d }); }
+    }
+    return out;
+  }
   toGeo(x, z) { return this.frame.toGeo(x, z); }
 }
