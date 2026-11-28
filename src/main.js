@@ -7,6 +7,7 @@ import { Sky } from './world/sky.js';
 import { VehicleState, cheats } from './game/physics.js';
 import { VEHICLES, VEHICLE_ORDER, SPEED_CAP, buildModel, ratings, prepDamage, dent, grime, repairLook, flashHit, animateDamage } from './game/vehicles.js';
 import { Traffic } from './game/traffic.js';
+import { Trains } from './game/trains.js';
 import { jobsFor, jobTime, jobReward, raceFor, isLandmark, isFuel, pruneRaces } from './game/activities.js';
 import { RANDOM_PLACES } from './game/places.js';
 import { MODES, BOARD_RADIUS, CRUISE_PORTS, estimate, newTrip, progress, positionAt, fmtDuration } from './game/trips.js';
@@ -28,6 +29,7 @@ import { Wake } from './world/wake.js';
 import { Debris, TreeHits } from './world/debris.js';
 import { roadFocus } from './world/materials.js';
 import { Radio } from './data/radio.js';
+import { StreetView } from './ui/streetview.js';
 import { portalNow, PORTAL_POINTS, PORTAL_COINS } from './game/portals.js';
 import { PortalView, PORTAL_RADIUS } from './world/portal.js';
 import { animateStars, starAvailable, animateGamer, coinAvailable, collected as starsCollected } from './world/stunts.js';
@@ -121,6 +123,14 @@ traffic.onHit = (c, J, at) => {
   if (J > 5) debris.bits(at.x, y - 0.4, at.z, -at.nx, -at.nz, J, '#d9eef5', { n: Math.min(12, Math.round(J)), size: 0.35, lift: 0.4 });
 };
 traffic.density = profile.settings.traffic ?? 1;
+// trains on the railway lines, about as often as real ones (the traffic setting covers them too)
+const trains = new Trains(scene);
+trains.density = traffic.density;
+trains.onNear = (t, d) => {
+  if (t.K.bell) sound.bell(); else sound.horn(0.62, 'horn-truck');
+  if (!profile.seenTrain) { profile.seenTrain = true; save(); toast('🚆 Train coming. Trains do not stop, so keep off the tracks.', { ms: 5000 }); }
+  else if (d < 120) toast('🚆 Train coming', { ms: 1500 });
+};
 const sound = new Sound();
 sound.setMuted(profile.settings.mute);
 
@@ -393,7 +403,7 @@ async function begin(lat, lon, heading, kind, { snap = false, teleport = false, 
   if (teleport) {
     for (const k of [...world.chunks.keys()]) world.unload(k);
     world.hasOrigin = false;
-    traffic.clear();
+    traffic.clear(); trains.clear();
   }
   game.lat = lat; game.lon = lon;
   // the country decides the local look (buildings, signs, markings): ask first, briefly
@@ -475,6 +485,7 @@ function findRoadNear(x, z, maxR) {
 
 // ---------- actions ----------
 function onAction(a, extra) {
+  if (streetView?.open) return;
   if (a === 'tilt-recal') { if (game.state === 'driving') calibrateTilt(); return; }
   if (a === 'tilt-denied') { toast('Motion access is off. Turn it on in Settings → EarthRacer, or use the slider.'); return; }
   if (a === 'gamepad') { toast(`🎮 Controller connected${extra ? `: ${String(extra).split('(')[0].trim()}` : ''}`); return; }
@@ -490,6 +501,7 @@ function onAction(a, extra) {
   else if (a === 'guess' && profile.random.active) openGuess();
   else if (a === 'trip' && game.nearStop) openTripPlanner(game.nearStop);
   else if (a === 'radio') radioNext();
+  else if (a === 'streetview') openStreetView();
 }
 $('#b-menu').onclick = () => openPanel();
 $('#b-cam').onclick = () => onAction('camera');
@@ -497,6 +509,17 @@ $('#b-radio').onclick = () => radioNext();
 $('#b-guess').onclick = () => openGuess();
 $('#b-trip').onclick = () => { if (game.nearStop) openTripPlanner(game.nearStop); };
 $('#b-auto').onclick = () => toggleAutopilot();
+$('#b-sv').onclick = () => openStreetView();
+// ---------- street view: photos of where you are (Mapillary, else a Google Street View link) ----------
+let streetView = null;
+function openStreetView() {
+  if (game.state !== 'driving' || !game.v) return;
+  if (profile.random.active) { toast('📷 Street view opens once you have guessed where you are.'); return; }
+  streetView ||= new StreetView({ toast, onClose: () => { input.enabled = true; } });
+  const g = world.toGeo(game.v.x, game.v.z);
+  input.enabled = false; input.keys.clear();
+  streetView.show({ lat: g.lat, lon: g.lon, heading: ((game.v.heading * 180) / Math.PI % 360 + 360) % 360 });
+}
 $('#b-fuel').onclick = () => outOfFuel();
 // The horn: cars honk, the dog barks, the duck quacks, bicycles and the cart ring a bell.
 function honk() {
@@ -1064,7 +1087,7 @@ function renderTab(tab, body) {
     body.querySelectorAll('#sensseg button').forEach((b) => b.onclick = () => { profile.settings.sens = +b.dataset.k; input.sens = +b.dataset.k; save(); openPanel('settings'); });
     body.querySelectorAll('#modeseg button').forEach((b) => b.onclick = () => { setMode(b.dataset.m); openPanel('settings'); });
     body.querySelectorAll('#camseg button').forEach((b) => b.onclick = () => { game.cam = +b.dataset.c; profile.settings.cam = game.cam; save(); openPanel('settings'); });
-    body.querySelectorAll('#trf button').forEach((b) => b.onclick = () => { traffic.density = +b.dataset.d; profile.settings.traffic = traffic.density; if (!traffic.density) traffic.clear(); save(); openPanel('settings'); });
+    body.querySelectorAll('#trf button').forEach((b) => b.onclick = () => { traffic.density = trains.density = +b.dataset.d; profile.settings.traffic = traffic.density; if (!traffic.density) { traffic.clear(); trains.clear(); } save(); openPanel('settings'); });
     body.querySelector('#snd').onclick = () => { onAction('mute'); openPanel('settings'); };
     const wipe = body.querySelector('#wipe');
     wipe.onclick = () => confirmStartOver();
@@ -1082,6 +1105,7 @@ function renderTab(tab, body) {
       <tr><td>Autopilot (earned: 200 km of motorway)</td><td><span class="kbd">P</span> · 🤖 on a motorway or major highway; steer or brake to take over</td></tr>
       <tr><td>Skydiving (bail out of a flight)</td><td>arrows / <span class="kbd">W A S D</span> · left stick · drag on a phone</td></tr>
       <tr><td>Duck: flap to fly</td><td>hold the handbrake (<span class="kbd">Space</span> · A)</td></tr>
+      <tr><td>Street view (photos of where you are)</td><td><span class="kbd">B</span> · 📷; drag to look, arrows to step along the street</td></tr>
       <tr><td>Back on the road</td><td><span class="kbd">R</span> · B</td></tr>
       <tr><td>Menu</td><td><span class="kbd">Esc</span> · Menu button</td></tr>
       <tr><td>Jobs</td><td><span class="kbd">J</span> · View button</td></tr>
@@ -1718,7 +1742,7 @@ function startWatch(mode) {
   // the deck: the street-level world around the ferry, which moves on the clock
   if (game.model) game.model.group.visible = false;
   shadow.visible = false; arrow.visible = false; beacon.visible = false;
-  traffic.clear();
+  traffic.clear(); trains.clear();
   if (ferry && !!ferry.userData.cruise !== (mode === 'cruise')) { scene.remove(ferry); ferry = null; }
   ferry ||= buildFerry(mode === 'cruise');
   scene.add(ferry);
@@ -2352,7 +2376,7 @@ const TIMER = DEV && params.has('timer'); // testing in a background window, whe
 const overlayEl = document.getElementById('overlay'), panelEl = document.getElementById('panel');
 function frameBudget() {
   if (game.state === 'watch-plane' || game.state === 'watch-ferry' || game.state === 'skydive') return 1000 / 60;
-  if (!overlayEl.hidden && overlayEl.className === '') return 250; // an opaque card covers the world (trips, start)
+  if ((!overlayEl.hidden && overlayEl.className === '') || streetView?.open) return 250; // an opaque card covers the world (trips, start)
   if (game.state !== 'driving') return 1000 / 20;
   if (!panelEl.hidden || (game.stillT || 0) > 2) return 1000 / 30; // a menu open, or parked and idle
   return 1000 / 60;
@@ -2387,7 +2411,7 @@ function frame(now) {
     else if (sp > 25 && !world.isReady(v.x + ux * sp * 7, v.z + uz * sp * 7)) loadLimit = Math.max(25, sp * 0.9); // very fast: ease off until the map catches up
   }
   if ((game.limT = (game.limT || 0) + dt) > 0.3) { game.limT = 0; game.roadKmh = v.road ? world.speedLimitAt(v.x, v.z) : null; }
-  const ctx = { world, grip: sky.grip(), wind: windVec(), loadLimit, traffic: traffic.density ? traffic : null, draft: game.style.draftOn, night: sky.night, roadLimit: game.roadKmh };
+  const ctx = { world, grip: sky.grip(), wind: windVec(), loadLimit, traffic: traffic.density ? traffic : null, trains: trains.density ? trains : null, draft: game.style.draftOn, night: sky.night, roadLimit: game.roadKmh };
   if (v.wet && game.waves) ctx.grip *= Math.max(0.6, 1 - game.waves * 0.12);
   let acc = dt, moved = 0;
   const x0 = v.x, z0 = v.z;
@@ -2414,6 +2438,7 @@ function frame(now) {
     if (old) rebase(old);
   }
   if (traffic.density) traffic.update(dt, v, world);
+  trains.update(dt, v, world);
   signs.update(dt, world, v);
   tickStunts(dt);
   tickTrees(dt);
@@ -2463,6 +2488,7 @@ function rebase(old) {
   if (game.v) fix(game.v);
   if (split) { fix(split.v); for (const q of [split.pos, split.look]) { const o = { x: q.x, z: q.z }; fix(o); q.x = o.x; q.z = o.z; } }
   traffic.cars.forEach((c) => traffic.place(c));
+  trains.shift(fix);
   const c = { x: camPos.x, z: camPos.z }; fix(c); camPos.x = c.x; camPos.z = c.z;
   const l = { x: camLook.x, z: camLook.z }; fix(l); camLook.x = l.x; camLook.z = l.z;
   if (game.portal?.placed) updatePortal(); // the portal moves with the new origin straight away
@@ -2802,10 +2828,10 @@ function tickStyle(dt, inp) {
   if (st.overtakes) profile.stats.overtakes += st.overtakes; // counted, but points are for stunts only
 }
 
-const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences). Sounds (trimmed), via Wikimedia Commons: car horn by 15HPanska_Ruttner_Jan (CC0), truck horn from a city bus by Work With Sounds / Technical Museum of Slovenia (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>), ship horn by Tvabutzku1234 (CC0) and dog bark by Amada44 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>).';
+const ATTRIB = 'Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation: AWS Terrain Tiles (Mapzen). Weather &amp; waves: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0). Places: Nominatim. Postcards: Wikipedia / Wikimedia Commons (free licences). Street photos: <a href="https://www.mapillary.com" target="_blank" rel="noopener">Mapillary</a> contributors (CC BY-SA 4.0). Sounds (trimmed), via Wikimedia Commons: car horn by 15HPanska_Ruttner_Jan (CC0), truck horn from a city bus by Work With Sounds / Technical Museum of Slovenia (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>), ship horn by Tvabutzku1234 (CC0) and dog bark by Amada44 (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>).';
 
 // ---------- boot ----------
-if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, sky, profile, input, radio, sound, camCtl, wake, debris, startSkydive, toggleAutopilot, frameBudget, cheats, get split() { return split; }, startSplit, stopSplit, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
+if (DEV) window.__er = { game, world, renderer, scene, camera, traffic, trains, sky, profile, input, radio, sound, camCtl, wake, debris, openStreetView, get streetView() { return streetView; }, startSkydive, toggleAutopilot, frameBudget, cheats, get split() { return split; }, startSplit, stopSplit, dbg: { get coinAcc() { return coinAcc; }, get coinT() { return coinT; }, get coneAcc() { return coneAcc; } } };
 pruneRaces();
 world.stuntMode = profile.settings.mode || 'explorer';
 cheats.noDamage = !!profile.settings.noDamage;

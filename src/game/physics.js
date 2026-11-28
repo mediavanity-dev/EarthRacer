@@ -216,12 +216,13 @@ export class VehicleState {
       }
     }
     // traffic
-    if (ctx.traffic) {
-      const hit = ctx.traffic.collide(this, HITBOX[this.kind]);
+    for (const other of [ctx.traffic, ctx.trains]) {
+      const hit = other?.collide(this, HITBOX[this.kind]);
       if (hit) {
         this.x += hit.px; this.z += hit.pz;
-        // momentum: you lose (and the car gains) by mass, so a truck ploughs on and a bike bounces off
-        if (hit.dv > 0) { this.vx += hit.nx * hit.dv; this.vz += hit.nz * hit.dv; if (hit.dv > 1.5) this.hurt(hit.dv * 1.2, ev, 'traffic'); }
+        // momentum: you lose (and the car gains) by mass, so a truck ploughs on and a bike bounces off;
+        // a train does not notice you at all
+        if (hit.dv > 0) { this.vx += hit.nx * hit.dv; this.vz += hit.nz * hit.dv; if (hit.dv > 1.5) this.hurt(hit.dv * (hit.train ? 2.2 : 1.2), ev, hit.train ? 'train' : 'traffic'); }
       }
     }
 
