@@ -71,13 +71,19 @@ fetch in the iPhone app only (the website would then differ). Use it only where 
 - Needs anonymous player IDs, name moderation, a privacy policy update (live positions are shared)
   and the App Privacy answers changed in App Store Connect and Play Console.
 
-## PC split screen (to do)
+## PC split screen (done in 1.2, Nov 2026)
+
+Built: Settings → Two players (computers only). Player 2 drives on the first controller (Y swaps vehicle, X is the horn); the world loads round the midpoint. Ideas left: a second minimap, player 2 joining races and jobs.
+
 
 - Two players on one computer: one on the keyboard, one on a controller (the input code already
   tells them apart). Two vehicles, two cameras, the screen split side by side.
 - Drawing the world twice costs a lot: desktop only, with the Settings switch hidden on phones.
 
-## Wording that reads as AI-written (to do)
+## Wording that reads as AI-written (first pass done in 1.2)
+
+Done: plainer messages and descriptions, far fewer "real"s, store description rewritten, `npm run wording` flags new problems. Still to do: the feat names, the help tables and the support site, read with real player comments in hand.
+
 
 - Players say some text sounds machine-written. Pull every player-facing string (toasts, menus,
   help, feats, store listing) into one list, mark the usual tells (dash asides, "not X but Y",
